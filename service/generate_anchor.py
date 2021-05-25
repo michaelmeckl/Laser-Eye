@@ -1,14 +1,13 @@
 """
 Generate base anchors on index 0
 """
-import sys
 import numpy as np
 from numpy import zeros, concatenate, float32, tile, repeat, arange, exp
 
 
-class AnchorConifg:
-    def __init__(self, *,  stride, scales,
-                 base_size=16, ratios=(1., ), dense_anchor=False):
+class AnchorConfig:
+    def __init__(self, *, stride, scales,
+                 base_size=16, ratios=(1.,), dense_anchor=False):
         self.stride = stride
         self.scales = np.array(scales)
         self.scales_shape = self.scales.shape[0]
@@ -29,7 +28,7 @@ class AnchorConifg:
         if self.dense_anchor:
             assert self.stride % 2 == 0
             anchors2 = anchors.copy()
-            anchors2[:, :] += int(self.stride/2)
+            anchors2[:, :] += int(self.stride / 2)
             anchors = np.vstack((anchors, anchors2))
 
         return anchors
@@ -88,8 +87,8 @@ class AnchorConifg:
 
 
 anchor_config = [
-    AnchorConifg(stride=32, scales=(32, 16)),
-    AnchorConifg(stride=16, scales=(8, 4)),
+    AnchorConfig(stride=32, scales=(32, 16)),
+    AnchorConfig(stride=16, scales=(8, 4)),
     # AnchorConifg(stride=8, scales=(2, 1)),
 ]
 
@@ -97,11 +96,11 @@ anchor_config = [
 def generate_runtime_anchors(height, width, stride, base_anchors):
     A = base_anchors.shape[0]
 
-    all_anchors = zeros((height*width, A, 4), dtype=float32)
+    all_anchors = zeros((height * width, A, 4), dtype=float32)
 
-    rw = tile(arange(0, width*stride, stride),
+    rw = tile(arange(0, width * stride, stride),
               height).reshape(-1, 1, 1)
-    rh = repeat(arange(0, height*stride, stride),
+    rh = repeat(arange(0, height * stride, stride),
                 width).reshape(-1, 1, 1)
 
     all_anchors += concatenate((rw, rh, rw, rh), axis=2)

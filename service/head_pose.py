@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import sys
-import time
 
 
 class HeadPoseEstimator:
@@ -9,8 +8,8 @@ class HeadPoseEstimator:
     def __init__(self, filepath, W, H) -> None:
         _predefined = np.load(filepath, allow_pickle=True)
         self.object_pts, self.r_vec, self.t_vec = _predefined
-        self.cam_matrix = np.array([[W, 0, W/2.0],
-                                    [0, W, H/2.0],
+        self.cam_matrix = np.array([[W, 0, W / 2.0],
+                                    [0, W, H / 2.0],
                                     [0, 0, 1]])
 
         self.origin_width = 144.76935
@@ -68,15 +67,15 @@ class HeadPoseEstimator:
         right_width = 75
         bottom_height = 90
 
-        reprojectsrc = np.float32([#[-rear_size, -rear_size, rear_depth],
-                                   #[-rear_size, rear_size, rear_depth],
-                                   #[rear_size, rear_size, rear_depth],
-                                   #[rear_size, -rear_size, rear_depth],
-                                   # -------------------------------------
-                                   [left_width, bottom_height, front_depth],
-                                   [right_width, bottom_height, front_depth],
-                                   [right_width, top_height, front_depth],
-                                   [left_width, top_height, front_depth]])
+        reprojectsrc = np.float32([  # [-rear_size, -rear_size, rear_depth],
+            # [-rear_size, rear_size, rear_depth],
+            # [rear_size, rear_size, rear_depth],
+            # [rear_size, -rear_size, rear_depth],
+            # -------------------------------------
+            [left_width, bottom_height, front_depth],
+            [right_width, bottom_height, front_depth],
+            [right_width, top_height, front_depth],
+            [left_width, top_height, front_depth]])
 
         reprojectdst, _ = cv2.projectPoints(reprojectsrc,
                                             rotation_vec,
@@ -87,7 +86,7 @@ class HeadPoseEstimator:
         # end_time = time.perf_counter()
         # print(end_time - start_time)
 
-        reprojectdst = reprojectdst.transpose((1,0,2)).astype(np.int32)
+        reprojectdst = reprojectdst.transpose((1, 0, 2)).astype(np.int32)
 
         # calc euler angle
         rotation_mat, _ = cv2.Rodrigues(rotation_vec)
@@ -112,9 +111,7 @@ class HeadPoseEstimator:
 
 
 def main(filename):
-
     cap = cv2.VideoCapture(filename)
-
 
     fd = MxnetDetectionModel("../weights/16and32", 0, scale=.6, gpu=-1)
     fa = CoordinateAlignmentModel('../weights/2d106det', 0)
@@ -146,7 +143,7 @@ def main(filename):
 
         cv2.imshow("result", frame)
 
-        if cv2.waitKey(0) == ord('q'):
+        if cv2.waitKey(1) == ord('q'):
             break
 
 
@@ -154,7 +151,8 @@ if __name__ == '__main__':
     from face_detector import MxnetDetectionModel
     from face_alignment import CoordinateAlignmentModel
     import os
-    
+
     os.chdir(os.path.dirname(__file__))
-    
-    main(sys.argv[1])
+
+    video_input = sys.argv[1] if len(sys.argv) > 1 else 0
+    main(video_input)

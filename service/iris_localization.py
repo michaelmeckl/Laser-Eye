@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 
 
-class IrisLocalizationModel():
+class IrisLocalizationModel:
 
     def __init__(self, filepath):
         # Load the TFLite model and allocate tensors.
@@ -23,7 +23,7 @@ class IrisLocalizationModel():
             img: An image in default BGR format.
 
         Returns:
-            image_norm: The normalized image ready to be feeded.
+            image_norm: The normalized image ready to be fed.
         """
 
         scale = 23 / length
@@ -46,6 +46,9 @@ class IrisLocalizationModel():
         """Detect the face mesh from the image given.
         Args:
             image: An image in default BGR format.
+            length:
+            center:
+            name:
 
         Returns:
             mesh: An eyebrow mesh, normalized.
@@ -90,7 +93,6 @@ class IrisLocalizationModel():
         cv2.polylines(frame, landmarks, close, color, thickness, cv2.LINE_AA)
 
 
-
 if __name__ == "__main__":
     import sys
     from head_pose import HeadPoseEstimator
@@ -102,7 +104,7 @@ if __name__ == "__main__":
     os.chdir(os.path.dirname(__file__))
 
     gpu_ctx = -1
-    video = sys.argv[1]
+    video = sys.argv[1] if len(sys.argv) > 1 else 0
     YAW_THD = 45
 
     cap = cv2.VideoCapture(video)
@@ -152,7 +154,7 @@ if __name__ == "__main__":
         # cv2.imwrite(f'./asset/orign_dress/img{counter:0>3}.png', frame)
 
         counter += 1
-        if cv2.waitKey(0) == ord('q'):
+        if cv2.waitKey(1) == ord('q'):
             break
 
     cap.release()

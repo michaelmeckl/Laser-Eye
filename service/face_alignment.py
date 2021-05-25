@@ -3,17 +3,15 @@
 
 import numpy as np
 import cv2
-import time
 import collections
 import mxnet as mx
 
-
 pred_type = collections.namedtuple('prediction', ['slice', 'close', 'color'])
 pred_types = {'face': pred_type(slice(0, 17), False, (173.91, 198.9, 231.795, 0.5)),
-              'eyebrow1': pred_type(slice(17, 22), False, (255., 126.99,  14.025, 0.4)),
-              'eyebrow2': pred_type(slice(22, 27), False, (255., 126.99,  14.025, 0.4)),
-              'nose': pred_type(slice(27, 31), False, (160,  60.945, 112.965, 0.4)),
-              'nostril': pred_type(slice(31, 36), False, (160,  60.945, 112.965, 0.4)),
+              'eyebrow1': pred_type(slice(17, 22), False, (255., 126.99, 14.025, 0.4)),
+              'eyebrow2': pred_type(slice(22, 27), False, (255., 126.99, 14.025, 0.4)),
+              'nose': pred_type(slice(27, 31), False, (160, 60.945, 112.965, 0.4)),
+              'nostril': pred_type(slice(31, 36), False, (160, 60.945, 112.965, 0.4)),
               'eye1': pred_type(slice(36, 42), True, (151.98, 223.125, 137.955, 0.3)),
               'eye2': pred_type(slice(42, 48), True, (151.98, 223.125, 137.955, 0.3)),
               'lips': pred_type(slice(48, 60), True, (151.98, 223.125, 137.955, 0.3)),
@@ -89,7 +87,7 @@ class CoordinateAlignmentModel(BaseAlignmentorModel):
         # add a column
         # pred = np.c_[pred, np.ones((pred.shape[0], 1))]
         pred = np.concatenate((pred, col), axis=1)
-        
+
         return pred @ iM.T  # dot product
 
     def _calibrate(self, pred, thd):
@@ -135,7 +133,8 @@ if __name__ == '__main__':
     fd = MxnetDetectionModel("../weights/16and32", 0, scale=.4, gpu=-1)
     fa = CoordinateAlignmentModel('../weights/2d106det', 0)
 
-    cap = cv2.VideoCapture(sys.argv[1])
+    video_input = sys.argv[1] if len(sys.argv) > 1 else 0
+    cap = cv2.VideoCapture(video_input)
 
     while True:
         ret, frame = cap.read()

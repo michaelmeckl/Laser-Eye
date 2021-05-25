@@ -1,7 +1,6 @@
 import mxnet as mx
 
 MODEL_NAME = "iris"
-# MODEL_NAME = "model"  # TODO
 
 prefix, epoch = f"weights/{MODEL_NAME}", 0
 sym, arg_params, aux_params = mx.model.load_checkpoint(prefix, epoch)

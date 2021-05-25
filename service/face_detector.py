@@ -4,17 +4,14 @@
 import numpy as np
 import mxnet as mx
 import cv2
-import time
 from queue import Queue, Full
-
 from numpy import frombuffer, uint8, concatenate, float32, maximum, minimum, prod
 from mxnet.ndarray import waitall, concat
 from functools import partial
-
 from threading import Thread
-
 import os
 import sys
+
 sys.path.append(os.path.dirname(__file__))
 from generate_anchor import generate_anchors_fpn, nonlinear_pred, generate_runtime_anchors
 
@@ -32,9 +29,8 @@ class BaseDetection:
 
         self._nms_wrapper = partial(self.non_maximum_suppression,
                                     threshold=self.nms_threshold)
-        
-        self._biggest_wrapper = partial(self.find_biggest_box)
 
+        self._biggest_wrapper = partial(self.find_biggest_box)
 
     def margin_clip(self, b):
         margin_x = (b[2] - b[0]) * self.margin
@@ -53,7 +49,7 @@ class BaseDetection:
 
     @staticmethod
     def non_maximum_suppression(dets, threshold):
-        ''' ##### Author 1996scarlet@gmail.com
+        """ ##### Author 1996scarlet@gmail.com
         Greedily select boxes with high confidence and overlap with threshold.
         If the boxes' overlap > threshold, we consider they are the same one.
 
@@ -74,7 +70,7 @@ class BaseDetection:
         -----
         >>> for res in non_maximum_suppression(dets, thresh):
         >>>     pass
-        '''
+        """
 
         x1, y1, x2, y2, scores = dets.T
 
@@ -145,7 +141,7 @@ class MxnetDetectionModel(BaseDetection):
         return self._runtime_anchors[key]
 
     def _retina_detach(self, out):
-        ''' ##### Author 1996scarlet@gmail.com
+        """ ##### Author 1996scarlet@gmail.com
         Solving bounding boxes.
 
         Parameters
@@ -168,7 +164,7 @@ class MxnetDetectionModel(BaseDetection):
         Usage
         -----
         >>> np.block(list(self._retina_solving(out)))
-        '''
+        """
 
         buffer, anchors = out[0].asnumpy(), out[1]
         mask = buffer[:, 4] > self.threshold
@@ -181,8 +177,7 @@ class MxnetDetectionModel(BaseDetection):
         out, res, anchors = iter(self.exec_group.execs[0].outputs), [], []
 
         for fpn in self._fpn_anchors:
-            scores = next(out)[:, -fpn.scales_shape:,
-                               :, :].transpose((0, 2, 3, 1))
+            scores = next(out)[:, -fpn.scales_shape:, :, :].transpose((0, 2, 3, 1))
             deltas = next(out).transpose((0, 2, 3, 1))
 
             res.append(concat(deltas.reshape((-1, 4)),
@@ -195,7 +190,7 @@ class MxnetDetectionModel(BaseDetection):
         return concat(*res, dim=0), concatenate(anchors)
 
     def _retina_forward(self, src):
-        ''' ##### Author 1996scarlet@gmail.com
+        """ ##### Author 1996scarlet@gmail.com
         Image preprocess and return the forward results.
 
         Parameters
@@ -215,7 +210,7 @@ class MxnetDetectionModel(BaseDetection):
         Usage
         -----
         >>> out = self._retina_forward(frame)
-        '''
+        """
         # timea = time.perf_counter()
 
         dst = self._rescale(src).transpose((2, 0, 1))[None, ...]

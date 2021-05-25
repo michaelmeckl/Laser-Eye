@@ -1,7 +1,6 @@
 import numpy as np
 import cv2
 import mxnet as mx
-import time
 
 
 class BaseSegmentation:
@@ -44,7 +43,7 @@ class BaseSegmentation:
             y_sum = np.arange(H) @ np.sum(masks, axis=2)
 
             points = np.hstack((x_sum, y_sum))
-            return points/masks_sum
+            return points / masks_sum
 
         if method == 'pdc':
             return probability_density_center(masks).astype(np.int32)
