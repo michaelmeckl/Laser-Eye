@@ -45,8 +45,13 @@ def calculate_3d_gaze(frame, poi, scale=256):
     theta[inv_judge] *= -1
     delta *= scale
 
-    # cv2.circle(frame, tuple(pupil.astype(int)), 2, (0, 255, 255), -1)
-    # cv2.circle(frame, tuple(center.astype(int)), 1, (0, 0, 255), -1)
+    # mark pupil and pupil centers
+    # TODO centers don't really work well, they are basically just bouncing around
+    cv2.circle(frame, tuple(pupils[0].astype(int)), 2, (0, 255, 255), -1)
+    cv2.circle(frame, tuple(pupils[1].astype(int)), 2, (0, 255, 255), -1)
+
+    cv2.circle(frame, tuple(centers[0].astype(int)), 1, (0, 0, 255), -1)
+    cv2.circle(frame, tuple(centers[1].astype(int)), 1, (0, 0, 255), -1)
 
     return theta, pha, delta.T
 
@@ -55,7 +60,7 @@ def draw_sticker(src, offset, pupils, landmarks,
                  blink_thd=0.22,
                  arrow_color=(0, 125, 255), copy=False):
     if copy:
-        src = src.copy()
+        src = src.copy()  # make a copy of the current frame
 
     left_eye_height = landmarks[33, 1] - landmarks[40, 1]
     left_eye_width = landmarks[39, 0] - landmarks[35, 0]
@@ -69,64 +74,72 @@ def draw_sticker(src, offset, pupils, landmarks,
     for mark in landmarks.reshape(-1, 2).astype(int):
         cv2.circle(src, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
 
+    # TODO use blink_treshold (0.22) and eye dimension ration to detect blinking ??
+    #  -> wann eye closed ist, klappt im moment nur extrem ungenau! treshold zu groß?
     if left_eye_height / left_eye_width > blink_thd:
         cv2.arrowedLine(src, tuple(pupils[0].astype(int)),
                         tuple((offset + pupils[0]).astype(int)), arrow_color, 2)
+    else:
+        print("The user's left eye is closed!")
 
     if right_eye_height / right_eye_width > blink_thd:
         cv2.arrowedLine(src, tuple(pupils[1].astype(int)),
                         tuple((offset + pupils[1]).astype(int)), arrow_color, 2)
+    else:
+        print("The user's right eye is closed!")
 
     return src
 
 
 def main(video, gpu_ctx=-1):
-    cap = cv2.VideoCapture(video)
+    capture = cv2.VideoCapture(video)
+    video_width, video_height = capture.get(3), capture.get(4)
 
-    fd = MxnetDetectionModel("weights/16and32", 0, .6, gpu=gpu_ctx)
-    fa = CoordinateAlignmentModel('weights/2d106det', 0, gpu=gpu_ctx)
-    gs = IrisLocalizationModel("weights/iris_landmark.tflite")
-    hp = HeadPoseEstimator("weights/object_points.npy", cap.get(3), cap.get(4))
+    face_detector = MxnetDetectionModel("weights/16and32", 0, .6, gpu=gpu_ctx)
+    face_alignment = CoordinateAlignmentModel('weights/2d106det', 0, gpu=gpu_ctx)
+    # face_alignment = CoordinateAlignmentModel('weights/model-hg2d3-cab/model', 0, gpu=gpu_ctx)  # does not work :(
+    iris_locator = IrisLocalizationModel("weights/iris_landmark.tflite")
+    head_pos = HeadPoseEstimator("weights/object_points.npy", video_width, video_height)
 
     c = 0
     while True:
-        ret, frame = cap.read()
+        return_code, frame = capture.read()  # read from input video or webcam
 
-        if not ret:
+        if not return_code:
+            # break loop if getting frame was not successful
+            sys.stderr.write("Unknown error while trying to get current frame!")
             break
 
-        bboxes = fd.detect(frame)
+        bboxes = face_detector.detect(frame)
 
-        for landmarks in fa.get_landmarks(frame, bboxes, calibrate=True):
+        for landmarks in face_alignment.get_landmarks(frame, bboxes, calibrate=True):
+            # print("\nCurrent landmarks: ", landmarks)
+
             # calculate head pose
-            _, euler_angle = hp.get_head_pose(landmarks)
+            _, euler_angle = head_pos.get_head_pose(landmarks)
             pitch, yaw, roll = euler_angle[:, 0]
 
-            eye_markers = np.take(landmarks, fa.eye_bound, axis=0)
-
+            eye_markers = np.take(landmarks, face_alignment.eye_bound, axis=0)
             # print(f"Eye markers: {eye_markers}")
 
             eye_centers = np.average(eye_markers, axis=1)
             # eye_centers = landmarks[[34, 88]]
-
             print(f"Eye centers: {eye_centers}")
 
             # eye_lengths = np.linalg.norm(landmarks[[39, 93]] - landmarks[[35, 89]], axis=1)
             eye_lengths = (landmarks[[39, 93]] - landmarks[[35, 89]])[:, 0]
+            # print(f"Eye lengths: {eye_lengths}")
 
-            print(f"Eye lengths: {eye_lengths}")
+            iris_left = iris_locator.get_mesh(frame, eye_lengths[0], eye_centers[0])
+            pupil_left, _ = iris_locator.draw_pupil(iris_left, frame, thickness=1)
 
-            iris_left = gs.get_mesh(frame, eye_lengths[0], eye_centers[0])
-            pupil_left, _ = gs.draw_pupil(iris_left, frame, thickness=1)
-
-            iris_right = gs.get_mesh(frame, eye_lengths[1], eye_centers[1])
-            pupil_right, _ = gs.draw_pupil(iris_right, frame, thickness=1)
-
-            pupils = np.array([pupil_left, pupil_right])
+            iris_right = iris_locator.get_mesh(frame, eye_lengths[1], eye_centers[1])
+            pupil_right, _ = iris_locator.draw_pupil(iris_right, frame, thickness=1)
 
             print(f"Pupil left: {pupil_left}")
             print(f"Pupil right: {pupil_right}")
-            # print(f"Pupils: {pupils}")
+
+            pupils = np.array([pupil_left, pupil_right])
 
             poi = landmarks[[35, 89]], landmarks[[39, 93]], pupils, eye_centers
             theta, pha, delta = calculate_3d_gaze(frame, poi)
@@ -147,8 +160,10 @@ def main(video, gpu_ctx=-1):
             # print(zeta)
             if roll < 0:
                 roll += 180
+                print(f"Head Roll Position is >= 0 ({roll}°)")
             else:
                 roll -= 180
+                print(f"Head Roll Position is < 0 ({roll}°)")
 
             real_angle = zeta + roll * pi / 180
             # real_angle = zeta
@@ -156,37 +171,44 @@ def main(video, gpu_ctx=-1):
             # print("end mean:", end_mean)
             # print(roll, real_angle * 180 / pi)
 
+            # calculate the norm of the vector (i.e. the length)
             R = norm(end_mean)
             offset = R * cos(real_angle), R * sin(real_angle)
+            # print(f"R = {R}, offset = {offset}")
 
             landmarks[[38, 92]] = landmarks[[34, 88]] = eye_centers
 
-            # gs.draw_eye_markers(eye_markers, frame, thickness=1)
-
+            iris_locator.draw_eye_markers(eye_markers, frame, thickness=1)
             draw_sticker(frame, offset, pupils, landmarks)
 
+        # show current annotated frame and save it as a png
         cv2.imshow('res', frame)
-        cv2.imwrite(f'tracking_images/frame_{c}.png', frame)
+        # cv2.imwrite(f'tracking_images/frame_{c}.png', frame)
         c += 1
 
+        # infinite loop until the user presses 'q' on the keyboard
+        # replace 1 with 0 to only show 'frame-by-frame'
         if cv2.waitKey(1) == ord('q'):
             break
 
-    cap.release()
+    # cleanup opencv stuff
+    capture.release()
+    cv2.destroyAllWindows()
 
 
 # TODO we need:
 """
-- annotated webcam images  -> check
-- pupil positions and pupil sizes (diameter)
-- fixations and saccades (count, mean, std)
-- blinks (rate, number, etc.)
+- (annotated) webcam images  ✔️
+- pupil positions and pupil sizes (diameter)  ✔️ (but probably not good enough; most likely only noise)
+- fixations and saccades (count, mean, std)   ❌ # TODO
+- blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
 
-- gaze direction ???
+- gaze direction ?   (✔️) (only a basic estimation, but probably not even needed)
 """
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         main(sys.argv[1])
     else:
+        # fall back to webcam if no input video was provided
         main(0)
