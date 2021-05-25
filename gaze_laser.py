@@ -9,9 +9,6 @@ import cv2
 import numpy as np
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
-import time
-from queue import Queue
-from threading import Thread
 import sys
 
 SIN_LEFT_THETA = 2 * sin(pi / 4)
@@ -31,7 +28,7 @@ def calculate_3d_gaze(frame, poi, scale=256):
     s3 = starts[:, 1] * ends[:, 0]
 
     delta_y = (s0 - s1 + s2 - s3) / eye_length / 2
-    delta_x = np.sqrt(abs(ic_distance**2 - delta_y**2))
+    delta_x = np.sqrt(abs(ic_distance ** 2 - delta_y ** 2))
 
     delta = np.array((delta_x * SIN_LEFT_THETA,
                       delta_y * SIN_UP_THETA))
@@ -42,7 +39,7 @@ def calculate_3d_gaze(frame, poi, scale=256):
     # delta[0, abs(theta) < 0.1] = 0
     # delta[1, abs(pha) < 0.03] = 0
 
-    inv_judge = zc_distance**2 - delta_y**2 < eye_length**2 / 4
+    inv_judge = zc_distance ** 2 - delta_y ** 2 < eye_length ** 2 / 4
 
     delta[0, inv_judge] *= -1
     theta[inv_judge] *= -1
@@ -60,23 +57,25 @@ def draw_sticker(src, offset, pupils, landmarks,
     if copy:
         src = src.copy()
 
-    left_eye_hight = landmarks[33, 1] - landmarks[40, 1]
+    left_eye_height = landmarks[33, 1] - landmarks[40, 1]
     left_eye_width = landmarks[39, 0] - landmarks[35, 0]
 
-    right_eye_hight = landmarks[87, 1] - landmarks[94, 1]
+    right_eye_height = landmarks[87, 1] - landmarks[94, 1]
     right_eye_width = landmarks[93, 0] - landmarks[89, 0]
 
+    print(f"Left eye sizes: width: {left_eye_width}, height: {left_eye_height}")
+    print(f"Right eye sizes: width: {right_eye_width}, height: {right_eye_height}")
+
     for mark in landmarks.reshape(-1, 2).astype(int):
-        cv2.circle(src, tuple(mark), radius=1,
-                   color=(0, 0, 255), thickness=-1)
+        cv2.circle(src, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
 
-    if left_eye_hight / left_eye_width > blink_thd:
+    if left_eye_height / left_eye_width > blink_thd:
         cv2.arrowedLine(src, tuple(pupils[0].astype(int)),
-                        tuple((offset+pupils[0]).astype(int)), arrow_color, 2)
+                        tuple((offset + pupils[0]).astype(int)), arrow_color, 2)
 
-    if right_eye_hight / right_eye_width > blink_thd:
+    if right_eye_height / right_eye_width > blink_thd:
         cv2.arrowedLine(src, tuple(pupils[1].astype(int)),
-                        tuple((offset+pupils[1]).astype(int)), arrow_color, 2)
+                        tuple((offset + pupils[1]).astype(int)), arrow_color, 2)
 
     return src
 
@@ -89,6 +88,7 @@ def main(video, gpu_ctx=-1):
     gs = IrisLocalizationModel("weights/iris_landmark.tflite")
     hp = HeadPoseEstimator("weights/object_points.npy", cap.get(3), cap.get(4))
 
+    c = 0
     while True:
         ret, frame = cap.read()
 
@@ -103,12 +103,18 @@ def main(video, gpu_ctx=-1):
             pitch, yaw, roll = euler_angle[:, 0]
 
             eye_markers = np.take(landmarks, fa.eye_bound, axis=0)
-            
+
+            # print(f"Eye markers: {eye_markers}")
+
             eye_centers = np.average(eye_markers, axis=1)
             # eye_centers = landmarks[[34, 88]]
-            
+
+            print(f"Eye centers: {eye_centers}")
+
             # eye_lengths = np.linalg.norm(landmarks[[39, 93]] - landmarks[[35, 89]], axis=1)
             eye_lengths = (landmarks[[39, 93]] - landmarks[[35, 89]])[:, 0]
+
+            print(f"Eye lengths: {eye_lengths}")
 
             iris_left = gs.get_mesh(frame, eye_lengths[0], eye_centers[0])
             pupil_left, _ = gs.draw_pupil(iris_left, frame, thickness=1)
@@ -117,6 +123,10 @@ def main(video, gpu_ctx=-1):
             pupil_right, _ = gs.draw_pupil(iris_right, frame, thickness=1)
 
             pupils = np.array([pupil_left, pupil_right])
+
+            print(f"Pupil left: {pupil_left}")
+            print(f"Pupil right: {pupil_right}")
+            # print(f"Pupils: {pupils}")
 
             poi = landmarks[[35, 89]], landmarks[[39, 93]], pupils, eye_centers
             theta, pha, delta = calculate_3d_gaze(frame, poi)
@@ -155,13 +165,28 @@ def main(video, gpu_ctx=-1):
 
             draw_sticker(frame, offset, pupils, landmarks)
 
-        # cv2.imshow('res', cv2.resize(frame, (960, 540)))
         cv2.imshow('res', frame)
-        if cv2.waitKey(0) == ord('q'):
+        cv2.imwrite(f'tracking_images/frame_{c}.png', frame)
+        c += 1
+
+        if cv2.waitKey(1) == ord('q'):
             break
 
     cap.release()
 
 
+# TODO we need:
+"""
+- annotated webcam images  -> check
+- pupil positions and pupil sizes (diameter)
+- fixations and saccades (count, mean, std)
+- blinks (rate, number, etc.)
+
+- gaze direction ???
+"""
+
 if __name__ == "__main__":
-    main(sys.argv[1])
+    if len(sys.argv) > 1:
+        main(sys.argv[1])
+    else:
+        main(0)
