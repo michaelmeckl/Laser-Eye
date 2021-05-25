@@ -1,4 +1,11 @@
-# Laser Eye : Gaze Estimation via Deep Neural Networks
+Adjusted the code (Original author: 1996scarlet) to fit our needs for the "Praxisseminar" course at 
+the University of Regensburg in the summer semester 2020 as a webcam eye-tracking
+library that would work well enough to extract precise enough data to measure a
+user's workload while playing a video game.
+
+# Original Documentation below:
+
+## Laser Eye : Gaze Estimation via Deep Neural Networks
 
 ![BootJump](./asset/logo.webp)
 
