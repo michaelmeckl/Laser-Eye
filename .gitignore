@@ -108,7 +108,7 @@ weights/cab2d*
 *.jpg
 *.png
 *.avi
+*.mp4
 
 videos/
-tracking_images/
 .idea/
