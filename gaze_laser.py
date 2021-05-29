@@ -10,6 +10,9 @@ import numpy as np
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 import sys
+import time
+import argparse
+import pathlib
 
 SIN_LEFT_THETA = 2 * sin(pi / 4)
 SIN_UP_THETA = sin(pi / 6)
@@ -155,6 +158,30 @@ def get_eye_region(frame, eye_markers):
     return eye_ROI
 
 
+def get_eyes(frame, eye_centers, left_eye_width, right_eye_width):
+    """
+    Get both eye regions separately as a squared frame.
+    """
+    left_eye_center, right_eye_center = eye_centers[0], eye_centers[1]
+    
+    left_eye_x_min = int(left_eye_center[0] - left_eye_width / 2)
+    left_eye_x_max = int(left_eye_center[0] + left_eye_width / 2)
+    left_eye_y_min = int(left_eye_center[1] - left_eye_width / 2)
+    left_eye_y_max = int(left_eye_center[1] + left_eye_width / 2)
+
+    right_eye_x_min = int(right_eye_center[0] - right_eye_width / 2)
+    right_eye_x_max = int(right_eye_center[0] + right_eye_width / 2)
+    right_eye_y_min = int(right_eye_center[1] - right_eye_width / 2)
+    right_eye_y_max = int(right_eye_center[1] + right_eye_width / 2)
+    
+    cv2.rectangle(frame, (left_eye_x_min, left_eye_y_min), (left_eye_x_max, left_eye_y_max), (0, 0, 255))
+    cv2.rectangle(frame, (right_eye_x_min, right_eye_y_min), (right_eye_x_max, right_eye_y_max), (255, 0, 0))
+
+    left_eye = frame[left_eye_y_min: left_eye_y_max, left_eye_x_min: left_eye_x_max]
+    right_eye = frame[right_eye_y_min: right_eye_y_max, right_eye_x_min: right_eye_x_max]
+    return left_eye, right_eye
+
+
 def get_pupil_bboxes(frame, left_pupil, right_pupil, left_eye_size, right_eye_size):
     """
     Get both pupils as separate (square-sized) images.
@@ -163,7 +190,6 @@ def get_pupil_bboxes(frame, left_pupil, right_pupil, left_eye_size, right_eye_si
     x_max = right_pupil[0]
     y_min = min(left_pupil[1], right_pupil[1])
     y_max = max(left_pupil[1], right_pupil[1])
-    # print(f"{y_min}, {y_max}; {x_min}, {x_max}")
 
     # calculate the bounding box that encompasses both pupils
     left_eye_height, left_eye_width = left_eye_size[1], left_eye_size[0]
@@ -304,25 +330,35 @@ def main(video, gpu_ctx=-1):
             iris_locator.draw_eye_markers(eye_markers, frame, thickness=1)
             draw_sticker(frame, offset, pupils, landmarks, left_eye_size, right_eye_size)
 
-            eye_region = get_eye_region(frame, eye_markers)
-            # crashes if eye_region is empty matrix (e.g. if face is not fully visible)
-            if eye_region.size:
-                # cv2.imwrite(f'eye_regions/region_{rn}.png', eye_region)
-                rn += 1
+            eye_l, eye_r = get_eyes(frame, eye_centers, left_eye_width, right_eye_width)
 
-            left_pupil_bbox, right_pupil_bbox = get_pupil_bboxes(frame,
-                                                                 pupil_left,
-                                                                 pupil_right,
-                                                                 left_eye_size,
-                                                                 right_eye_size)
-            if left_pupil_bbox.size:
-                # the left pupil is actually the right one as it is mirrored:
-                cv2.imwrite(f'pupil_regions/pupil_right_{pn_l}.png', left_pupil_bbox)
-                pn_l += 1
+            path = pathlib.Path("./eyes")
+            if not path.is_dir():
+                path.mkdir()
+            if eye_l:
+                cv2.imwrite(f'eyes/left_eye_{time.time()}.png', eye_l)
+            if eye_r:
+                cv2.imwrite(f'eyes/right_eye_{time.time()}.png', eye_r)
 
-            if right_pupil_bbox.size:
-                cv2.imwrite(f'pupil_regions/pupil_left_{pn_r}.png', right_pupil_bbox)
-                pn_r += 1
+            # eye_region = get_eye_region(frame, eye_markers)
+            # # crashes if eye_region is empty matrix (e.g. if face is not fully visible)
+            # if eye_region.size:
+            #     # cv2.imwrite(f'eye_regions/region_{rn}.png', eye_region)
+            #     rn += 1
+            # 
+            # left_pupil_bbox, right_pupil_bbox = get_pupil_bboxes(frame,
+            #                                                      pupil_left,
+            #                                                      pupil_right,
+            #                                                      left_eye_size,
+            #                                                      right_eye_size)
+            # if left_pupil_bbox.size:
+            #     # the left pupil is actually the right one as it is mirrored:
+            #     cv2.imwrite(f'pupils/pupil_right_{pn_l}.png', left_pupil_bbox)
+            #     pn_l += 1
+            # 
+            # if right_pupil_bbox.size:
+            #     cv2.imwrite(f'pupils/pupil_left_{pn_r}.png', right_pupil_bbox)
+            #     pn_r += 1
 
         # show current annotated frame and save it as a png
         cv2.imshow('res', frame)
@@ -341,7 +377,7 @@ def main(video, gpu_ctx=-1):
 
 # TODO we need:
 """
-- (annotated) webcam images  (✔)️
+- webcam images of eyes and pupils ✔
 - pupil positions and pupil sizes (diameter)  ✔ (but probably not good enough; most likely only noise)
 - fixations and saccades (count, mean, std)   ❌ # TODO
 - blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
@@ -349,9 +385,29 @@ def main(video, gpu_ctx=-1):
 - gaze direction ?   (✔ ️) (only a basic estimation, but probably not even needed)
 """
 
+# TODO:
+# add the ordered dict and refactor some of the code here
+# add some parts to the readme on how this was updated and explain the 68 face landmarks (PIE stuff)
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        main(sys.argv[1])
+    parser = argparse.ArgumentParser(description="Webcam eye tracking system that logs different facial information.")
+    parser.add_argument("-v", "--video_file", help="path to a video file to be used instead of the webcam", type=str)
+    parser.add_argument("-d", "--debug", help="Enable debug mode: logging is written to stdout instead of files and "
+                                              "image frames are saved to a debug directory (_debug/)",
+                        action="store_true", default=True)
+    parser.add_argument("-a", "--show_annotation", help="Show a video with the tracked face parts",
+                        action="store_true", default=True)
+    parser.add_argument("-s", "--save_frames", help="The tracked face parts are saved as png images",
+                        action="store_true", default=True)
+
+    # get command line args
+    args = parser.parse_args()
+    debug_active = args.debug
+    show_annotation = args.show_annotation
+    should_save_frames = args.save_frames
+
+    if args.video_file:
+        main(args.video_file)
     else:
-        # fall back to webcam if no input video was provided
+        # fall back to webcam ('0') if no input video was provided
         main(0)
