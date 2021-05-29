@@ -109,12 +109,14 @@ def generate_runtime_anchors(height, width, stride, base_anchors):
     return all_anchors
 
 
-def generate_anchors_fpn(dense_anchor=False, cfg=anchor_config):
+def generate_anchors_fpn(dense_anchor=False, cfg=None):
     """
     Generate anchor (reference) windows by enumerating aspect ratios X
     scales wrt a reference (0, 0, 15, 15) window.
     """
 
+    if cfg is None:
+        cfg = anchor_config
     return sorted(cfg, key=lambda x: x.stride, reverse=True)
 
 

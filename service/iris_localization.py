@@ -76,14 +76,15 @@ class IrisLocalizationModel:
         return iris @ iM.T
 
     @staticmethod
-    def draw_pupil(iris, frame, color=(0, 0, 255), thickness=2):
+    def draw_pupil(iris, frame, annotations_on=False, color=(0, 0, 255), thickness=2):
         pupil = iris[0]
         radius = np.linalg.norm(iris[1:] - iris[0], axis=1)
 
         pupil = pupil.astype(int)
         radius = int(max(radius))
 
-        cv2.circle(frame, tuple(pupil), radius, color, thickness, cv2.LINE_AA)
+        if annotations_on:
+            cv2.circle(frame, tuple(pupil), radius, color, thickness, cv2.LINE_AA)
 
         return pupil, radius
 

@@ -1,3 +1,7 @@
+"""
+The SegmentationModel here is currently unused!
+"""
+
 import numpy as np
 import cv2
 import mxnet as mx

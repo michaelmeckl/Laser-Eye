@@ -53,6 +53,8 @@ class CoordinateAlignmentModel(BaseAlignmentorModel):
         super().__init__(prefix, epoch, shape, gpu, verbose)
         self.trans_distance = self.input_shape[-1] >> 1
         self.marker_nums = 106
+        # The eye bounds are based on the 68 facial points used in the predictor
+        # see https://ibug.doc.ic.ac.uk/resources/facial-point-annotations/
         self.eye_bound = ([35, 41, 40, 42, 39, 37, 33, 36],
                           [89, 95, 94, 96, 93, 91, 87, 90])
 
@@ -64,8 +66,8 @@ class CoordinateAlignmentModel(BaseAlignmentorModel):
 
         M = np.array([[scale, 0, cx], [0, scale, cy]])
 
-        corpped = cv2.warpAffine(img, M, self.input_shape, borderValue=0.0)
-        inp = corpped[..., ::-1].transpose(2, 0, 1)[None, ...]
+        cropped = cv2.warpAffine(img, M, self.input_shape, borderValue=0.0)
+        inp = cropped[..., ::-1].transpose(2, 0, 1)[None, ...]
 
         return mx.nd.array(inp), M
 
