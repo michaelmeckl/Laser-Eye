@@ -120,11 +120,9 @@ class EyeTracker:
             self.__logger.save_image("pupils", "pupil_right", left_pupil_bbox)
             self.__logger.save_image("pupils", "pupil_left", right_pupil_bbox)
 
-        # if self.__debug:
-        # TODO without showing the window, listening to keypress does not work
-        # TODO should later be replaced with the keyboard library probably
-        # show current annotated frame and save it as a png
-        cv2.imshow('res', frame)
+        if self.__debug:
+            # show current annotated frame and save it as a png
+            cv2.imshow('res', frame)
 
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
@@ -376,6 +374,11 @@ class EyeTracker:
         return src
 
 
+def cleanup_image_capture(capture):
+    capture.release()
+    cv2.destroyAllWindows()
+
+
 def main():
     debug_active = args.debug
     enable_annotation = args.enable_annotation
@@ -387,25 +390,28 @@ def main():
 
     eye_tracker = EyeTracker(video_width, video_height, debug_active, enable_annotation)
 
-    while True:
-        return_code, frame = capture.read()  # read from input video or webcam
+    try:
+        while True:
+            return_code, frame = capture.read()  # read from input video or webcam
 
-        if not return_code:
-            # break loop if getting frame was not successful
-            sys.stderr.write("Unknown error while trying to get current frame!")
-            break
+            if not return_code:
+                # break loop if getting frame was not successful
+                sys.stderr.write("Unknown error while trying to get current frame!")
+                break
 
-        eye_tracker.process_current_frame(frame)
+            eye_tracker.process_current_frame(frame)
 
-        # read until the video is finished or if no video was provided until the
-        # user presses 'q' on the keyboard;
-        # replace 1 with 0 to step manually through the video "frame-by-frame"
-        if cv2.waitKey(1) == ord('q'):
-            break
+            # read until the video is finished or if no video was provided until the
+            # user presses 'q' on the keyboard;
+            # replace 1 with 0 to step manually through the video "frame-by-frame"
+            if cv2.waitKey(1) == ord('q'):
+                cleanup_image_capture(capture)
+                break
 
-    # cleanup opencv stuff
-    capture.release()
-    cv2.destroyAllWindows()
+    except KeyboardInterrupt:
+        # TODO should later be replaced with the keyboard library probably
+        print("Press Ctrl-C to terminate while statement")
+        cleanup_image_capture(capture)
 
 
 if __name__ == "__main__":
