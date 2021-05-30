@@ -5,6 +5,7 @@ from service.head_pose import HeadPoseEstimator
 from service.face_alignment import CoordinateAlignmentModel
 from service.face_detector import MxnetDetectionModel
 from service.iris_localization import IrisLocalizationModel
+from image_utils import eye_aspect_ratio
 import cv2
 import numpy as np
 from numpy import sin, cos, pi, arctan
@@ -39,6 +40,7 @@ def get_timestamp() -> float:
 
 # TODO:
 # add some parts to the readme on how this was updated compared to the original
+# remove all parts of the tracking that isn't needed (e.g. gaze tracking probably)
 
 
 class Logger:
@@ -75,6 +77,10 @@ class Logger:
 # noinspection PyAttributeOutsideInit
 class EyeTracker:
 
+    EAR_TRESH = 0.24
+    EAR_CONSEC_FRAMES = 1
+    COUNTER, TOTAL = 0, 0
+
     def __init__(self, video_width: int, video_height: int, debug_active=False,
                  enable_annotation=False, gpu_ctx=-1):
         self.__debug = debug_active
@@ -108,14 +114,16 @@ class EyeTracker:
                 self.__draw_face_landmarks()
                 self.iris_locator.draw_eye_markers(self.__eye_markers, frame, thickness=1)
 
+            self.__detect_blinks()
+
             # extract different parts of the eye region and save them as pngs
-            eye_region = self.__extract_eye_region()
-            eye_l, eye_r = self.__extract_eyes()
+            eye_region_bbox = self.__extract_eye_region()
+            left_eye_bbox, right_eye_bbox = self.__extract_eyes()
             left_pupil_bbox, right_pupil_bbox = self.__extract_pupils()
 
-            self.__logger.save_image("eye_regions", "region", eye_region)
-            self.__logger.save_image("eyes", "left_eye_", eye_l)
-            self.__logger.save_image("eyes", "right_eye_", eye_r)
+            self.__logger.save_image("eye_regions", "region", eye_region_bbox)
+            self.__logger.save_image("eyes", "left_eye_", left_eye_bbox)
+            self.__logger.save_image("eyes", "right_eye_", right_eye_bbox)
             # the left pupil is actually the right one as it is mirrored:
             self.__logger.save_image("pupils", "pupil_right", left_pupil_bbox)
             self.__logger.save_image("pupils", "pupil_left", right_pupil_bbox)
@@ -124,8 +132,50 @@ class EyeTracker:
             # show current annotated frame and save it as a png
             cv2.imshow('res', frame)
 
+    def __detect_blinks(self):
+        leftEAR = eye_aspect_ratio(self.__left_eye)
+        rightEAR = eye_aspect_ratio(self.__right_eye)
+
+        # average the eye aspect ratio together for both eyes for better estimate,
+        # see Cech, J., & Soukupova, T. (2016). Real-time eye blink detection using facial landmarks.
+        # Cent. Mach. Perception, Dep. Cybern. Fac. Electr. Eng. Czech Tech. Univ. Prague, 1-8.
+        # Note: this assumes that a person blinks with both eyes at the same time!
+        # -> if the user blinks with one eye only this might not be detected
+        ear = (leftEAR + rightEAR) / 2.0
+
+        # for mark in self.__left_eye.astype(int):
+        #    cv2.circle(self.__current_frame, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
+        # landmarks_left = self.__left_eye.astype(np.int32)
+        # cv2.polylines(self.__current_frame, [landmarks_left], True, (230, 180,0), 2, cv2.LINE_AA)
+        # landmarks_right = self.__right_eye.astype(np.int32)
+        # cv2.polylines(self.__current_frame, [landmarks_right], True, (230, 180, 0), 2, cv2.LINE_AA)
+
+        cv2.putText(self.__current_frame, "Blinks: {}".format(EyeTracker.TOTAL), (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        cv2.putText(self.__current_frame, "EAR: {:.2f}".format(ear), (300, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+        # check to see if the eye aspect ratio is below the blink
+        # threshold, and if so, increment the blink frame counter
+        if ear < EyeTracker.EAR_TRESH:
+            EyeTracker.COUNTER += 1
+        # otherwise, the eye aspect ratio is not below the blink
+        # threshold
+        else:
+            # if the eyes were closed for a sufficient number of
+            # then increment the total number of blinks
+            if EyeTracker.COUNTER >= EyeTracker.EAR_CONSEC_FRAMES:
+                EyeTracker.TOTAL += 1
+            # reset the eye frame counter
+            EyeTracker.COUNTER = 0
+
+        print(f"\n##############\nBlink Counter: {EyeTracker.TOTAL}\n"
+              f"ConsecFramesCount: {EyeTracker.COUNTER}\n##############")
+
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
+        self.__left_eye = self.__eye_markers[0]
+        self.__right_eye = self.__eye_markers[1]
         self.__eye_centers = np.average(self.__eye_markers, axis=1)
         if self.__debug:
             print(f"Eye markers: {self.__eye_markers}")
@@ -219,9 +269,9 @@ class EyeTracker:
             cv2.rectangle(self.__current_frame, (right_eye_x_min, right_eye_y_min),
                           (right_eye_x_max, right_eye_y_max), (255, 0, 0))
 
-        left_eye = self.__current_frame[left_eye_y_min: left_eye_y_max, left_eye_x_min: left_eye_x_max]
-        right_eye = self.__current_frame[right_eye_y_min: right_eye_y_max, right_eye_x_min: right_eye_x_max]
-        return left_eye, right_eye
+        left_eye_box = self.__current_frame[left_eye_y_min: left_eye_y_max, left_eye_x_min: left_eye_x_max]
+        right_eye_box = self.__current_frame[right_eye_y_min: right_eye_y_max, right_eye_x_min: right_eye_x_max]
+        return left_eye_box, right_eye_box
 
     def __extract_pupils(self):
         """
@@ -404,7 +454,7 @@ def main():
             # read until the video is finished or if no video was provided until the
             # user presses 'q' on the keyboard;
             # replace 1 with 0 to step manually through the video "frame-by-frame"
-            if cv2.waitKey(1) == ord('q'):
+            if cv2.waitKey(1) & 0xFF == ord('q'):
                 cleanup_image_capture(capture)
                 break
 

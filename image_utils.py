@@ -1,7 +1,33 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
+from scipy.spatial import distance as dist
 import cv2
+# import dlib
+
+
+def eye_aspect_ratio(eye):
+    """
+    Computes the eye-aspect-ration (EAR) for the given eye landmarks.
+    This function was taken from https://www.pyimagesearch.com/2017/04/24/eye-blink-detection-opencv-python-dlib/
+    and adjusted to work with 8 instead of 6 eye markers.
+
+    Args:
+        eye: an array with the landmarks for this eye
+
+    Returns:
+        the eye-aspect-ratio (ear)
+    """
+    # compute the euclidean distances between the sets of vertical eye landmarks (x, y)-coordinates
+    A = dist.euclidean(eye[1], eye[7])
+    B = dist.euclidean(eye[2], eye[6])
+    C = dist.euclidean(eye[3], eye[5])
+    # compute the euclidean distance between the horizontal eye landmark (x, y)-coordinates
+    D = dist.euclidean(eye[0], eye[4])
+
+    # compute the eye aspect ratio
+    ear = (A + B + C) / (3.0 * D)  # 3*D as we have three vertical but only one horizontal coordinate pair
+    return ear
 
 
 def __zoom(img, center=None):

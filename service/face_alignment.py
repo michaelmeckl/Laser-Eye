@@ -53,8 +53,9 @@ class CoordinateAlignmentModel(BaseAlignmentorModel):
         super().__init__(prefix, epoch, shape, gpu, verbose)
         self.trans_distance = self.input_shape[-1] >> 1
         self.marker_nums = 106
-        # The eye bounds are based on the 68 facial points used in the predictor
+        # The eye bounds are based on the 68 facial points used in the predictor,
         # see https://ibug.doc.ic.ac.uk/resources/facial-point-annotations/
+        # and slightly adjusted: see https://github.com/lincolnhard/head-pose-estimation
         self.eye_bound = ([35, 41, 40, 42, 39, 37, 33, 36],
                           [89, 95, 94, 96, 93, 91, 87, 90])
 
