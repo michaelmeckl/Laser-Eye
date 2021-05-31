@@ -1,19 +1,20 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
-from service.head_pose import HeadPoseEstimator
-from service.face_alignment import CoordinateAlignmentModel
-from service.face_detector import MxnetDetectionModel
-from service.iris_localization import IrisLocalizationModel
-from image_utils import eye_aspect_ratio
+import argparse
+import pathlib
+import sys
+import time
 import cv2
 import numpy as np
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
-import sys
-import time
-import argparse
-import pathlib
+from image_utils import preprocess_frame
+from service.blink_detector import BlinkDetector
+from service.face_alignment import CoordinateAlignmentModel
+from service.face_detector import MxnetDetectionModel
+from service.head_pose import HeadPoseEstimator
+from service.iris_localization import IrisLocalizationModel
 
 
 def get_timestamp() -> float:
@@ -23,7 +24,9 @@ def get_timestamp() -> float:
 # TODO we need:
 """
 - webcam images of eyes and pupils ✔
-- pupil positions and pupil sizes (diameter)  ✔ (but probably not good enough; most likely only noise)
+- pupil positions  ✔
+- pupil sizes (diameter)
+- average pupilsize; peak pupil size
 - fixations and saccades (count, mean, std)   ❌ # TODO
 - blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
 
@@ -40,7 +43,12 @@ def get_timestamp() -> float:
 
 # TODO:
 # add some parts to the readme on how this was updated compared to the original
+
 # remove all parts of the tracking that isn't needed (e.g. gaze tracking probably)
+
+# Warnings mit einbauen, wenn der Nutzer sich zu viel beweget oder daten zu schlecht und die Zeitpunkte hier mitloggen!
+
+# doch ganzes video mit aufzeichnen? vermtl. nicht sinnvoll wegen Größe und FPS-Einbußen?
 
 
 class Logger:
@@ -77,15 +85,14 @@ class Logger:
 # noinspection PyAttributeOutsideInit
 class EyeTracker:
 
-    EAR_TRESH = 0.24
-    EAR_CONSEC_FRAMES = 1
-    COUNTER, TOTAL = 0, 0
-
     def __init__(self, video_width: int, video_height: int, debug_active=False,
-                 enable_annotation=False, gpu_ctx=-1):
+                 enable_annotation=False, show_video=True, gpu_ctx=-1):
         self.__debug = debug_active
         self.__annotation_enabled = enable_annotation
+        self.__show_video = show_video
         self.__logger = Logger()
+
+        self.blink_detector = BlinkDetector()
 
         self.face_detector = MxnetDetectionModel("weights/16and32", 0, .6, gpu=gpu_ctx)
         self.face_alignment = CoordinateAlignmentModel('weights/2d106det', 0, gpu=gpu_ctx)
@@ -98,10 +105,11 @@ class EyeTracker:
         Args:
             frame: video frame in the format [width, height, channels]
         """
-        self.__current_frame = frame
-        bboxes = self.face_detector.detect(frame)
+        processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
+        self.__current_frame = processed_frame
 
-        for landmarks in self.face_alignment.get_landmarks(frame, bboxes, calibrate=True):
+        bboxes = self.face_detector.detect(self.__current_frame)
+        for landmarks in self.face_alignment.get_landmarks(self.__current_frame, bboxes, calibrate=True):
             self.__landmarks = landmarks
             # calculate head pose
             _, euler_angle = self.head_pose_estimator.get_head_pose(landmarks)
@@ -112,14 +120,24 @@ class EyeTracker:
 
             if self.__annotation_enabled:
                 self.__draw_face_landmarks()
-                self.iris_locator.draw_eye_markers(self.__eye_markers, frame, thickness=1)
+                self.iris_locator.draw_eye_markers(self.__eye_markers, self.__current_frame, thickness=1)
 
-            self.__detect_blinks()
+            # check if user blinked
+            self.blink_detector.set_current_values(self.__current_frame, self.__left_eye, self.__right_eye,
+                                                   (self.__left_eye_width, self.__left_eye_height),
+                                                   (self.__right_eye_width, self.__right_eye_height))
+            self.blink_detector.detect_blinks()
 
             # extract different parts of the eye region and save them as pngs
             eye_region_bbox = self.__extract_eye_region()
             left_eye_bbox, right_eye_bbox = self.__extract_eyes()
             left_pupil_bbox, right_pupil_bbox = self.__extract_pupils()
+
+            # FIXME: for some reason some images (for all 3 types) are not squared but one pixel larger in one
+            #  dimension!! -> Fix this!
+            if eye_region_bbox.shape[0] != eye_region_bbox.shape[1]:
+                pass
+                # TODO: sys.stderr.write(f"Frame was not squared: {eye_region_bbox.shape}")
 
             self.__logger.save_image("eye_regions", "region", eye_region_bbox)
             self.__logger.save_image("eyes", "left_eye_", left_eye_bbox)
@@ -128,49 +146,9 @@ class EyeTracker:
             self.__logger.save_image("pupils", "pupil_right", left_pupil_bbox)
             self.__logger.save_image("pupils", "pupil_left", right_pupil_bbox)
 
-        if self.__debug:
+        if self.__show_video:
             # show current annotated frame and save it as a png
-            cv2.imshow('res', frame)
-
-    def __detect_blinks(self):
-        leftEAR = eye_aspect_ratio(self.__left_eye)
-        rightEAR = eye_aspect_ratio(self.__right_eye)
-
-        # average the eye aspect ratio together for both eyes for better estimate,
-        # see Cech, J., & Soukupova, T. (2016). Real-time eye blink detection using facial landmarks.
-        # Cent. Mach. Perception, Dep. Cybern. Fac. Electr. Eng. Czech Tech. Univ. Prague, 1-8.
-        # Note: this assumes that a person blinks with both eyes at the same time!
-        # -> if the user blinks with one eye only this might not be detected
-        ear = (leftEAR + rightEAR) / 2.0
-
-        # for mark in self.__left_eye.astype(int):
-        #    cv2.circle(self.__current_frame, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
-        # landmarks_left = self.__left_eye.astype(np.int32)
-        # cv2.polylines(self.__current_frame, [landmarks_left], True, (230, 180,0), 2, cv2.LINE_AA)
-        # landmarks_right = self.__right_eye.astype(np.int32)
-        # cv2.polylines(self.__current_frame, [landmarks_right], True, (230, 180, 0), 2, cv2.LINE_AA)
-
-        cv2.putText(self.__current_frame, "Blinks: {}".format(EyeTracker.TOTAL), (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        cv2.putText(self.__current_frame, "EAR: {:.2f}".format(ear), (300, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
-        # check to see if the eye aspect ratio is below the blink
-        # threshold, and if so, increment the blink frame counter
-        if ear < EyeTracker.EAR_TRESH:
-            EyeTracker.COUNTER += 1
-        # otherwise, the eye aspect ratio is not below the blink
-        # threshold
-        else:
-            # if the eyes were closed for a sufficient number of
-            # then increment the total number of blinks
-            if EyeTracker.COUNTER >= EyeTracker.EAR_CONSEC_FRAMES:
-                EyeTracker.TOTAL += 1
-            # reset the eye frame counter
-            EyeTracker.COUNTER = 0
-
-        print(f"\n##############\nBlink Counter: {EyeTracker.TOTAL}\n"
-              f"ConsecFramesCount: {EyeTracker.COUNTER}\n##############")
+            cv2.imshow('res', self.__current_frame)
 
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
@@ -404,23 +382,16 @@ class EyeTracker:
         if copy:
             src = src.copy()  # make a copy of the current frame
 
-        # TODO use blink_treshold (0.22) and eye dimension ration to detect blinking ??
-        #  -> treshold zu groß? bzw. woher kommt der wert?
         # show gaze direction as arrows
         if self.__left_eye_height / self.__left_eye_width > blink_thd:
             cv2.arrowedLine(src, tuple(self.__pupils[0].astype(int)),
                             tuple((offset + self.__pupils[0]).astype(int)),
                             arrow_color, 2)
-        else:
-            print(f"The user blinked with his left eye!")
 
         if self.__right_eye_height / self.__right_eye_width > blink_thd:
             cv2.arrowedLine(src, tuple(self.__pupils[1].astype(int)),
                             tuple((offset + self.__pupils[1]).astype(int)),
                             arrow_color, 2)
-        else:
-            print(f"The user blinked with his right eye!")
-
         return src
 
 
@@ -432,13 +403,14 @@ def cleanup_image_capture(capture):
 def main():
     debug_active = args.debug
     enable_annotation = args.enable_annotation
+    show_video = args.show_video
 
     # fall back to webcam ('0') if no input video was provided
     video = args.video_file if args.video_file else 0
     capture = cv2.VideoCapture(video)
     video_width, video_height = capture.get(3), capture.get(4)
 
-    eye_tracker = EyeTracker(video_width, video_height, debug_active, enable_annotation)
+    eye_tracker = EyeTracker(video_width, video_height, debug_active, enable_annotation, show_video)
 
     try:
         while True:
@@ -470,11 +442,13 @@ if __name__ == "__main__":
                                                  "Press 'q' on the keyboard to stop the tracking if reading from "
                                                  "webcam.")
     parser.add_argument("-v", "--video_file", help="path to a video file to be used instead of the webcam", type=str)
-    parser.add_argument("-d", "--debug", help="Enable debug mode: logged data is written to stdout instead of files "
-                                              "and the recorded video frames are shown in a separate window.",
+    parser.add_argument("-d", "--debug", help="Enable debug mode: logged data is written to stdout instead of files",
                         action="store_true")
     parser.add_argument("-a", "--enable_annotation", help="If enabled the tracked face parts are highlighted in the "
-                                                          "current frame.",
+                                                          "current frame",
+                        action="store_true")
+    parser.add_argument("-s", "--show_video", help="If enabled the given video or the webcam recoding is shown in a "
+                                                   "separate window",
                         action="store_true")
     args = parser.parse_args()
 

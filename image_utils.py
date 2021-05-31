@@ -1,9 +1,40 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
+from numpy import ndarray
 from scipy.spatial import distance as dist
 import cv2
 # import dlib
+
+
+def preprocess_frame(frame: ndarray, kernel_size=5, keep_dim=True) -> ndarray:
+    """
+    Converts bgr image to grayscale using opencv. If keep_dim is set to True it will
+    be converted back to BGR afterwards so that the third dimension will still be 3.
+    This is necessary for some mxnet detectors that require a 4-Dim image input.
+    """
+    # Convert to grayscale and keep dimensions as required for the face (alignment) detectors
+    grayscale_image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    if keep_dim:
+        grayscale_image = cv2.cvtColor(grayscale_image, cv2.COLOR_GRAY2BGR)
+
+    # blur to reduce noise; use smaller kernels to improve speed
+    blurred_image = cv2.GaussianBlur(grayscale_image, (kernel_size, kernel_size), 0)
+    return blurred_image
+
+
+def convert_to_grayscale(rgb_img):
+    """
+    Convert linear RGB values to linear grayscale values.
+    This function was taken from https://gitlab.com/brohrer/lodgepole/-/blob/main/lodgepole/image_tools.py;
+    read https://e2eml.school/convert_rgb_to_grayscale.html for an explanation of the values
+    """
+    red = rgb_img[:, :, 0]
+    green = rgb_img[:, :, 1]
+    blue = rgb_img[:, :, 2]
+
+    gray_img = (0.299 * red + 0.587 * green + 0.114 * blue)
+    return gray_img
 
 
 def eye_aspect_ratio(eye):
