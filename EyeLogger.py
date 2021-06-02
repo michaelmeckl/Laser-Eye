@@ -47,7 +47,7 @@ def run_continuously(interval=1):
 
 # noinspection PyAttributeOutsideInit
 class Logger:
-    def __init__(self, log_folder="tracking_data", default_log_file="example_log.csv"):
+    def __init__(self, log_folder="tracking_data", default_log_file="tracking_log.csv"):
         self.__log_folder = log_folder
         self.__log_file = default_log_file
         self.__log_file_path = pathlib.Path(self.__log_folder + "/" + self.__log_file)
@@ -62,8 +62,11 @@ class Logger:
         if not folder_path.is_dir():
             folder_path.mkdir()
 
-        # if the log file already exists, read the current log data else create the log data csv header
-        current_log = pd.read_csv(self.__log_file_path, sep=";") if self.__log_file_path.is_file() else pd.DataFrame()
+        # if the log file already exists and is not empty, read the current log data else create an empty dataframe
+        if self.__log_file_path.is_file() and self.__log_file_path.stat().st_size > 0:
+            current_log = pd.read_csv(self.__log_file_path, sep=";")
+        else:
+            current_log = pd.DataFrame()
         return current_log
 
     def __start_scheduling(self):
@@ -79,10 +82,10 @@ class Logger:
         schedule_interval = 60  # schedule logging to csv file every minute
         schedule.every(schedule_interval).seconds.do(self.log_tracking_data)
         # Start the background thread
-        self.__logging_job = run_continuously(interval=schedule_interval)
+        self.__logging_job = run_continuously()
 
     def stop_scheduling(self):
-        # Stop the background thread
+        # Stop the background thread on the next schedule interval
         self.__logging_job.set()
 
     def save_frame(self, frame_id: float, data: dict[LogData, Any]):
