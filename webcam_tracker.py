@@ -2,13 +2,13 @@
 # -*- coding:utf-8 -*-
 
 import argparse
-import pathlib
 import sys
 import time
 import cv2
 import numpy as np
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
+from EyeLogger import Logger, LogData
 from image_utils import preprocess_frame
 from service.blink_detector import BlinkDetector
 from service.face_alignment import CoordinateAlignmentModel
@@ -29,8 +29,6 @@ def get_timestamp() -> float:
 - average pupilsize; peak pupil size
 - fixations and saccades (count, mean, std)   ❌ # TODO
 - blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
-
-- gaze direction ?   (✔ ️) (only a basic estimation, but probably not even needed)
 """
 
 
@@ -51,37 +49,6 @@ def get_timestamp() -> float:
 # doch ganzes video mit aufzeichnen? vermtl. nicht sinnvoll wegen Größe und FPS-Einbußen?
 
 
-class Logger:
-    def __init__(self, log_folder="tracking_data", log_file="eyetracking_log.csv", debug=False):
-        self.__log_folder = log_folder
-        self.__default_log_file = log_file
-        self.__debug = debug
-
-        # create log folder if it doesn't exist yet
-        path = pathlib.Path(self.__log_folder)
-        if not path.is_dir():
-            path.mkdir()
-
-    def log_tracking_data(self, data):
-        # TODO
-        if self.__debug:
-            # print to stdout
-            pass
-        else:
-            # log to file
-            pass
-
-    def save_image(self, dirname: str, filename: str, image: np.ndarray):
-        path = pathlib.Path(self.__log_folder + "/" + dirname)
-        if not path.is_dir():
-            path.mkdir()
-
-        # check if empty first as it crashes if given an empty array (e.g. if face / eyes not fully visible)
-        if image.size:
-            timestamp = get_timestamp()
-            cv2.imwrite(f'{path}/{filename}__{timestamp}.png', image)
-
-
 # noinspection PyAttributeOutsideInit
 class EyeTracker:
 
@@ -90,21 +57,49 @@ class EyeTracker:
         self.__debug = debug_active
         self.__annotation_enabled = enable_annotation
         self.__show_video = show_video
-        self.__logger = Logger()
+
+        """
+        self.frame_count = 0
+        self.t1 = None
+        self.t2 = None
+        """
+
+        self.__init_logger()
 
         self.blink_detector = BlinkDetector()
-
         self.face_detector = MxnetDetectionModel("weights/16and32", 0, .6, gpu=gpu_ctx)
         self.face_alignment = CoordinateAlignmentModel('weights/2d106det', 0, gpu=gpu_ctx)
         # self.face_alignment = CoordinateAlignmentModel('weights/model-hg2d3-cab/model', 0, gpu=gpu_ctx)
         self.iris_locator = IrisLocalizationModel("weights/iris_landmark.tflite")
         self.head_pose_estimator = HeadPoseEstimator("weights/object_points.npy", video_width, video_height)
 
+    def __init_logger(self):
+        self.__logger = Logger()
+        # self.__tracked_data = dict.fromkeys(LogData, None)
+
+        # use the name of the enum as dict key as otherwise it would always generate a new key the next time
+        # and would therefore always append new columns to our pandas dataframe!
+        self.__tracked_data = {key.name: None for key in LogData}
+
     def process_current_frame(self, frame: np.ndarray):
         """
         Args:
             frame: video frame in the format [width, height, channels]
         """
+
+        # measure actual frame count per second with current implementation:
+        # FIXME: ca. 100 ms avg zwischen Frames; bei meiner meiner 30 FPS cam heißt das:
+        # 1000/30 = 33.3ms => 33.3 + 100 = 133ms zwischen Frames! => 1000/133 ~= 7.5 frames pro sekunde!
+        """
+        self.frame_count += 1
+        print(f"########\nFrame {self.frame_count} at {datetime.now()}\n#######")
+        if self.frame_count % 2 == 1:
+            self.t1 = get_timestamp()
+        elif self.frame_count % 2 == 0:
+            self.t2 = get_timestamp()
+            print(f"########\nTime between frames {self.t2 - self.t1} seconds\n#######")
+        """
+
         processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
         self.__current_frame = processed_frame
 
@@ -113,10 +108,10 @@ class EyeTracker:
             self.__landmarks = landmarks
             # calculate head pose
             _, euler_angle = self.head_pose_estimator.get_head_pose(landmarks)
-            pitch, yaw, roll = euler_angle[:, 0]
+            self.__pitch, self.__yaw, self.__roll = euler_angle[:, 0]
 
             self.__get_eye_features()
-            self.__track_gaze(yaw, roll)
+            self.__track_gaze(self.__yaw, self.__roll)
 
             if self.__annotation_enabled:
                 self.__draw_face_landmarks()
@@ -132,23 +127,57 @@ class EyeTracker:
             eye_region_bbox = self.__extract_eye_region()
             left_eye_bbox, right_eye_bbox = self.__extract_eyes()
             left_pupil_bbox, right_pupil_bbox = self.__extract_pupils()
-
-            # FIXME: for some reason some images (for all 3 types) are not squared but one pixel larger in one
-            #  dimension!! -> Fix this!
-            if eye_region_bbox.shape[0] != eye_region_bbox.shape[1]:
-                pass
-                # TODO: sys.stderr.write(f"Frame was not squared: {eye_region_bbox.shape}")
-
-            self.__logger.save_image("eye_regions", "region", eye_region_bbox)
-            self.__logger.save_image("eyes", "left_eye_", left_eye_bbox)
-            self.__logger.save_image("eyes", "right_eye_", right_eye_bbox)
-            # the left pupil is actually the right one as it is mirrored:
-            self.__logger.save_image("pupils", "pupil_right", left_pupil_bbox)
-            self.__logger.save_image("pupils", "pupil_left", right_pupil_bbox)
+            self.__log(eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox)
 
         if self.__show_video:
             # show current annotated frame and save it as a png
             cv2.imshow('res', self.__current_frame)
+
+    # FIXME: logging auf separatem Thread? laggt gewaltig!!
+    # eigentlich am besten alles hier pro Frame auf separatem Thread! (sonst bekommen wir viel weniger Frames pro
+    # Sekunde)
+    def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox):
+        # fill dict with all relevant data so we don't have to pass all params manually
+        self.__tracked_data.update({
+            LogData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
+            LogData.FACE_LANDMARKS.name: self.__landmarks,  # .tolist(),
+            LogData.LEFT_EYE.name: self.__left_eye,
+            LogData.RIGHT_EYE.name: self.__right_eye,
+            LogData.LEFT_EYE_CENTER.name: self.__eye_centers[0],
+            LogData.RIGHT_EYE_CENTER.name: self.__eye_centers[1],
+            LogData.LEFT_EYE_WIDTH.name: self.__left_eye_width,
+            LogData.RIGHT_EYE_WIDTH.name: self.__right_eye_width,
+            LogData.LEFT_EYE_HEIGHT.name: self.__left_eye_height,
+            LogData.RIGHT_EYE_HEIGHT.name: self.__right_eye_height,
+            LogData.LEFT_PUPIL_POS.name: self.__pupils[0],
+            LogData.RIGHT_PUPIL_POS.name: self.__pupils[1],
+            LogData.LEFT_PUPIL_DIAMETER.name: 0,  # TODO wie pupillen durchmesser bestimmen?
+            LogData.RIGHT_PUPIL_DIAMETER.name: 0,
+        })
+        # TODO count, avg and std of blinks, fixations, saccades (also duration and peak)
+        # TODO wann loggen, pro Frame macht keinen Sinn!
+
+        # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
+        # can't be matched later!
+        log_timestamp = get_timestamp()
+        self.__logger.save_frame(frame_id=log_timestamp, data=self.__tracked_data)
+        # self.__logger.log_tracking_data(frame_id=log_timestamp, data=self.__tracked_data)
+
+        # FIXME: for some reason some images (for all 3 types) are not squared but one pixel larger in one
+        #  dimension!! -> Fix this!
+        if eye_region_bbox.shape[0] != eye_region_bbox.shape[1]:
+            pass
+            # TODO: sys.stderr.write(f"Frame was not squared: {eye_region_bbox.shape}")
+
+        self.__logger.save_image("eye_regions", "region", eye_region_bbox, log_timestamp)
+        self.__logger.save_image("eyes", "left_eye_", left_eye_bbox, log_timestamp)
+        self.__logger.save_image("eyes", "right_eye_", right_eye_bbox, log_timestamp)
+        self.__logger.save_image("pupils", "pupil_left", left_pupil_bbox, log_timestamp)
+        self.__logger.save_image("pupils", "pupil_right", right_pupil_bbox, log_timestamp)
+
+    def stop_tracking(self):
+        self.__logger.stop_scheduling()
+        # TODO other cleanup if necessary
 
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
@@ -209,8 +238,8 @@ class EyeTracker:
         if self.__debug:
             print(f"Eye region center is at {region_center}")
 
-        # calculate a squared bbox around the eye region; we consider only the region width
-        # as the eyes I know are usually far wider than large (correct me if I'm wrong ...)
+        # calculate a squared bbox around the eye region as we need square images later for our CNN;
+        # we consider only the region width as the eyes I know are usually far wider than large
         center_y = int(region_center[1])
         eye_region_width = max_x - min_x
         min_y_rect = center_y - int(eye_region_width / 2)
@@ -220,7 +249,6 @@ class EyeTracker:
             # visualize the squared eye region
             self.__highlight_eye_region(self.__current_frame, region_center, min_x, max_x, min_y, max_y)
 
-        # we need square images later for our CNN:
         eye_ROI = self.__current_frame[min_y_rect: max_y_rect, int(min_x): int(max_x)]
         return eye_ROI
 
@@ -295,9 +323,6 @@ class EyeTracker:
         # draw circle at eye region center (the middle point between both eyes)
         cv2.circle(frame, (int(region_center[0]), int(region_center[1])),
                    5, color=(0, 255, 0))
-        # draw circle around the whole eye region
-        cv2.circle(frame, (int(region_center[0]), int(region_center[1])),
-                   int(region_center[0] - min_x), color=(170, 0, 255))
         # draw a rectangle around the whole eye region
         cv2.rectangle(frame, (min_x.astype(int), min_y.astype(int)),
                       (max_x.astype(int), max_y.astype(int)), (0, 255, 255), 3)
@@ -310,6 +335,8 @@ class EyeTracker:
         cv2.rectangle(frame, (int(min_x), min_y_rect), (int(max_x), max_y_rect), (0, 222, 222), 2)
 
     def __track_gaze(self, yaw, roll):
+        # landmarks[[35, 89]] and landmarks[[39, 93]] are the start and end marks
+        # (i.e. the leftmost and rightmost) for each eye
         poi = self.__landmarks[[35, 89]], self.__landmarks[[39, 93]], self.__pupils, self.__eye_centers
         theta, pha, delta = self.__calculate_3d_gaze(self.__current_frame, poi)
 
@@ -325,14 +352,17 @@ class EyeTracker:
         else:
             zeta = arctan(end_mean[1] / (end_mean[0] + 1e-7))
 
+        # TODO use euler angles to give warnings if the head pos changed too much
         if roll < 0:
             roll += 180
-            # print(f"Head Roll Position is >= 0 ({roll}°)")
+            # print(f"Head Roll Position is >= 0 ({roll}°) -> Head right from center")
         else:
             roll -= 180
-            # print(f"Head Roll Position is < 0 ({roll}°)")
+            # print(f"Head Roll Position is < 0 ({roll}°) -> Head left from center")
 
         real_angle = zeta + roll * pi / 180
+        if self.__debug:
+            print(f"Gaze angle: {real_angle}°")
 
         # calculate the norm of the vector (i.e. the length)
         R = norm(end_mean)
@@ -371,7 +401,7 @@ class EyeTracker:
         delta *= scale
 
         if self.__annotation_enabled:
-            # highlight pupils
+            # highlight pupil centers
             cv2.circle(frame, tuple(pupils[0].astype(int)), 2, (0, 255, 255), -1)
             cv2.circle(frame, tuple(pupils[1].astype(int)), 2, (0, 255, 255), -1)
 
@@ -412,6 +442,18 @@ def main():
 
     eye_tracker = EyeTracker(video_width, video_height, debug_active, enable_annotation, show_video)
 
+    """
+    # record video
+    # fourcc = cv2.VideoWriter_fourcc(*'DIVX')  # for avi (but avi usually needs more space!)
+    # out = cv2.VideoWriter('qoutput.avi', fourcc, 30.0, (640, 480), isColor=True)  # 30 FPS
+
+    # fourcc =  cv2.VideoWriter_fourcc(*'VP90')  # for webm
+    # out = cv2.VideoWriter('output.webm', fourcc, 30, (640, 480), isColor=True)
+
+    fourcc2 = cv2.VideoWriter_fourcc(*'MP4V')  # for mp4  # H264 seems to work too
+    out = cv2.VideoWriter('output.mp4', fourcc2, 10.0, (640, 480), isColor=True)  # 10 FPS
+    """
+
     try:
         while True:
             return_code, frame = capture.read()  # read from input video or webcam
@@ -422,17 +464,22 @@ def main():
                 break
 
             eye_tracker.process_current_frame(frame)
+            # processed_frame = eye_tracker.get_f()
+            # out.write(processed_frame)
 
             # read until the video is finished or if no video was provided until the
             # user presses 'q' on the keyboard;
             # replace 1 with 0 to step manually through the video "frame-by-frame"
             if cv2.waitKey(1) & 0xFF == ord('q'):
+                # out.release()
+                eye_tracker.stop_tracking()
                 cleanup_image_capture(capture)
                 break
 
     except KeyboardInterrupt:
         # TODO should later be replaced with the keyboard library probably
         print("Press Ctrl-C to terminate while statement")
+        eye_tracker.stop_tracking()
         cleanup_image_capture(capture)
 
 

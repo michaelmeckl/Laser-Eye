@@ -70,7 +70,7 @@ class BlinkDetector:
             BlinkDetector.BLINK_COUNTER = 0
 
     def __detect_blinks_alt(self):
-        blinking_treshold = 2.9  # 3.7 for recorded video
+        blinking_treshold = 3.0  # 3.7 for recorded video
         frame_consec_count = 2
 
         left_eye_ratio = self.__left_eye_width / self.__left_eye_height
