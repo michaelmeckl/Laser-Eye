@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-
+import sys
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -64,7 +64,11 @@ class Logger:
 
         # if the log file already exists and is not empty, read the current log data else create an empty dataframe
         if self.__log_file_path.is_file() and self.__log_file_path.stat().st_size > 0:
-            current_log = pd.read_csv(self.__log_file_path, sep=";")
+            try:
+                current_log = pd.read_csv(self.__log_file_path, sep=";")
+            except Exception as e:
+                sys.stderr.write(f"Error when trying to read file:{e}")
+                current_log = pd.DataFrame()
         else:
             current_log = pd.DataFrame()
         return current_log
