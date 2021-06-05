@@ -192,15 +192,16 @@ class EyeTracker:
         self.__get_eye_sizes()
 
     def __find_pupils(self):
-        # eye_lengths = np.linalg.norm(self.__landmarks[[39, 93]] - self.__landmarks[[35, 89]], axis=1)
         eye_lengths = (self.__landmarks[[39, 93]] - self.__landmarks[[35, 89]])[:, 0]
 
         iris_left = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[0], self.__eye_centers[0])
-        pupil_left, _ = self.iris_locator.draw_pupil(iris_left, self.__current_frame,
-                                                     annotations_on=self.__annotation_enabled, thickness=1)
+        pupil_left, self.__iris_left_radius = self.iris_locator.draw_pupil(
+            iris_left, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
+        )
         iris_right = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[1], self.__eye_centers[1])
-        pupil_right, _ = self.iris_locator.draw_pupil(iris_right, self.__current_frame,
-                                                      annotations_on=self.__annotation_enabled, thickness=1)
+        pupil_right, self.__iris_right_radius = self.iris_locator.draw_pupil(
+            iris_right, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
+        )
         self.__pupils = np.array([pupil_left, pupil_right])
 
         if self.__debug:
@@ -287,20 +288,17 @@ class EyeTracker:
         # no need to check for x min and max as the left eye SHOULD always be further left than the right eye
         x_min = left_pupil[0]
         x_max = right_pupil[0]
-        max_width = max(self.__left_eye_width, self.__right_eye_width)
 
         # calculate bboxes for both pupils separately
-        # we use a half the max eye width as the square size; this turned out to be
-        # pretty accurate most of the time and is the best we can get from the provided landmarks
-        left_pupil_left_x = int(x_min - max_width / 4)
-        left_pupil_right_x = int(x_min + max_width / 4)
-        left_pupil_min_y = int(left_pupil[1] - max_width / 4)
-        left_pupil_max_y = int(left_pupil[1] + max_width / 4)
+        left_pupil_left_x = int(x_min - self.__iris_left_radius)
+        left_pupil_right_x = int(x_min + self.__iris_left_radius)
+        left_pupil_min_y = int(left_pupil[1] - self.__iris_left_radius)
+        left_pupil_max_y = int(left_pupil[1] + self.__iris_left_radius)
 
-        right_pupil_left_x = int(x_max - max_width / 4)
-        right_pupil_right_x = int(x_max + max_width / 4)
-        right_pupil_min_y = int(right_pupil[1] - max_width / 4)
-        right_pupil_max_y = int(right_pupil[1] + max_width / 4)
+        right_pupil_left_x = int(x_max - self.__iris_left_radius)
+        right_pupil_right_x = int(x_max + self.__iris_left_radius)
+        right_pupil_min_y = int(right_pupil[1] - self.__iris_left_radius)
+        right_pupil_max_y = int(right_pupil[1] + self.__iris_left_radius)
 
         if self.__annotation_enabled:
             # draw rectangles around both pupils
