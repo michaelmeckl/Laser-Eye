@@ -12,7 +12,6 @@ import schedule
 import time
 import threading
 
-
 LogData = Enum("LogData", "HEAD_POS_ROLL_PITCH_YAW FACE_LANDMARKS LEFT_EYE RIGHT_EYE LEFT_EYE_CENTER "
                           "RIGHT_EYE_CENTER LEFT_EYE_WIDTH RIGHT_EYE_WIDTH LEFT_EYE_HEIGHT RIGHT_EYE_HEIGHT "
                           "LEFT_PUPIL_POS RIGHT_PUPIL_POS LEFT_PUPIL_DIAMETER RIGHT_PUPIL_DIAMETER")
@@ -52,6 +51,7 @@ class Logger:
         self.__log_file = default_log_file
         self.__log_file_path = pathlib.Path(self.__log_folder + "/" + self.__log_file)
 
+        self.__log_tag = "logger"
         self.__log_data = self.__init_log()
         self.__tracking_data = []
         self.__start_scheduling()
@@ -84,11 +84,15 @@ class Logger:
         main thread.
         """
         schedule_interval = 60  # schedule logging to csv file every minute
-        schedule.every(schedule_interval).seconds.do(self.log_tracking_data)
+        schedule.every(schedule_interval).seconds.do(self.log_tracking_data).tag(self.__log_tag)
         # Start the background thread
         self.__logging_job = run_continuously()
 
     def stop_scheduling(self):
+        # cancel current scheduling job
+        current_job = schedule.get_jobs(self.__log_tag)[0]
+        if current_job is not None:
+            schedule.cancel_job(current_job)
         # Stop the background thread on the next schedule interval
         self.__logging_job.set()
 
