@@ -17,6 +17,10 @@ LogData = Enum("LogData", "HEAD_POS_ROLL_PITCH_YAW FACE_LANDMARKS LEFT_EYE RIGHT
                           "LEFT_PUPIL_POS RIGHT_PUPIL_POS LEFT_PUPIL_DIAMETER RIGHT_PUPIL_DIAMETER")
 
 
+def get_timestamp() -> float:
+    return time.time()
+
+
 def run_continuously(interval=1):
     """Continuously run, while executing pending jobs at each
     elapsed time interval.

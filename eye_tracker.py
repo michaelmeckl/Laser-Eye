@@ -1,52 +1,17 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
-import argparse
-import sys
-import time
 import cv2
 import numpy as np
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
-from EyeLogger import Logger, LogData
-from image_utils import preprocess_frame
+from utils.EyeLogger import Logger, LogData, get_timestamp
+from utils.image_utils import preprocess_frame
 from service.blink_detector import BlinkDetector
 from service.face_alignment import CoordinateAlignmentModel
 from service.face_detector import MxnetDetectionModel
 from service.head_pose import HeadPoseEstimator
 from service.iris_localization import IrisLocalizationModel
-
-
-def get_timestamp() -> float:
-    return time.time()
-
-
-# TODO we need:
-"""
-- webcam images of eyes and pupils ✔
-- pupil positions  ✔
-- pupil sizes (diameter)
-- average pupilsize; peak pupil size
-- fixations and saccades (count, mean, std)   ❌ # TODO
-- blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
-"""
-
-
-# TODO Lösungsansätze für Problem mit unterschiedlichen Bilddimensionen pro Frame:
-# 1. kleinere bilder mit padding versehen bis alle gleich groß wie größtes
-# 2. größere bilder runterskalieren bis alle gleich groß wie kleinstes (oder alternativ crop)
-# 3. jetzt erstmal unterschiedlich lassen und dann später beim CNN vorverarbeiten!
-#      -> vermtl. eh am besten weil später neue Bilder ja auch erstmal vorverarbeitet werden müssen!
-# TODO: => fürs Erste jetzt ignorieren und nur Rechtecke nehmen!
-
-# TODO:
-# add some parts to the readme on how this was updated compared to the original
-
-# remove all parts of the tracking that isn't needed (e.g. gaze tracking probably)
-
-# Warnings mit einbauen, wenn der Nutzer sich zu viel beweget oder daten zu schlecht und die Zeitpunkte hier mitloggen!
-
-# doch ganzes video mit aufzeichnen? vermtl. nicht sinnvoll wegen Größe und FPS-Einbußen?
 
 
 # noinspection PyAttributeOutsideInit
@@ -133,9 +98,8 @@ class EyeTracker:
             # show current annotated frame and save it as a png
             cv2.imshow('res', self.__current_frame)
 
-    # FIXME: logging auf separatem Thread? laggt gewaltig!!
-    # eigentlich am besten alles hier pro Frame auf separatem Thread! (sonst bekommen wir viel weniger Frames pro
-    # Sekunde)
+        return self.__current_frame
+
     def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox):
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
@@ -167,8 +131,9 @@ class EyeTracker:
         #  dimension!! -> Fix this!
         if eye_region_bbox.shape[0] != eye_region_bbox.shape[1]:
             pass
-            # TODO: sys.stderr.write(f"Frame was not squared: {eye_region_bbox.shape}")
+            # sys.stderr.write(f"\nFrame was not squared: {eye_region_bbox.shape}")
 
+        # TODO resize images before saving?
         self.__logger.save_image("eye_regions", "region", eye_region_bbox, log_timestamp)
         self.__logger.save_image("eyes", "left_eye_", left_eye_bbox, log_timestamp)
         self.__logger.save_image("eyes", "right_eye_", right_eye_bbox, log_timestamp)
@@ -421,80 +386,3 @@ class EyeTracker:
                             tuple((offset + self.__pupils[1]).astype(int)),
                             arrow_color, 2)
         return src
-
-
-def cleanup_image_capture(capture):
-    capture.release()
-    cv2.destroyAllWindows()
-
-
-def main():
-    debug_active = args.debug
-    enable_annotation = args.enable_annotation
-    show_video = args.show_video
-
-    # fall back to webcam ('0') if no input video was provided
-    video = args.video_file if args.video_file else 0
-    capture = cv2.VideoCapture(video)
-    video_width, video_height = capture.get(3), capture.get(4)
-
-    eye_tracker = EyeTracker(video_width, video_height, debug_active, enable_annotation, show_video)
-
-    """
-    # record video
-    # fourcc = cv2.VideoWriter_fourcc(*'DIVX')  # for avi (but avi usually needs more space!)
-    # out = cv2.VideoWriter('qoutput.avi', fourcc, 30.0, (640, 480), isColor=True)  # 30 FPS
-
-    # fourcc =  cv2.VideoWriter_fourcc(*'VP90')  # for webm
-    # out = cv2.VideoWriter('output.webm', fourcc, 30, (640, 480), isColor=True)
-
-    fourcc2 = cv2.VideoWriter_fourcc(*'MP4V')  # for mp4  # H264 seems to work too
-    out = cv2.VideoWriter('output.mp4', fourcc2, 10.0, (640, 480), isColor=True)  # 10 FPS
-    """
-
-    try:
-        while True:
-            return_code, frame = capture.read()  # read from input video or webcam
-
-            if not return_code:
-                # break loop if getting frame was not successful
-                sys.stderr.write("Unknown error while trying to get current frame!")
-                break
-
-            eye_tracker.process_current_frame(frame)
-            # processed_frame = eye_tracker.get_f()
-            # out.write(processed_frame)
-
-            # read until the video is finished or if no video was provided until the
-            # user presses 'q' on the keyboard;
-            # replace 1 with 0 to step manually through the video "frame-by-frame"
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                # out.release()
-                eye_tracker.stop_tracking()
-                cleanup_image_capture(capture)
-                break
-
-    except KeyboardInterrupt:
-        # TODO should later be replaced with the keyboard library probably
-        print("Press Ctrl-C to terminate while statement")
-        eye_tracker.stop_tracking()
-        cleanup_image_capture(capture)
-
-
-if __name__ == "__main__":
-    # setup an argument parser to enable command line parameters
-    parser = argparse.ArgumentParser(description="Webcam eye tracking system that logs different facial information. "
-                                                 "Press 'q' on the keyboard to stop the tracking if reading from "
-                                                 "webcam.")
-    parser.add_argument("-v", "--video_file", help="path to a video file to be used instead of the webcam", type=str)
-    parser.add_argument("-d", "--debug", help="Enable debug mode: logged data is written to stdout instead of files",
-                        action="store_true")
-    parser.add_argument("-a", "--enable_annotation", help="If enabled the tracked face parts are highlighted in the "
-                                                          "current frame",
-                        action="store_true")
-    parser.add_argument("-s", "--show_video", help="If enabled the given video or the webcam recoding is shown in a "
-                                                   "separate window",
-                        action="store_true")
-    args = parser.parse_args()
-
-    main()

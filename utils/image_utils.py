@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-
+import imutils
 from numpy import ndarray
 from scipy.spatial import distance as dist
 import cv2
@@ -95,12 +95,28 @@ def image_processing(eye_frame, threshold):
     return new_frame
 
 
+def resize_image(image, size=150, show_resized=False):
+    resized = imutils.resize(image, width=size)
+    if show_resized:
+        cv2.imshow(f"Size={size}dpx", resized)
+    return resized
+
+
 def apply_edge_detection(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     ratio, kernel_size = 3, 3
     low_threshold = 50
     detected_edges = cv2.Canny(gray, low_threshold, low_threshold * ratio, kernel_size)
     return detected_edges
+
+
+def apply_automatic_canny(frame, show_edges=False):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    edgeMap = imutils.auto_canny(gray)
+    if show_edges:
+        cv2.imshow("Original", frame)
+        cv2.imshow("Automatic Edge Map", edgeMap)
+    return edgeMap
 
 
 def apply_hough_circles(image):
