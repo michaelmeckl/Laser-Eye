@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import cv2
+from datetime import datetime
 import numpy as np
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
@@ -124,8 +125,7 @@ class EyeTracker:
         # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
         # can't be matched later!
         log_timestamp = get_timestamp()
-        self.__logger.save_frame(frame_id=log_timestamp, data=self.__tracked_data)
-        # self.__logger.log_tracking_data(frame_id=log_timestamp, data=self.__tracked_data)
+        self.__logger.log_frame_data(frame_id=log_timestamp, data=self.__tracked_data)
 
         # FIXME: for some reason some images (for all 3 types) are not squared but one pixel larger in one
         #  dimension!! -> Fix this!
@@ -134,11 +134,11 @@ class EyeTracker:
             # sys.stderr.write(f"\nFrame was not squared: {eye_region_bbox.shape}")
 
         # TODO resize images before saving?
-        self.__logger.save_image("eye_regions", "region", eye_region_bbox, log_timestamp)
-        self.__logger.save_image("eyes", "left_eye_", left_eye_bbox, log_timestamp)
-        self.__logger.save_image("eyes", "right_eye_", right_eye_bbox, log_timestamp)
-        self.__logger.save_image("pupils", "pupil_left", left_pupil_bbox, log_timestamp)
-        self.__logger.save_image("pupils", "pupil_right", right_pupil_bbox, log_timestamp)
+        self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
+        self.__logger.log_image("eyes", "left_eye_", left_eye_bbox, log_timestamp)
+        self.__logger.log_image("eyes", "right_eye_", right_eye_bbox, log_timestamp)
+        self.__logger.log_image("pupils", "pupil_left", left_pupil_bbox, log_timestamp)
+        self.__logger.log_image("pupils", "pupil_right", right_pupil_bbox, log_timestamp)
 
     def stop_tracking(self):
         self.__logger.stop_scheduling()

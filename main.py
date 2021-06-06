@@ -2,7 +2,9 @@
 # -*- coding:utf-8 -*-
 
 import argparse
+import datetime
 import sys
+import threading
 import cv2
 from eye_tracker import EyeTracker
 from utils.FpsMeasuring import FPS
@@ -47,6 +49,58 @@ def cleanup_image_capture(capture):
     cv2.destroyAllWindows()
 
 
+class TrackingSystem:
+    def __init__(self):
+        self._current_frame = None
+        self.stop_tracking = False
+
+    def get_current_frame(self):
+        return self._current_frame
+
+    def stop(self):
+        self.stop_tracking = False
+
+    def start_tracking(self, capture, eye_tracker):
+        c = 0
+        start = datetime.datetime.now()
+        try:
+            while True:
+                if self.stop_tracking:
+                    break
+
+                frame = capture.read()
+                if frame is None:
+                    sys.stderr.write("Frame from stream thread is None! This shouldn't happen!")
+                    sys.exit(1)
+
+                processed_frame = eye_tracker.process_current_frame(frame)
+                # out.write(processed_frame)  # write current frame to video
+
+                # update the FPS counter
+                c += 1
+
+                cv2.putText(processed_frame, f"FPS: {c / (datetime.datetime.now()-start).total_seconds()}",
+                            (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                cv2.imshow('fps', processed_frame)
+
+                self._current_frame = processed_frame
+
+                # read until the video is finished or if no video was provided until the
+                # user presses 'q' on the keyboard;
+                # replace 1 with 0 to step manually through the video "frame-by-frame"
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    # out.release()  # release output video
+                    eye_tracker.stop_tracking()
+                    cleanup_image_capture(capture)
+                    break
+
+        except KeyboardInterrupt:
+            # TODO should later be replaced with the keyboard library probably
+            print("Press Ctrl-C to terminate while statement")
+            eye_tracker.stop_tracking()
+            cleanup_image_capture(capture)
+
+
 def main():
     debug_active = args.debug
     enable_annotation = args.enable_annotation
@@ -64,7 +118,7 @@ def main():
     cap_fps = capture.get_stream_fps()
     fps_sleep = int(1000 / cap_fps)
     print('* Capture FPS:', cap_fps, 'ideal wait time between frames:', fps_sleep, 'ms')
-    fps = FPS().start()  # start measuring FPS  # TODO only for debugging!! -> disable later
+    # fps = FPS().start()  # start measuring FPS  # TODO only for debugging!! -> disable later
 
     eye_tracker = EyeTracker(video_width, video_height, debug_active, enable_annotation, show_video)
 
@@ -74,37 +128,29 @@ def main():
     out = cv2.VideoWriter('output.mp4', fourcc2, 10.0, (640, 480), isColor=True)  # 10 FPS
     """
 
+    tracker = TrackingSystem()
     try:
+        t = threading.Thread(target=tracker.start_tracking, args=(capture, eye_tracker), daemon=True)
+        t.start()
+
+        """
+        _start = datetime.datetime.now()
         while True:
-            frame = capture.read()
-            if frame is None:
-                sys.stderr.write("Frame from stream thread is None! This shouldn't happen!")
-                sys.exit(1)
+            f = tracker.get_current_frame()
+            if f is None:
+                continue
 
-            # TODO crashes maybe because new frame processed before last one was finished?
-            # t = threading.Thread(target=eye_tracker.process_current_frame, args=(frame,), daemon=True)
-            # t.start()
-            # t.join()  # TODO
-
-            processed_frame = eye_tracker.process_current_frame(frame)
-            # out.write(processed_frame)  # write current frame to video
-
-            # update the FPS counter
             fps.update()
+            # if f.size:
+            #    cv2.imwrite(f'test_images/frame__{get_timestamp()}.png', f)
 
-            # read until the video is finished or if no video was provided until the
-            # user presses 'q' on the keyboard;
-            # replace 1 with 0 to step manually through the video "frame-by-frame"
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                # out.release()  # release output video
-                eye_tracker.stop_tracking()
-                cleanup_image_capture(capture)
-
-                # stop the timer and display FPS information
+            if cv2.waitKey(1) & 0xFF == ord('e'):
+                tracker.stop()
                 fps.stop()
                 print(f"[INFO] elasped time: {fps.elapsed():.2f}")
                 print(f"[INFO] approx. FPS: {fps.fps():.2f}")
                 break
+        """
 
     except KeyboardInterrupt:
         # TODO should later be replaced with the keyboard library probably
@@ -112,10 +158,12 @@ def main():
         eye_tracker.stop_tracking()
         cleanup_image_capture(capture)
 
-        # stop the timer and display FPS information
-        fps.stop()
-        print(f"[INFO] elasped time: {fps.elapsed():.2f}")
-        print(f"[INFO] approx. FPS: {fps.fps():.2f}")
+        tracker.stop()
+
+        # # stop the timer and display FPS information
+        # fps.stop()
+        # print(f"[INFO] elasped time: {fps.elapsed():.2f}")
+        # print(f"[INFO] approx. FPS: {fps.fps():.2f}")
 
 
 if __name__ == "__main__":

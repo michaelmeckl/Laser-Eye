@@ -58,6 +58,7 @@ class Logger:
         self.__log_tag = "logger"
         self.__log_data = self.__init_log()
         self.__tracking_data = []
+        self.__image_data = []
         self.__start_scheduling()
 
     def __init_log(self):
@@ -87,8 +88,8 @@ class Logger:
         Another benefit is that it moves the I/O operation (writing to file) happen less often and off the
         main thread.
         """
-        schedule_interval = 60  # schedule logging to csv file every minute
-        schedule.every(schedule_interval).seconds.do(self.log_tracking_data).tag(self.__log_tag)
+        schedule_interval = 30  # schedule logging to csv file periodically
+        schedule.every(schedule_interval).seconds.do(self.__save_tracking_data).tag(self.__log_tag)
         # Start the background thread
         self.__logging_job = run_continuously()
 
@@ -100,17 +101,24 @@ class Logger:
         # Stop the background thread on the next schedule interval
         self.__logging_job.set()
 
-    def save_frame(self, frame_id: float, data: dict[LogData, Any]):
+    def log_frame_data(self, frame_id: float, data: dict[LogData, Any]):
         # ** unpacks the dictionary as key-value pairs
         self.__tracking_data.append({'date': datetime.now(), 'frame_id': frame_id, **data})
 
-    def log_tracking_data(self):
+    def log_image(self, dirname: str, filename: str, image: np.ndarray, timestamp: float):
+        self.__image_data.append((dirname, filename, image, timestamp))
+
+    def __save_tracking_data(self):
         tracking_df = pd.DataFrame(self.__tracking_data)
         self.__log_data = self.__log_data.append(tracking_df)
         self.__log_data.to_csv(self.__log_file_path, sep=";", index=False)
         self.__tracking_data.clear()  # reset tracking data
 
-    def save_image(self, dirname: str, filename: str, image: np.ndarray, timestamp: float):
+        for entry in self.__image_data:
+            self.__save_image(*entry)
+        self.__image_data.clear()
+
+    def __save_image(self, dirname: str, filename: str, image: np.ndarray, timestamp: float):
         path = pathlib.Path(self.__log_folder + "/" + dirname)
         if not path.is_dir():
             path.mkdir()
