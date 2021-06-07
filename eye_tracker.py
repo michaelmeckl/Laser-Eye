@@ -36,6 +36,7 @@ class EyeTracker:
         """
 
         self.__screenWidth, self.__screenHeight = pyautogui.size()
+        self.gaze_left, self.gaze_right = None, None
 
         self.__init_logger()
 
@@ -85,6 +86,7 @@ class EyeTracker:
 
             self.__get_eye_features()
             self.__track_gaze()
+            # self.__calculate_gaze_point()
 
             if self.__annotation_enabled:
                 self.__draw_face_landmarks()
@@ -95,8 +97,6 @@ class EyeTracker:
                                                    (self.__left_eye_width, self.__left_eye_height),
                                                    (self.__right_eye_width, self.__right_eye_height))
             self.blink_detector.detect_blinks()
-
-            self.__calculate_gaze_point()
 
             # extract different parts of the eye region and save them as pngs
             eye_region_bbox = self.__extract_eye_region()
@@ -140,20 +140,23 @@ class EyeTracker:
 
         # TODO resize images to larger ones before saving?
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
-        self.__logger.log_image("eyes", "left_eye_", left_eye_bbox, log_timestamp)
-        self.__logger.log_image("eyes", "right_eye_", right_eye_bbox, log_timestamp)
+        self.__logger.log_image("eyes", "left_eye", left_eye_bbox, log_timestamp)
+        self.__logger.log_image("eyes", "right_eye", right_eye_bbox, log_timestamp)
         self.__logger.log_image("pupils", "pupil_left", left_pupil_bbox, log_timestamp)
         self.__logger.log_image("pupils", "pupil_right", right_pupil_bbox, log_timestamp)
 
     def stop_tracking(self):
         self.__logger.stop_scheduling()
-        # TODO other cleanup if necessary
 
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
-        self.__left_eye = self.__eye_markers[0]
-        self.__right_eye = self.__eye_markers[1]
+        self.__left_eye = self.__eye_markers[1]
+        self.__right_eye = self.__eye_markers[0]
+
         self.__eye_centers = np.average(self.__eye_markers, axis=1)
+        # swap both eye centers as the left eye is actually the right one
+        # (because the defined eye bounds are using the mirrored image)
+        self.__eye_centers[[0, 1]] = self.__eye_centers[[1, 0]]
         if self.__debug:
             print(f"Eye markers: {self.__eye_markers}")
             print(f"Eye centers: {self.__eye_centers}")
@@ -164,11 +167,11 @@ class EyeTracker:
     def __find_pupils(self):
         eye_lengths = (self.__landmarks[[39, 93]] - self.__landmarks[[35, 89]])[:, 0]
 
-        self.__iris_left = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[0], self.__eye_centers[0])
+        self.__iris_left = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[1], self.__eye_centers[0])
         pupil_left, self.__iris_left_radius = self.iris_locator.draw_pupil(
             self.__iris_left, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
         )
-        self.__iris_right = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[1], self.__eye_centers[1])
+        self.__iris_right = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[0], self.__eye_centers[1])
         pupil_right, self.__iris_right_radius = self.iris_locator.draw_pupil(
             self.__iris_right, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
         )
@@ -179,12 +182,12 @@ class EyeTracker:
             print(f"Pupil right: {pupil_right}")
 
     def __get_eye_sizes(self):
-        self.__landmarks[[38, 92]] = self.__landmarks[[34, 88]] = self.__eye_centers
+        self.__landmarks[[92, 38]] = self.__landmarks[[88, 34]] = self.__eye_centers
 
-        self.__left_eye_height = self.__landmarks[33, 1] - self.__landmarks[40, 1]
-        self.__left_eye_width = self.__landmarks[39, 0] - self.__landmarks[35, 0]
-        self.__right_eye_height = self.__landmarks[87, 1] - self.__landmarks[94, 1]
-        self.__right_eye_width = self.__landmarks[93, 0] - self.__landmarks[89, 0]
+        self.__right_eye_height = self.__landmarks[33, 1] - self.__landmarks[40, 1]
+        self.__right_eye_width = self.__landmarks[39, 0] - self.__landmarks[35, 0]
+        self.__left_eye_height = self.__landmarks[87, 1] - self.__landmarks[94, 1]
+        self.__left_eye_width = self.__landmarks[93, 0] - self.__landmarks[89, 0]
 
         if self.__debug:
             print(f"Left eye sizes: width: {self.__left_eye_width}, height: {self.__left_eye_height}")
@@ -255,18 +258,15 @@ class EyeTracker:
         Get both pupils as separate (square-sized) images.
         """
         left_pupil, right_pupil = self.__pupils[0], self.__pupils[1]
-        # no need to check for x min and max as the left eye SHOULD always be further left than the right eye
-        x_min = left_pupil[0]
-        x_max = right_pupil[0]
 
         # calculate bboxes for both pupils separately
-        left_pupil_left_x = int(x_min - self.__iris_left_radius)
-        left_pupil_right_x = int(x_min + self.__iris_left_radius)
+        left_pupil_left_x = int(left_pupil[0] - self.__iris_left_radius)
+        left_pupil_right_x = int(left_pupil[0] + self.__iris_left_radius)
         left_pupil_min_y = int(left_pupil[1] - self.__iris_left_radius)
         left_pupil_max_y = int(left_pupil[1] + self.__iris_left_radius)
 
-        right_pupil_left_x = int(x_max - self.__iris_left_radius)
-        right_pupil_right_x = int(x_max + self.__iris_left_radius)
+        right_pupil_left_x = int(right_pupil[0] - self.__iris_left_radius)
+        right_pupil_right_x = int(right_pupil[0] + self.__iris_left_radius)
         right_pupil_min_y = int(right_pupil[1] - self.__iris_left_radius)
         right_pupil_max_y = int(right_pupil[1] + self.__iris_left_radius)
 
@@ -325,6 +325,21 @@ class EyeTracker:
         else:
             self.__roll -= 180
 
+        # TODO
+        # self.__watch_head_position()
+
+        real_angle = zeta + self.__roll * pi / 180
+        if self.__debug:
+            print(f"Gaze angle: {real_angle}°")
+
+        # calculate the norm of the vector (i.e. the length)
+        R = norm(end_mean)
+        offset = R * cos(real_angle), R * sin(real_angle)
+
+        if self.__annotation_enabled:
+            self.__draw_gaze(offset)
+
+    def __watch_head_position(self):
         # TODO use euler angles to give warnings if the head pos changed too much
         #  -> only show one notification at a time (use boolean flag maybe)
         if not -15 <= self.__roll <= 15:
@@ -349,17 +364,6 @@ class EyeTracker:
                                 message="Bringe deinen Kopf in eine gerade, aufrechte Position!",
                                 timeout=5)
         # print(f"Yaw: {self.__yaw}, Pitch: {self.__pitch}, Roll: {self.__roll}")
-
-        real_angle = zeta + self.__roll * pi / 180
-        if self.__debug:
-            print(f"Gaze angle: {real_angle}°")
-
-        # calculate the norm of the vector (i.e. the length)
-        R = norm(end_mean)
-        offset = R * cos(real_angle), R * sin(real_angle)
-
-        if self.__annotation_enabled:
-            self.__draw_gaze(offset)
 
     def __calculate_gaze_point(self):
         """
@@ -388,12 +392,12 @@ class EyeTracker:
         if gaze_point_left_y > self.__screenHeight or gaze_point_right_y > self.__screenHeight:
             print(f"Gaze points y are out of screen bounds! ({gaze_point_left_y, gaze_point_right_y})")
 
-        self.gz_left = (gaze_point_left_x, gaze_point_left_y)
-        print("Gaze left: ", self.gz_left)
-        self.gz_right = (gaze_point_right_x, gaze_point_right_y)
+        self.gaze_left = (gaze_point_left_x, gaze_point_left_y)
+        print("Gaze left: ", self.gaze_left)
+        self.gaze_right = (gaze_point_right_x, gaze_point_right_y)
 
     def get_gaze_points(self):
-        return self.gz_left, self.gz_right
+        return self.gaze_left, self.gaze_right
 
     def __calculate_3d_gaze(self, frame, poi, scale=256):
         SIN_LEFT_THETA = 2 * sin(pi / 4)
