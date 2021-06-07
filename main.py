@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
+from turtle import Turtle, Screen
 import argparse
 import datetime
 import sys
 import threading
 import cv2
+import pyautogui
 from eye_tracker import EyeTracker
 from utils.FpsMeasuring import FPS
 from utils.ThreadedFileVideoCapture import FileVideoStream
@@ -52,10 +54,42 @@ def cleanup_image_capture(capture):
 class TrackingSystem:
     def __init__(self):
         self._current_frame = None
+        self.gaze_point_l, self.gaze_point_r = None, None
         self.stop_tracking = False
+        self.stop_gaze_tracking = False
 
     def get_current_frame(self):
         return self._current_frame
+
+    def run_gaze_tracking(self):
+        self.__screenWidth, self.__screenHeight = pyautogui.size()  # Get the size of the primary monitor.
+        screen = Screen()
+        screen.setup(self.__screenWidth, self.__screenHeight)
+        screen.setworldcoordinates(0, 0, self.__screenWidth, self.__screenHeight)
+        self.__turt = Turtle(visible=True)
+        self.__turt.speed('fastest')
+
+        while True:
+            if self.stop_gaze_tracking:
+                break
+
+            if self.gaze_point_l is None or self.gaze_point_r is None:
+                continue
+
+            self.__turt.penup()
+
+            radius = 5
+            self.__turt.setposition(self.gaze_point_l[0], self.gaze_point_l[1])
+            self.__turt.dot(radius * 2, "green")
+
+            self.__turt.setposition(self.gaze_point_r[0], self.gaze_point_r[1])
+            self.__turt.dot(radius * 2, "blue")
+
+            x = (self.gaze_point_l[0] + self.gaze_point_r[0]) / 2
+            y = (self.gaze_point_l[1] + self.gaze_point_r[1]) / 2
+            avg_point = (x, y)  # - as turtle draws inverse in y direction
+            self.__turt.setposition(avg_point)
+            self.__turt.dot(8 * 2, "orange")
 
     def stop(self):
         self.stop_tracking = False
@@ -76,6 +110,8 @@ class TrackingSystem:
                 processed_frame = eye_tracker.process_current_frame(frame)
                 # out.write(processed_frame)  # write current frame to video
 
+                self.gaze_point_l, self.gaze_point_r = eye_tracker.get_gaze_points()
+
                 # update the FPS counter
                 c += 1
 
@@ -92,6 +128,8 @@ class TrackingSystem:
                     # out.release()  # release output video
                     eye_tracker.stop_tracking()
                     cleanup_image_capture(capture)
+
+                    self.stop_gaze_tracking = True
                     break
 
         except KeyboardInterrupt:
@@ -132,6 +170,8 @@ def main():
     try:
         t = threading.Thread(target=tracker.start_tracking, args=(capture, eye_tracker), daemon=True)
         t.start()
+
+        # tracker.run_gaze_tracking()
 
         """
         _start = datetime.datetime.now()

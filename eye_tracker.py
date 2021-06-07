@@ -1,9 +1,14 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
+import sys
 import cv2
 from datetime import datetime
+from plyer import notification
+# import sounddevice as sd
+# import soundfile as sf
 import numpy as np
+import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from utils.EyeLogger import Logger, LogData, get_timestamp
@@ -30,6 +35,8 @@ class EyeTracker:
         self.t2 = None
         """
 
+        self.__screenWidth, self.__screenHeight = pyautogui.size()
+
         self.__init_logger()
 
         self.blink_detector = BlinkDetector()
@@ -54,7 +61,7 @@ class EyeTracker:
         """
 
         # measure actual frame count per second with current implementation:
-        # FIXME: ca. 100 ms avg zwischen Frames; bei meiner meiner 30 FPS cam heißt das:
+        # ca. 100 ms avg zwischen Frames; bei meiner meiner 30 FPS cam heißt das:
         # 1000/30 = 33.3ms => 33.3 + 100 = 133ms zwischen Frames! => 1000/133 ~= 7.5 frames pro sekunde!
         """
         self.frame_count += 1
@@ -77,7 +84,7 @@ class EyeTracker:
             self.__pitch, self.__yaw, self.__roll = euler_angle[:, 0]
 
             self.__get_eye_features()
-            self.__track_gaze(self.__yaw, self.__roll)
+            self.__track_gaze()
 
             if self.__annotation_enabled:
                 self.__draw_face_landmarks()
@@ -88,6 +95,8 @@ class EyeTracker:
                                                    (self.__left_eye_width, self.__left_eye_height),
                                                    (self.__right_eye_width, self.__right_eye_height))
             self.blink_detector.detect_blinks()
+
+            self.__calculate_gaze_point()
 
             # extract different parts of the eye region and save them as pngs
             eye_region_bbox = self.__extract_eye_region()
@@ -127,13 +136,9 @@ class EyeTracker:
         log_timestamp = get_timestamp()
         self.__logger.log_frame_data(frame_id=log_timestamp, data=self.__tracked_data)
 
-        # FIXME: for some reason some images (for all 3 types) are not squared but one pixel larger in one
-        #  dimension!! -> Fix this!
-        if eye_region_bbox.shape[0] != eye_region_bbox.shape[1]:
-            pass
-            # sys.stderr.write(f"\nFrame was not squared: {eye_region_bbox.shape}")
+        # TODO some images are not squared but one pixel larger in one dimension (fix later in postprocessing)
 
-        # TODO resize images before saving?
+        # TODO resize images to larger ones before saving?
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
         self.__logger.log_image("eyes", "left_eye_", left_eye_bbox, log_timestamp)
         self.__logger.log_image("eyes", "right_eye_", right_eye_bbox, log_timestamp)
@@ -159,13 +164,13 @@ class EyeTracker:
     def __find_pupils(self):
         eye_lengths = (self.__landmarks[[39, 93]] - self.__landmarks[[35, 89]])[:, 0]
 
-        iris_left = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[0], self.__eye_centers[0])
+        self.__iris_left = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[0], self.__eye_centers[0])
         pupil_left, self.__iris_left_radius = self.iris_locator.draw_pupil(
-            iris_left, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
+            self.__iris_left, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
         )
-        iris_right = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[1], self.__eye_centers[1])
+        self.__iris_right = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[1], self.__eye_centers[1])
         pupil_right, self.__iris_right_radius = self.iris_locator.draw_pupil(
-            iris_right, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
+            self.__iris_right, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
         )
         self.__pupils = np.array([pupil_left, pupil_right])
 
@@ -208,14 +213,14 @@ class EyeTracker:
         # we consider only the region width as the eyes I know are usually far wider than large
         center_y = int(region_center[1])
         eye_region_width = max_x - min_x
-        min_y_rect = center_y - int(eye_region_width / 2)
-        max_y_rect = center_y + int(eye_region_width / 2)
+        min_y_rect = int(round(center_y - eye_region_width / 2))
+        max_y_rect = int(round(center_y + eye_region_width / 2))
 
         if self.__annotation_enabled:
             # visualize the squared eye region
             self.__highlight_eye_region(self.__current_frame, region_center, min_x, max_x, min_y, max_y)
 
-        eye_ROI = self.__current_frame[min_y_rect: max_y_rect, int(min_x): int(max_x)]
+        eye_ROI = self.__current_frame[min_y_rect: max_y_rect, int(round(min_x)): int(round(max_x))]
         return eye_ROI
 
     def __extract_eyes(self):
@@ -224,15 +229,15 @@ class EyeTracker:
         """
         left_eye_center, right_eye_center = self.__eye_centers[0], self.__eye_centers[1]
 
-        left_eye_x_min = int(left_eye_center[0] - self.__left_eye_width / 2)
-        left_eye_x_max = int(left_eye_center[0] + self.__left_eye_width / 2)
-        left_eye_y_min = int(left_eye_center[1] - self.__left_eye_width / 2)
-        left_eye_y_max = int(left_eye_center[1] + self.__left_eye_width / 2)
+        left_eye_x_min = int(round(left_eye_center[0] - self.__left_eye_width / 2))
+        left_eye_x_max = int(round(left_eye_center[0] + self.__left_eye_width / 2))
+        left_eye_y_min = int(round(left_eye_center[1] - self.__left_eye_width / 2))
+        left_eye_y_max = int(round(left_eye_center[1] + self.__left_eye_width / 2))
 
-        right_eye_x_min = int(right_eye_center[0] - self.__right_eye_width / 2)
-        right_eye_x_max = int(right_eye_center[0] + self.__right_eye_width / 2)
-        right_eye_y_min = int(right_eye_center[1] - self.__right_eye_width / 2)
-        right_eye_y_max = int(right_eye_center[1] + self.__right_eye_width / 2)
+        right_eye_x_min = int(round(right_eye_center[0] - self.__right_eye_width / 2))
+        right_eye_x_max = int(round(right_eye_center[0] + self.__right_eye_width / 2))
+        right_eye_y_min = int(round(right_eye_center[1] - self.__right_eye_width / 2))
+        right_eye_y_max = int(round(right_eye_center[1] + self.__right_eye_width / 2))
 
         if self.__annotation_enabled:
             # draw rectangles around both eyes
@@ -297,15 +302,15 @@ class EyeTracker:
         max_y_rect = center_y + int(eye_region_width / 2)
         cv2.rectangle(frame, (int(min_x), min_y_rect), (int(max_x), max_y_rect), (0, 222, 222), 2)
 
-    def __track_gaze(self, yaw, roll):
+    def __track_gaze(self):
         # landmarks[[35, 89]] and landmarks[[39, 93]] are the start and end marks
         # (i.e. the leftmost and rightmost) for each eye
         poi = self.__landmarks[[35, 89]], self.__landmarks[[39, 93]], self.__pupils, self.__eye_centers
         theta, pha, delta = self.__calculate_3d_gaze(self.__current_frame, poi)
 
-        if yaw > 30:
+        if self.__yaw > 30:
             end_mean = delta[0]
-        elif yaw < -30:
+        elif self.__yaw < -30:
             end_mean = delta[1]
         else:
             end_mean = np.average(delta, axis=0)
@@ -315,15 +320,37 @@ class EyeTracker:
         else:
             zeta = arctan(end_mean[1] / (end_mean[0] + 1e-7))
 
-        # TODO use euler angles to give warnings if the head pos changed too much
-        if roll < 0:
-            roll += 180
-            # print(f"Head Roll Position is >= 0 ({roll}°) -> Head right from center")
+        if self.__roll < 0:
+            self.__roll += 180
         else:
-            roll -= 180
-            # print(f"Head Roll Position is < 0 ({roll}°) -> Head left from center")
+            self.__roll -= 180
 
-        real_angle = zeta + roll * pi / 180
+        # TODO use euler angles to give warnings if the head pos changed too much
+        #  -> only show one notification at a time (use boolean flag maybe)
+        if not -15 <= self.__roll <= 15:
+            notification.notify(title="Head Position wrong (Roll)!",
+                                message="Bringe deinen Kopf in eine gerade, aufrechte Position!",
+                                timeout=5)
+            """
+            # also play a short audio
+            try:
+                data, fs = sf.read("./asset/notify.wav", dtype='float32')
+                sd.play(data, fs)
+                status = sd.wait()
+            except Exception as e:
+                sys.stderr.write(type(e).__name__ + ': ' + str(e))
+            """
+        if not -10 <= self.__pitch <= 10:
+            notification.notify(title="Head Position wrong (Pitch)!",
+                                message="Bringe deinen Kopf in eine gerade, aufrechte Position!",
+                                timeout=5)
+        if not -20 <= self.__yaw <= 20:
+            notification.notify(title="Head Position wrong (Yaw)!",
+                                message="Bringe deinen Kopf in eine gerade, aufrechte Position!",
+                                timeout=5)
+        # print(f"Yaw: {self.__yaw}, Pitch: {self.__pitch}, Roll: {self.__roll}")
+
+        real_angle = zeta + self.__roll * pi / 180
         if self.__debug:
             print(f"Gaze angle: {real_angle}°")
 
@@ -333,6 +360,40 @@ class EyeTracker:
 
         if self.__annotation_enabled:
             self.__draw_gaze(offset)
+
+    def __calculate_gaze_point(self):
+        """
+        Algorithm below taken from this answer: https://stackoverflow.com/a/52922636/14345809
+        """
+        # Scaling factor
+        scale_x_left = self.__screenWidth / self.__left_eye_width
+        scale_y_left = self.__screenHeight / self.__left_eye_height
+        scale_x_right = self.__screenWidth / self.__right_eye_width
+        scale_y_right = self.__screenHeight / self.__right_eye_height
+
+        # difference iris center - eye center (direction of iris and pupil)
+        eye_center_deviation_x_left = self.__pupils[0][0] - self.__eye_centers[0][0]
+        eye_center_deviation_y_left = self.__pupils[0][1] - self.__eye_centers[0][1]
+        eye_center_deviation_x_right = self.__pupils[1][0] - self.__eye_centers[1][0]
+        eye_center_deviation_y_right = self.__pupils[1][1] - self.__eye_centers[1][1]
+
+        gaze_point_left_x = (self.__screenWidth / 2) + scale_x_left * eye_center_deviation_x_left
+        gaze_point_left_y = (self.__screenHeight / 2) + scale_y_left * eye_center_deviation_y_left
+
+        gaze_point_right_x = (self.__screenWidth / 2) + scale_x_right * eye_center_deviation_x_right
+        gaze_point_right_y = (self.__screenHeight / 2) + scale_y_right * eye_center_deviation_y_right
+
+        if gaze_point_left_x > self.__screenWidth or gaze_point_right_x > self.__screenWidth:
+            print(f"Gaze points x are out of screen bounds! ({gaze_point_left_x, gaze_point_right_x}")
+        if gaze_point_left_y > self.__screenHeight or gaze_point_right_y > self.__screenHeight:
+            print(f"Gaze points y are out of screen bounds! ({gaze_point_left_y, gaze_point_right_y})")
+
+        self.gz_left = (gaze_point_left_x, gaze_point_left_y)
+        print("Gaze left: ", self.gz_left)
+        self.gz_right = (gaze_point_right_x, gaze_point_right_y)
+
+    def get_gaze_points(self):
+        return self.gz_left, self.gz_right
 
     def __calculate_3d_gaze(self, frame, poi, scale=256):
         SIN_LEFT_THETA = 2 * sin(pi / 4)
