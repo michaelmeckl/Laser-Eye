@@ -6,6 +6,36 @@ from scipy.spatial import distance as dist
 import cv2
 import numpy as np
 # import dlib
+from utils.EyeLogger import get_timestamp
+
+
+def find_pupil(frame, pupil_thresh=30, save=False):
+    # TODO mit dem threshold könnte man vllt auch ganz gut blinks erkennen...
+    image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    ret, thres = cv2.threshold(image, pupil_thresh, 255, cv2.THRESH_BINARY)
+
+    thresh = cv2.erode(thres, None, iterations=2)
+    thresh = cv2.dilate(thresh, None, iterations=4)
+
+    output = cv2.bitwise_and(image, image, mask=thresh)
+
+    img_contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    # cv2.drawContours(image, img_contours, -1, (0, 0, 255), thickness=1)
+
+    for (i, c) in enumerate(img_contours):
+        (x, y, w, h) = cv2.boundingRect(c)
+        cv2.rectangle(image, (x, y), (x + w, y + h), (255, 34, 34))
+        # ((cX, cY), radius) = cv2.minEnclosingCircle(c)
+        # cv2.circle(image, (int(cX), int(cY)), int(radius), (0, 0, 255), 1)
+
+    # show the images
+    cv2.imshow("images", np.hstack([image, output]))
+    if save and image.size:
+        cv2.imwrite(f'tracking_data/img_contours__{get_timestamp()}.png', image)
+
+
+def invert_image(image):
+    return cv2.bitwise_not(image)
 
 
 def circler(im):
@@ -19,11 +49,11 @@ def circler(im):
 
     print(f"Contours:\n{contours}")
 
-    ratio, kernel_size = 3, 3
-    low_threshold = 50
-    detected_edges = cv2.Canny(thres, low_threshold, low_threshold * ratio, kernel_size)
-
-    apply_hough_circles(thres)
+    # ratio, kernel_size = 3, 3
+    # low_threshold = 50
+    # detected_edges = cv2.Canny(thres, low_threshold, low_threshold * ratio, kernel_size)
+    #
+    # apply_hough_circles(thres)
 
     # try to extract contours of iris and pupil assuming no other contours have been detected
     # TODO this assumption would only work if given an image with only the eye and round pupils
@@ -48,7 +78,7 @@ def circler(im):
         if 0.2 < ratio < 0.8:
             return ratio, radius_i, center_i, radius_p, center_p
 
-    cv2.imshow('edges', detected_edges)
+    # cv2.imshow('edges', detected_edges)
     cv2.imshow('thres', thres)
     cv2.imshow('img', im)
 

@@ -12,7 +12,7 @@ import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from utils.EyeLogger import Logger, LogData, get_timestamp
-from utils.image_utils import preprocess_frame
+from utils.image_utils import preprocess_frame, find_pupil
 from service.blink_detector import BlinkDetector
 from service.face_alignment import CoordinateAlignmentModel
 from service.face_detector import MxnetDetectionModel
@@ -104,6 +104,8 @@ class EyeTracker:
             left_pupil_bbox, right_pupil_bbox = self.__extract_pupils()
             self.__log(eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox)
 
+            # find_pupil(left_eye_bbox, save=True)
+
         if self.__show_video:
             # show current annotated frame and save it as a png
             cv2.imshow('res', self.__current_frame)
@@ -139,6 +141,10 @@ class EyeTracker:
         # TODO some images are not squared but one pixel larger in one dimension (fix later in postprocessing)
 
         # TODO resize images to larger ones before saving?
+
+        # TODO denoise images?
+        # result = cv2.fastNlMeansDenoisingColored(eye_region_bbox, None, 7, 10, 7, eye_region_bbox.shape[0])  # 21
+
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
         self.__logger.log_image("eyes", "left_eye", left_eye_bbox, log_timestamp)
         self.__logger.log_image("eyes", "right_eye", right_eye_bbox, log_timestamp)
