@@ -7,6 +7,82 @@ import cv2
 import numpy as np
 # import dlib
 from utils.EyeLogger import get_timestamp
+# for morphological filtering
+from skimage.morphology import opening
+from skimage.morphology import disk
+
+
+def improve_image(image):
+    """
+    Different operations to improve the quality of the resized image.
+    fastNlMeansDenoising works best but takes for ever (1 or 2 seconds); gauß blur and erode/dilate work quite well too
+    """
+    resized_image = resize_image(image, size=150)
+    cv2.imshow("im_resized", resized_image)
+
+    denoised = cv2.fastNlMeansDenoising(resized_image, None, 10, 7, 21)
+    # cv2.fastNlMeansDenoisingMulti()  # for image sequence
+    cv2.imshow("im_denoised", denoised)
+
+    kernel_size = 5
+    blurred_image = cv2.GaussianBlur(resized_image, (kernel_size, kernel_size), 0)
+    cv2.imshow("im_blurred", blurred_image)
+
+    new_frame = cv2.bilateralFilter(resized_image, 10, 15, 15)
+    cv2.imshow("im_bil", new_frame)
+
+    thresh = cv2.erode(new_frame, None, iterations=2)
+    new_frame = cv2.dilate(thresh, None, iterations=4)
+    cv2.imshow("im_bil_erode_dilate", new_frame)
+
+    thresh = cv2.erode(resized_image, None, iterations=2)
+    new_frame = cv2.dilate(thresh, None, iterations=4)
+    cv2.imshow("im_erode_dilate", new_frame)
+
+    return new_frame
+
+
+def __connected_component_threshold(image):
+    """
+    Taken from this stackoverflow answer: https://stackoverflow.com/a/52006700
+    """
+    black = 0
+    white = 255
+    threshold = 50
+
+    pixels = np.array(image)[:, :, 0]
+    pixels[pixels > threshold] = white
+    pixels[pixels < threshold] = black
+
+    cv2.imshow("alternative", pixels)
+
+    # Morphological opening
+    blobSize = 1  # Select the maximum radius of the blobs you would like to remove
+    structureElement = disk(blobSize)  # you can define different shapes, here we take a disk shape
+    # We need to invert the image such that black is background and white foreground to perform the opening
+    pixels = np.invert(opening(np.invert(pixels), structureElement))
+
+    # Find the connected components (black objects in your image)
+    # Because the function searches for white connected components on a black background, we need to invert the image
+    nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(np.invert(pixels), connectivity=8)
+
+    # For every connected component in your image, you can obtain the number of pixels from the stats variable in the
+    # last column. We remove the first entry from sizes, because this is the entry of the background connected component
+    sizes = stats[1:, -1]
+    nb_components -= 1
+
+    # Define the minimum size (number of pixels) a component should consist of
+    minimum_size = 100
+
+    # Create a new image
+    newPixels = np.ones(pixels.shape) * 255
+
+    # Iterate over all components in the image, only keep the components larger than minimum size
+    for i in range(1, nb_components):
+        if sizes[i] > minimum_size:
+            newPixels[output == i + 1] = 0
+
+    cv2.imshow("alternative_connected", newPixels)
 
 
 def find_pupil(frame, pupil_thresh=30, save=False):
@@ -32,6 +108,13 @@ def find_pupil(frame, pupil_thresh=30, save=False):
     cv2.imshow("images", np.hstack([image, output]))
     if save and image.size:
         cv2.imwrite(f'tracking_data/img_contours__{get_timestamp()}.png', image)
+
+
+def increase_image_contrast(image):
+    kernel = np.ones((3, 3), np.uint8)
+    new_frame = cv2.bilateralFilter(image, 10, 15, 15)
+    new_frame = cv2.erode(new_frame, kernel, iterations=3)
+    return new_frame
 
 
 def invert_image(image):
@@ -222,7 +305,7 @@ def eye_aspect_ratio(eye):
     return ear
 
 
-def __zoom(img, center=None):
+def zoom(img, center=None):
     """
     It takes the size of the image, finds the center value, calculates the size according to the scale,
     crops it accordingly, and increases the size to the original size to return.
