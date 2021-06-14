@@ -1,12 +1,13 @@
 """
 Class for measuring fps; taken from
 https://www.pyimagesearch.com/2015/12/21/increasing-webcam-fps-with-python-and-opencv/
+and slightly adjusted.
 """
 
 import datetime
 
 
-class FPS:
+class FpsMeasurer:
     def __init__(self):
         # store the start time, end time, and total number of frames
         # that were examined between the start and end intervals
@@ -37,3 +38,11 @@ class FPS:
     def fps(self):
         # compute the (approximate) frames per second
         return self._numFrames / self.elapsed()
+
+    def get_current_fps(self):
+        elapsed_time = (datetime.datetime.now() - self._start).total_seconds()
+        return self._numFrames / elapsed_time if elapsed_time != 0 else self._numFrames
+
+    def show_optimal_fps(self, max_fps):
+        fps_ideal = int(1000 / max_fps)
+        print(f'* Capture FPS: {max_fps}; ideal wait time between frames: {fps_ideal} ms')

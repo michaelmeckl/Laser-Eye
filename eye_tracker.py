@@ -12,8 +12,9 @@ import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from utils.EyeLogger import Logger, LogData, get_timestamp
-from utils.image_utils import preprocess_frame, find_pupil
+from utils.image_utils import preprocess_frame, resize_image, improve_image, zoom
 from service.blink_detector import BlinkDetector
+# from service.saccade_fixation_detector import SaccadeFixationDetector
 from service.face_alignment import CoordinateAlignmentModel
 from service.face_detector import MxnetDetectionModel
 from service.head_pose import HeadPoseEstimator
@@ -40,6 +41,7 @@ class EyeTracker:
 
         self.__init_logger()
 
+        # self.saccade_detector = SaccadeFixationDetector()
         self.blink_detector = BlinkDetector()
         self.face_detector = MxnetDetectionModel("weights/16and32", 0, .6, gpu=gpu_ctx)
         self.face_alignment = CoordinateAlignmentModel('weights/2d106det', 0, gpu=gpu_ctx)
@@ -77,6 +79,8 @@ class EyeTracker:
         processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
         self.__current_frame = processed_frame
 
+        # eye_region_bbox = None
+
         bboxes = self.face_detector.detect(self.__current_frame)
         for landmarks in self.face_alignment.get_landmarks(self.__current_frame, bboxes, calibrate=True):
             self.__landmarks = landmarks
@@ -111,6 +115,10 @@ class EyeTracker:
             cv2.imshow('res', self.__current_frame)
 
         return self.__current_frame
+        # if eye_region_bbox is not None:
+        #     return resize_image(eye_region_bbox, size=150)
+        # else:
+        #     return None
 
     def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox):
         # fill dict with all relevant data so we don't have to pass all params manually
@@ -141,9 +149,8 @@ class EyeTracker:
         # TODO some images are not squared but one pixel larger in one dimension (fix later in postprocessing)
 
         # TODO resize images to larger ones before saving?
-
-        # TODO denoise images?
-        # result = cv2.fastNlMeansDenoisingColored(eye_region_bbox, None, 7, 10, 7, eye_region_bbox.shape[0])  # 21
+        # new_eye_region = improve_image(eye_region_bbox)
+        # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, log_timestamp)
 
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
         self.__logger.log_image("eyes", "left_eye", left_eye_bbox, log_timestamp)

@@ -127,7 +127,7 @@ def circler(im):
     """
     # find contours first
     im = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
-    ret, thres = cv2.threshold(im, 40, 255, 0)
+    ret, thres = cv2.threshold(im, 40, 255, cv2.THRESH_BINARY)
     contours, hierarchy = cv2.findContours(thres, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     print(f"Contours:\n{contours}")

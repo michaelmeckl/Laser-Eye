@@ -25,8 +25,10 @@ class SaccadeFixationDetector:
     def set_current_frame_vals(self, pupils):
         self.__pupils = pupils
 
-    def find_saccades_fixations(self):
+    def find_saccades_fixations(self, debug=True):
         if self.t1 is None or self.last_coords_left is None:
+            self.t1 = get_timestamp()
+            self.last_coords_left = self.__pupils[0]
             return
 
         t2 = get_timestamp()
@@ -41,6 +43,14 @@ class SaccadeFixationDetector:
             current_velocity_degrees = dist_in_degrees / time_frames
             last_velocity_degrees = self.last_velocity * pixel_degrees_conversion_rate
             acceleration_degrees = (last_velocity_degrees - current_velocity_degrees) / time_frames
+
+            if debug:
+                print("dist_frames: ", dist_frames)
+                print("time_frames: ", time_frames)
+                print("current_velocity: ", current_velocity)
+                print("dist_in_degrees: ", dist_in_degrees)
+                print("current_velocity_degrees: ", current_velocity_degrees)
+                print("acceleration_degrees: ", acceleration_degrees)
 
             # check if flicker happened; else skip this
             # TODO should also exclude blinks
@@ -65,3 +75,7 @@ class SaccadeFixationDetector:
         self.last_velocity = current_velocity
         self.t1 = get_timestamp()
         self.last_coords_left = self.__pupils[0]  # pupil left
+
+        if debug:
+            print("Saccades: ", self.saccade_count)
+            print("Fixations: ", self.fixation_count)
