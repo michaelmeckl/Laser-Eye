@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
-import sys
 import cv2
 from datetime import datetime
 from plyer import notification
@@ -12,6 +11,7 @@ import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from utils.EyeLogger import Logger, LogData, get_timestamp
+from utils.FpsMeasuring import timeit
 from utils.image_utils import preprocess_frame, resize_image, improve_image, zoom
 from service.blink_detector import BlinkDetector
 # from service.saccade_fixation_detector import SaccadeFixationDetector
@@ -30,11 +30,9 @@ class EyeTracker:
         self.__annotation_enabled = enable_annotation
         self.__show_video = show_video
 
-        """
         self.frame_count = 0
         self.t1 = None
         self.t2 = None
-        """
 
         self.__screenWidth, self.__screenHeight = pyautogui.size()
         self.gaze_left, self.gaze_right = None, None
@@ -57,6 +55,17 @@ class EyeTracker:
         # and would therefore always append new columns to our pandas dataframe!
         self.__tracked_data = {key.name: None for key in LogData}
 
+    def measure_frame_count(self):
+        self.frame_count += 1
+        print(f"########\nFrame {self.frame_count} at {datetime.now()}\n#######")
+        if self.frame_count % 2 == 1:
+            self.t1 = get_timestamp()
+        elif self.frame_count % 2 == 0:
+            self.t2 = get_timestamp()
+            print(f"########\nTime between frames {(self.t2 - self.t1):.2f} seconds\n#######")
+
+    # TODO the only things that could actually be necessary live would be resizing and grayscale
+    # conversion for faster transfer
     def process_current_frame(self, frame: np.ndarray):
         """
         Args:
@@ -66,15 +75,11 @@ class EyeTracker:
         # measure actual frame count per second with current implementation:
         # ca. 100 ms avg zwischen Frames; bei meiner meiner 30 FPS cam heißt das:
         # 1000/30 = 33.3ms => 33.3 + 100 = 133ms zwischen Frames! => 1000/133 ~= 7.5 frames pro sekunde!
-        """
-        self.frame_count += 1
-        print(f"########\nFrame {self.frame_count} at {datetime.now()}\n#######")
-        if self.frame_count % 2 == 1:
-            self.t1 = get_timestamp()
-        elif self.frame_count % 2 == 0:
-            self.t2 = get_timestamp()
-            print(f"########\nTime between frames {self.t2 - self.t1} seconds\n#######")
-        """
+        # self.measure_frame_count()
+
+        # TODO überlegen, ob multiprocessing / parallelisieren irgendwo sinnvoll sein könnte! (frühestens nach der head
+        #  pos); sinnvoll, womöglich blink und saccaden detection (aber wieder joinen befor logging)
+        # use PoolProcessExecuter instead of multiprocessing module probably
 
         processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
         self.__current_frame = processed_frame
@@ -120,6 +125,7 @@ class EyeTracker:
         # else:
         #     return None
 
+    @timeit
     def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox):
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({

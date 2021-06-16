@@ -1,13 +1,28 @@
-"""
-Class for measuring fps; taken from
-https://www.pyimagesearch.com/2015/12/21/increasing-webcam-fps-with-python-and-opencv/
-and slightly adjusted.
-"""
-
 import datetime
+import time
+from functools import wraps
+
+
+def timeit(method):
+    # Decorator to measure execution time of a function; taken from
+    # https://rednafi.github.io/digressions/python/2020/04/21/python-concurrent-futures.html
+    @wraps(method)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = method(*args, **kwargs)
+        end_time = time.time()
+        print(f"{method.__name__} => {(end_time-start_time)*1000} ms")
+        return result
+    return wrapper
 
 
 class FpsMeasurer:
+    """
+    Class for measuring fps; taken from
+    https://www.pyimagesearch.com/2015/12/21/increasing-webcam-fps-with-python-and-opencv/
+    and slightly adjusted.
+    """
+
     def __init__(self):
         # store the start time, end time, and total number of frames
         # that were examined between the start and end intervals

@@ -19,6 +19,7 @@ class WebcamStream:
             sys.stderr.write("Unknown error while trying to get current frame!")
             return
 
+        self.c = 0
         # initialize the thread name
         self.name = name
 
@@ -41,6 +42,7 @@ class WebcamStream:
 
             # otherwise, read the next frame from the stream
             (self.grabbed, self.frame) = self.stream.read()
+            self.c += 1
             if not self.grabbed:
                 sys.stderr.write("Unknown error while trying to get current frame!")
                 return
@@ -52,6 +54,7 @@ class WebcamStream:
     def stop(self):
         # indicate that the thread should be stopped
         self.stopped = True
+        print(f"Frames on webcam thread: {self.c}")
 
     def get_stream_fps(self):
         return self.stream.get(cv2.CAP_PROP_FPS)

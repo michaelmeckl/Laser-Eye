@@ -3,10 +3,13 @@
 
 import argparse
 import datetime
+import os
 import sys
 import threading
 import cv2
 import pyautogui
+from plyer import notification
+
 from eye_tracker import EyeTracker
 from utils.FpsMeasuring import FpsMeasurer
 # from pynput import keyboard
@@ -42,6 +45,9 @@ import keyboard
 
 # TODO log things like the webcam fps and the screen size!!!
 # maybe even ask for things like OS, CPU, RAM, GPU, etc. in a questionnaire
+# -> psutil.cpu_count(logical=True) für number of cores
+
+# with title = pyautogui.getActiveWindow().title we could log the title of the current game if necessary
 
 
 class TrackingSystem:
@@ -77,9 +83,12 @@ class TrackingSystem:
         if self.__tracking_active:
             self.__tracking_active = False
             self.__cleanup()
+            notification.notify(title="Tracking stopped", timeout=1)
         else:
             # start tracking on a background thread
             self.__tracking_active = True
+            notification.notify(title="Tracking started", timeout=1)
+            self.capture.start()  # start reading frames from webcam
             self.tracking_thread = threading.Thread(target=self.__start_tracking, daemon=True)
             self.tracking_thread.start()
 
@@ -99,9 +108,11 @@ class TrackingSystem:
         self.fps_measurer.stop()
         print(f"[INFO] elapsed time: {self.fps_measurer.elapsed():.2f} seconds")
         print(f"[INFO] approx. FPS on background thread: {self.fps_measurer.fps():.2f}")
+        print("Frames on main thread:", self.fps_measurer._numFrames)
 
     def __cleanup(self):
         # TODO pause tracking, dont stop it!
+        # -> only pause both main capturing loops and the logging / uploading; don't kill threads!
         # self.eye_tracker.stop_tracking()
         print("paused tracking")
 
@@ -125,13 +136,13 @@ class TrackingSystem:
                 sys.stderr.write("Frame from stream thread is None! This shouldn't happen!")
                 break
 
+            # update the FPS counter
+            self.fps_measurer.update()
+
             processed_frame = self.eye_tracker.process_current_frame(frame)
             self.__current_frame = processed_frame
             # if processed_frame is not None:
             #    self.out.write(processed_frame)  # write current frame to video
-
-            # update the FPS counter
-            self.fps_measurer.update()
 
             cv2.putText(processed_frame, f"current FPS: {self.fps_measurer.get_current_fps():.3f}",
                         (10, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -153,6 +164,7 @@ class TrackingSystem:
         # TODO only for faster debugging; remove later
         # start tracking on a background thread
         self.__tracking_active = True
+        self.capture.start()  # start reading frames from webcam
         self.tracking_thread = threading.Thread(target=self.__start_tracking, daemon=True)
         self.tracking_thread.start()
 
@@ -175,7 +187,6 @@ def main():
 
     video_width, video_height = capture.get_stream_dimensions()
     eye_tracker = EyeTracker(video_width, video_height, debug_active, enable_annotation, show_video)
-    capture.start()  # start reading frames from webcam
     tracking_system = TrackingSystem(capture, eye_tracker)
     tracking_system.listen_for_hotkey()
 

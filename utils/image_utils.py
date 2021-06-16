@@ -10,6 +10,7 @@ from utils.EyeLogger import get_timestamp
 # for morphological filtering
 from skimage.morphology import opening
 from skimage.morphology import disk
+from utils.FpsMeasuring import timeit
 
 
 def improve_image(image):
@@ -17,20 +18,25 @@ def improve_image(image):
     Different operations to improve the quality of the resized image.
     fastNlMeansDenoising works best but takes for ever (1 or 2 seconds); gauß blur and erode/dilate work quite well too
     """
-    resized_image = resize_image(image, size=150)
+    resized_image = resize_image(image, size=800)
     cv2.imshow("im_resized", resized_image)
 
-    denoised = cv2.fastNlMeansDenoising(resized_image, None, 10, 7, 21)
+    # denoised = cv2.fastNlMeansDenoising(resized_image, None, 10, 7, 21)
     # cv2.fastNlMeansDenoisingMulti()  # for image sequence
-    cv2.imshow("im_denoised", denoised)
+    # cv2.imshow("im_denoised", denoised)
 
     kernel_size = 5
     blurred_image = cv2.GaussianBlur(resized_image, (kernel_size, kernel_size), 0)
-    cv2.imshow("im_blurred", blurred_image)
+    cv2.imshow("im_blurred_5", blurred_image)
+
+    kernel_size = 3
+    blurred_image2 = cv2.GaussianBlur(resized_image, (kernel_size, kernel_size), 0)
+    cv2.imshow("im_blurred_3", blurred_image2)
 
     new_frame = cv2.bilateralFilter(resized_image, 10, 15, 15)
     cv2.imshow("im_bil", new_frame)
 
+    """
     thresh = cv2.erode(new_frame, None, iterations=2)
     new_frame = cv2.dilate(thresh, None, iterations=4)
     cv2.imshow("im_bil_erode_dilate", new_frame)
@@ -38,8 +44,8 @@ def improve_image(image):
     thresh = cv2.erode(resized_image, None, iterations=2)
     new_frame = cv2.dilate(thresh, None, iterations=4)
     cv2.imshow("im_erode_dilate", new_frame)
-
-    return new_frame
+    """
+    # return new_frame
 
 
 def __connected_component_threshold(image):
@@ -251,6 +257,7 @@ def apply_hough_circles(image):
     return image
 
 
+@timeit
 def preprocess_frame(frame: ndarray, kernel_size=5, keep_dim=True) -> ndarray:
     """
     Converts bgr image to grayscale using opencv. If keep_dim is set to True it will
