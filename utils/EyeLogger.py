@@ -1,6 +1,9 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
+
 import sys
+import os
+import shutil
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -11,6 +14,8 @@ import pathlib
 import schedule
 import time
 import threading
+import pysftp
+import configparser as cp
 
 LogData = Enum("LogData", "HEAD_POS_ROLL_PITCH_YAW FACE_LANDMARKS LEFT_EYE RIGHT_EYE LEFT_EYE_CENTER "
                           "RIGHT_EYE_CENTER LEFT_EYE_WIDTH RIGHT_EYE_WIDTH LEFT_EYE_HEIGHT RIGHT_EYE_HEIGHT "
@@ -55,11 +60,91 @@ class Logger:
         self.__log_file = default_log_file
         self.__log_file_path = pathlib.Path(self.__log_folder + "/" + self.__log_file)
 
+        # we use the timestamp in ms at the init of the tracking system as the user id as we don't have access to the
+        # participant_id from the unity application
+        # TODO wir könnten auch einfach ein kleines GUI am anfang einbauen, wo er die ID eingeben muss genau wie in Unity
+        self.user_id = get_timestamp()
+
+        credentials = self.get_credentials()
+        if credentials is None:
+            sys.stderr.write("Reading sftp server credentials didn't work! Terminating program...")
+            sys.exit(1)
+
+        self.hostname = credentials["sftp_hostname"]
+        self.username = credentials["sftp_username"]
+        self.password = credentials["sftp_password"]
+        self.port = credentials.getint("sftp_port")
+        # NOTE: setting hostkeys to None is highly discouraged as we lose any protection
+        # against man-in-the-middle attacks; however, it is the easiest solution and for now it should be fine
+        # TODO see https://stackoverflow.com/questions/38939454/verify-host-key-with-pysftp for correct solution
+        self.cnopts = pysftp.CnOpts()
+        self.cnopts.hostkeys = None
+
         self.__log_tag = "logger"
         self.__log_data = self.__init_log()
         self.__tracking_data = []
         self.__image_data = []
         self.__start_scheduling()
+
+        self.init_server_connection()
+        # FIXME: start this only once and then let the put run in a while loop in the background until finish
+        self.upload_thread = threading.Thread(target=self.start_ftp_transfer, daemon=False)
+        self.upload_thread.start()
+
+    def get_credentials(self):
+        """
+        Read in the credentials for our sftp server.
+        Taken from https://gist.github.com/krzysztof-slowinski/59efeef7f9d00b002eed7e0e6636b084
+        Credentials file looks like this:
+        [dev.sftp]
+        sftp_hostname = hostname
+        sftp_username = username
+        sftp_password = password
+        sftp_port = port
+
+        TODO reading in credentials should be replaced later before building exe so we don't have to pass the file to
+        every user!
+        """
+        credentials_file = "sftp_credentials.properties"
+        credentials_section = "dev.sftp"
+
+        if os.path.exists(credentials_file):
+            credentials = cp.RawConfigParser()
+            credentials.read(credentials_file)
+            if credentials_section not in credentials:
+                print('sftp credentials file is not properly structured!')
+                return None
+            return credentials[credentials_section]
+        else:
+            print(f"[Error] Credentials file ({credentials_file}) is not defined!")
+            return None
+
+    def init_server_connection(self):
+        self.sftp = pysftp.Connection(host=self.hostname, username=self.username,
+                                      password=self.password, port=self.port, cnopts=self.cnopts)
+        # create a directory for this user on the sftp server
+        self.user_dir = f"/home/tracking_data__{self.user_id}"
+        if not self.sftp.exists(self.user_dir):
+            self.sftp.makedirs(f"{self.user_dir}/eye_regions")
+            self.sftp.makedirs(f"{self.user_dir}/eyes")
+            self.sftp.makedirs(f"{self.user_dir}/pupils")
+        else:
+            print(f"User dir ({self.user_dir}) already exists for some reason! Creating a new one...")
+            self.user_dir = f"{self.user_dir}_1"  # append '_1' to the directory name
+            self.sftp.makedirs(f"{self.user_dir}/eye_regions")
+            self.sftp.makedirs(f"{self.user_dir}/eyes")
+            self.sftp.makedirs(f"{self.user_dir}/pupils")
+
+    def start_ftp_transfer(self):
+        # TODO make sure only new images are uploaded! (via timestamps? or by saving the last image that was
+        #  uploaded? or make a diff between local and remote dir (probably too expensive)?)
+        for subdir in ["eye_regions", "eyes", "pupils"]:
+            # TODO make sure this path exists!
+            for image in os.listdir(f"tracking_data/{subdir}"):
+                self.sftp.put(localpath=f"tracking_data/{subdir}/{image}", remotepath=f"{self.user_dir}/{subdir}/{image}")
+
+        # self.sftp.cwd('/home/images/eyes')
+        # print("Eyes dir on sftp server:", self.sftp.listdir())
 
     def __init_log(self):
         # create log folder if it doesn't exist yet
@@ -88,16 +173,26 @@ class Logger:
         Another benefit is that it moves the I/O operation (writing to file) happen less often and off the
         main thread.
         """
-        schedule_interval = 30  # schedule logging to csv file periodically
+        schedule_interval = 3  # schedule logging to csv file periodically  # TODO set to 30 later
         schedule.every(schedule_interval).seconds.do(self.__save_tracking_data).tag(self.__log_tag)
         # Start the background thread
         self.__logging_job = run_continuously()
 
     def stop_scheduling(self):
+        self.sftp.put(localpath=f"tracking_data/{self.__log_file}", remotepath=f"{self.user_dir}/{self.__log_file}")
+
+        # close the connection to the sftp server and remove local directory
+        self.sftp.close()
+
+        # TODO remove local dir after uploading everything (the csv as well!)
+        # shutil.rmtree('tracking_data/')
+
+        # TODO upload log file once at the end as well!
+
         # cancel current scheduling job
-        current_job = schedule.get_jobs(self.__log_tag)[0]
-        if current_job is not None:
-            schedule.cancel_job(current_job)
+        active_jobs = schedule.get_jobs(self.__log_tag)
+        if len(active_jobs) > 0:
+            schedule.cancel_job(active_jobs[0])
         # Stop the background thread on the next schedule interval
         self.__logging_job.set()
 
