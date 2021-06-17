@@ -257,7 +257,52 @@ def apply_hough_circles(image):
     return image
 
 
-@timeit
+def find_marker(image):
+    # convert the image to grayscale and blur to detect edges
+
+    blurred_frame = cv2.GaussianBlur(image, (5, 5), 0)
+    hsv = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2HSV)
+
+    lower_blue = np.array([38, 86, 0])
+    upper_blue = np.array([121, 255, 255])
+    mask = cv2.inRange(hsv, lower_blue, upper_blue)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    con = max(contours, key=cv2.contourArea)
+
+    return cv2.minAreaRect(con)
+
+
+def distance_to_camera(knownWidth, focalLength, perWidth):
+    # compute and return the distance from the image to the camera
+    return (knownWidth * focalLength) / perWidth
+
+
+def get_distance(image):
+    # TODO compute these two values during calibration:
+    KNOWN_DISTANCE = 30
+    KNOWN_WIDTH = 3
+
+    marker = find_marker(image)
+    print("Marker: ", marker)
+    focalLength = (marker[1][0] * KNOWN_DISTANCE) / KNOWN_WIDTH
+    # alternativ:
+    # dis = 0.367 * 14 / (h * 0.00064)
+    # dis = math.floor(dis)
+
+    print("focalLength: ", focalLength)
+    CM = distance_to_camera(KNOWN_WIDTH, focalLength, marker[1][0])
+    print("Distance: ", CM)
+
+
+def convert_color_space(image):
+    """
+    Converts the captured BGR images from opencv to RGB images.
+    """
+    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+
+# @timeit
 def preprocess_frame(frame: ndarray, kernel_size=5, keep_dim=True) -> ndarray:
     """
     Converts bgr image to grayscale using opencv. If keep_dim is set to True it will

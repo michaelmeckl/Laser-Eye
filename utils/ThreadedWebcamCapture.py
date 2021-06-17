@@ -13,6 +13,9 @@ class WebcamStream:
         # initialize the video camera stream and read the first frame
         # from the stream
         self.stream = cv2.VideoCapture(src)
+        # self.stream = cv2.VideoCapture(src, cv2.CAP_DSHOW)  # use cv2.CAP_DSHOW backend for hd resolution
+        # TODO self.set_hd_resolution()
+
         (self.grabbed, self.frame) = self.stream.read()
         if not self.grabbed:
             # break loop if getting frame was not successful
@@ -25,6 +28,16 @@ class WebcamStream:
 
         # initialize the variable used to indicate if the thread should be stopped
         self.stopped = False
+
+    def set_hd_resolution(self):
+        # self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        # self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+        # setting to a really high resolution makes opencv use the max resolution of the
+        # webcam instead of the 640*480 default for some reason... (no other backend required)
+        # see https://stackoverflow.com/questions/19448078/python-opencv-access-webcam-maximum-resolution
+        self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, 7680)
+        self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 4320)
 
     def start(self):
         # start the thread to read frames from the video stream

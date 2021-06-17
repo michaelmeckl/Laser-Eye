@@ -186,6 +186,8 @@ def main():
         capture = WebcamStream(src=0)
 
     video_width, video_height = capture.get_stream_dimensions()
+    print(f"Capture Width: {video_width}, Capture Height: {video_height}")
+
     eye_tracker = EyeTracker(video_width, video_height, debug_active, enable_annotation, show_video)
     tracking_system = TrackingSystem(capture, eye_tracker)
     tracking_system.listen_for_hotkey()

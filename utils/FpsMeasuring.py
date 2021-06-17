@@ -59,5 +59,7 @@ class FpsMeasurer:
         return self._numFrames / elapsed_time if elapsed_time != 0 else self._numFrames
 
     def show_optimal_fps(self, max_fps):
+        if max_fps == 0:
+            return
         fps_ideal = int(1000 / max_fps)
         print(f'* Capture FPS: {max_fps}; ideal wait time between frames: {fps_ideal} ms')

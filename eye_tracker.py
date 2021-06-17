@@ -125,7 +125,6 @@ class EyeTracker:
         # else:
         #     return None
 
-    @timeit
     def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox):
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
