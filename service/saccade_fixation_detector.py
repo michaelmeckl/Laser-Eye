@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 from scipy.spatial import distance as dist
-from utils.EyeLogger import get_timestamp
+from post_processing.ProcessingLogger import get_timestamp
 
 
 # noinspection PyAttributeOutsideInit

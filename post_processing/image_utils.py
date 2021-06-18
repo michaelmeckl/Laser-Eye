@@ -1,16 +1,13 @@
-#!/usr/bin/python3
-# -*- coding:utf-8 -*-
+import time
 import imutils
 from numpy import ndarray
 from scipy.spatial import distance as dist
 import cv2
 import numpy as np
 # import dlib
-from utils.EyeLogger import get_timestamp
 # for morphological filtering
 from skimage.morphology import opening
 from skimage.morphology import disk
-from utils.FpsMeasuring import timeit
 
 
 def improve_image(image):
@@ -113,7 +110,7 @@ def find_pupil(frame, pupil_thresh=30, save=False):
     # show the images
     cv2.imshow("images", np.hstack([image, output]))
     if save and image.size:
-        cv2.imwrite(f'tracking_data/img_contours__{get_timestamp()}.png', image)
+        cv2.imwrite(f'processing_data/img_contours__{time.time()}.png', image)
 
 
 def increase_image_contrast(image):

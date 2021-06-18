@@ -2,69 +2,51 @@
 # -*- coding:utf-8 -*-
 
 import argparse
-import datetime
-import os
+from datetime import datetime
+import platform
 import sys
 import threading
 import cv2
+import numpy as np
+import psutil
 import pyautogui
 from plyer import notification
-
-from eye_tracker import EyeTracker
-from utils.FpsMeasuring import FpsMeasurer
+from tracking.ThreadedWebcamCapture import WebcamStream
+from tracking.TrackingLogger import Logger, TrackingData, get_timestamp
+from tracking.FpsMeasuring import FpsMeasurer
 # from pynput import keyboard
 import keyboard
 
 
-# TODO we need:
-"""
-- webcam images of eyes and pupils ✔
-- pupil positions  ✔
-- pupil sizes (diameter)
-- average pupilsize; peak pupil size
-- fixations and saccades (count, mean, std)   ❌ # TODO
-- blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
-"""
-
-
-# TODO Lösungsansätze für Problem mit unterschiedlichen Bilddimensionen pro Frame:
-# 1. kleinere bilder mit padding versehen bis alle gleich groß wie größtes
-# 2. größere bilder runterskalieren bis alle gleich groß wie kleinstes (oder alternativ crop)
-# 3. jetzt erstmal unterschiedlich lassen und dann später beim CNN vorverarbeiten!
-#      -> vermtl. eh am besten weil später neue Bilder ja auch erstmal vorverarbeitet werden müssen!
-# TODO: => fürs Erste jetzt ignorieren und nur Rechtecke nehmen!
-
 # TODO:
-# add some parts to the readme on how this was updated compared to the original
-
-# remove all parts of the tracking that isn't needed (e.g. gaze tracking probably)
-
-# Warnings mit einbauen, wenn der Nutzer sich zu viel beweget oder daten zu schlecht und die Zeitpunkte hier mitloggen!
-
-# doch ganzes video mit aufzeichnen? vermtl. nicht sinnvoll wegen Größe und FPS-Einbußen?
-
-# TODO log things like the webcam fps and the screen size!!!
-# maybe even ask for things like OS, CPU, RAM, GPU, etc. in a questionnaire
-# -> psutil.cpu_count(logical=True) für number of cores
+# Warnings mit einbauen, wenn der Nutzer sich zu viel bewegt oder daten zu schlecht
+# und die Zeitpunkte hier mitloggen!
 
 # with title = pyautogui.getActiveWindow().title we could log the title of the current game if necessary
 
 
 class TrackingSystem:
 
-    def __init__(self, capturing_device, eye_tracker):
+    def __init__(self, capturing_device):
         self.__current_frame = None
         self.__tracking_active = False
-        # Get the size of the primary monitor.
-        self.__screenWidth, self.__screenHeight = pyautogui.size()
 
-        self.eye_tracker = eye_tracker
+        self.frame_count = 0
+        self.t1 = None
+        self.t2 = None
+
         self.capture = capturing_device
+        self.__init_logger()
 
         # TODO only for debugging! -> disable fps measuring later in the entire class
         self.fps_measurer = FpsMeasurer()
         capture_fps = self.capture.get_stream_fps()
         self.fps_measurer.show_optimal_fps(capture_fps)
+
+    def __init_logger(self):
+        self.__logger = Logger()
+        self.__tracked_data = {key.name: None for key in TrackingData}
+        self.__log_static_data()
 
     def listen_for_hotkey(self, hotkey_toggle="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
         # keyboard module
@@ -78,11 +60,12 @@ class TrackingSystem:
 
     # TODO atm this finished the main thread as well!  -> while loop in main after listen as well?
     def __toggle_tracking_status(self):
-        print(f"Pressed required hotkey!")
         # toggle tracking on hotkey press
         if self.__tracking_active:
+            # TODO don't allow to stop tracking with hotkey to prevent errors? (only via GUI or automatically after
+            #  download finished?
             self.__tracking_active = False
-            self.__cleanup()
+            self.__stop_tracking()
             notification.notify(title="Tracking stopped", timeout=1)
         else:
             # start tracking on a background thread
@@ -98,32 +81,20 @@ class TrackingSystem:
         Also stop the logging.
         """
         self.__tracking_active = False
-
-        # self.capture.release()
-        # self.out.release()
         self.capture.stop()
         cv2.destroyAllWindows()
-        self.eye_tracker.stop_tracking()
+        self.__logger.stop_scheduling()
 
         self.fps_measurer.stop()
         print(f"[INFO] elapsed time: {self.fps_measurer.elapsed():.2f} seconds")
         print(f"[INFO] approx. FPS on background thread: {self.fps_measurer.fps():.2f}")
         print("Frames on main thread:", self.fps_measurer._numFrames)
 
-    def __cleanup(self):
-        # TODO pause tracking, dont stop it!
-        # -> only pause both main capturing loops and the logging / uploading; don't kill threads!
-        # self.eye_tracker.stop_tracking()
-        print("paused tracking")
-
     def __start_tracking(self):
         """
         This function runs on a background thread.
         """
-        # record video
-        # fourcc2 = cv2.VideoWriter_fourcc(*'MP4V')  # for mp4  # H264 seems to work too
-        # self.out = cv2.VideoWriter('output.mp4', fourcc2, 17.0, (640, 480), isColor=True)  # 17 FPS
-        # self.out = cv2.VideoWriter('output.mp4', fourcc2, 12.0, (150, 150), isColor=True)
+        self.__logger.start_async_upload()  # init server connection and start uploading data
 
         self.fps_measurer.start()
         while True:
@@ -132,17 +103,15 @@ class TrackingSystem:
 
             frame = self.capture.read()
             if frame is None:
-                # TODO does happen if video input has finished
                 sys.stderr.write("Frame from stream thread is None! This shouldn't happen!")
                 break
 
+            # self.__measure_frame_count()  # TODO only for debugging
             # update the FPS counter
             self.fps_measurer.update()
 
-            processed_frame = self.eye_tracker.process_current_frame(frame)
+            processed_frame = self.__process_frame(frame)
             self.__current_frame = processed_frame
-            # if processed_frame is not None:
-            #    self.out.write(processed_frame)  # write current frame to video
 
             cv2.putText(processed_frame, f"current FPS: {self.fps_measurer.get_current_fps():.3f}",
                         (10, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -155,9 +124,59 @@ class TrackingSystem:
 
         # cleanup after while loop
         self.__tracking_active = False
-        # self.__cleanup()
+        # TODO
+        # self.__stop_tracking()
 
-    def get_current_frame(self):
+    def __measure_frame_count(self):
+        self.frame_count += 1
+        print(f"########\nFrame {self.frame_count} at {datetime.now()}\n#######")
+        if self.frame_count % 2 == 1:
+            self.t1 = get_timestamp()
+        elif self.frame_count % 2 == 0:
+            self.t2 = get_timestamp()
+            print(f"########\nTime between frames {(self.t2 - self.t1):.2f} seconds\n#######")
+
+    def __process_frame(self, frame: np.ndarray) -> np.ndarray:
+        # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
+        # can't be matched later!
+        log_timestamp = get_timestamp()
+        # TODO resize images to larger ones before saving?
+        self.__logger.log_image("capture", frame, log_timestamp)
+        return frame
+
+    def __log_static_data(self):
+        # get the dimensions of the webcam
+        video_width, video_height = self.capture.get_stream_dimensions()
+        # get the dimensions of the primary monitor.
+        screenWidth, screenHeight = pyautogui.size()
+
+        system_info = platform.uname()._asdict()
+        ram_info = psutil.virtual_memory()._asdict()
+
+        # noinspection PyProtectedMember
+        self.__tracked_data.update({
+            TrackingData.SCREEN_WIDTH.name: screenWidth,
+            TrackingData.SCREEN_HEIGHT.name: screenHeight,
+            TrackingData.CAPTURE_WIDTH.name: video_width,
+            TrackingData.CAPTURE_HEIGHT.name: video_height,
+            TrackingData.CAPTURE_FPS.name: self.capture.get_stream_fps(),
+            TrackingData.CORE_COUNT.name: psutil.cpu_count(logical=True),
+            TrackingData.CORE_COUNT_PHYSICAL.name: psutil.cpu_count(logical=False),
+            TrackingData.CORE_COUNT_AVAILABLE.name: len(psutil.Process().cpu_affinity()),  # number of usable cpus by
+            # this process
+            TrackingData.SYSTEM.name: system_info["system"],
+            TrackingData.SYSTEM_VERSION.name: system_info["release"],
+            TrackingData.MODEL_NAME.name: system_info["node"],
+            TrackingData.PROCESSOR.name: system_info["machine"],
+            TrackingData.RAM_OVERALL.name: ram_info["total"] / 1000000000,  # convert from Bytes to GB
+            TrackingData.RAM_AVAILABLE.name: ram_info["available"] / 1000000000,
+            TrackingData.RAM_FREE.name: ram_info["free"] / 1000000000,
+            # **platform.uname()._asdict(),
+            # **psutil.virtual_memory()._asdict(),
+        })
+        self.__logger.log_static_data(data=self.__tracked_data)
+
+    def get_current_frame(self) -> np.ndarray:
         return self.__current_frame
 
     def debug_start_tracking(self):
@@ -170,26 +189,12 @@ class TrackingSystem:
 
 
 def main():
-    debug_active = args.debug
-    enable_annotation = args.enable_annotation
-    show_video = args.show_video
-
-    # use a custom threaded video captures to increase fps;
+    # use a custom threaded video capture to increase fps;
     # see https://www.pyimagesearch.com/2015/12/21/increasing-webcam-fps-with-python-and-opencv/
-    if args.video_file:
-        from utils.ThreadedFileVideoCapture import FileVideoStream
-        # TODO test if using transform in this thread would speed up things !
-        capture = FileVideoStream(path=args.video_file, transform=None)
-    else:
-        from utils.ThreadedWebcamCapture import WebcamStream
-        # fall back to webcam (0) if no input video was provided
-        capture = WebcamStream(src=0)
+    # TODO test if using transform in the webcam thread like in file video capture would speed up things !
+    capture = WebcamStream(src=0)
 
-    video_width, video_height = capture.get_stream_dimensions()
-    print(f"Capture Width: {video_width}, Capture Height: {video_height}")
-
-    eye_tracker = EyeTracker(video_width, video_height, debug_active, enable_annotation, show_video)
-    tracking_system = TrackingSystem(capture, eye_tracker)
+    tracking_system = TrackingSystem(capture)
     tracking_system.listen_for_hotkey()
 
     print("Press ctrl + shift + a to toggle tracking and ctrl + shift + q to stop it!")
@@ -198,13 +203,13 @@ def main():
 
     # TODO only for debugging:
     c = 0
-    start_time = datetime.datetime.now()
+    start_time = datetime.now()
     while True:
         curr_frame = tracking_system.get_current_frame()
         if curr_frame is None:
             continue
         c += 1
-        elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
+        elapsed_time = (datetime.now() - start_time).total_seconds()
         fps = c / elapsed_time if elapsed_time != 0 else c
         cv2.putText(curr_frame, f"mainthread FPS: {fps:.3f}",
                     (350, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
@@ -215,18 +220,8 @@ def main():
 
 if __name__ == "__main__":
     # setup an argument parser to enable command line parameters
-    parser = argparse.ArgumentParser(description="Webcam eye tracking system that logs different facial information. "
-                                                 "Press 'q' on the keyboard to stop the tracking if reading from "
-                                                 "webcam.")
-    parser.add_argument("-v", "--video_file", help="path to a video file to be used instead of the webcam", type=str)
-    parser.add_argument("-d", "--debug", help="Enable debug mode: logged data is written to stdout instead of files",
-                        action="store_true")
-    parser.add_argument("-a", "--enable_annotation", help="If enabled the tracked face parts are highlighted in the "
-                                                          "current frame",
-                        action="store_true")
-    parser.add_argument("-s", "--show_video", help="If enabled the given video or the webcam recoding is shown in a "
-                                                   "separate window",
-                        action="store_true")
+    parser = argparse.ArgumentParser(description="Webcam eye tracking system that logs webcam images to an sftp "
+                                                 "server.")
     parser.add_argument("-x", "--exec", help="Starts tracking immediately.", action="store_true")
     args = parser.parse_args()
 

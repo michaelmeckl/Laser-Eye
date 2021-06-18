@@ -1,6 +1,3 @@
-#!/usr/bin/python3
-# -*- coding:utf-8 -*-
-
 import cv2
 from datetime import datetime
 from plyer import notification
@@ -10,9 +7,8 @@ import numpy as np
 import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
-from utils.EyeLogger import Logger, LogData, get_timestamp
-from utils.FpsMeasuring import timeit
-from utils.image_utils import preprocess_frame, resize_image, improve_image, zoom
+from post_processing.ProcessingLogger import ProcessingLogger, LogData, get_timestamp
+from post_processing.image_utils import preprocess_frame
 from service.blink_detector import BlinkDetector
 # from service.saccade_fixation_detector import SaccadeFixationDetector
 from service.face_alignment import CoordinateAlignmentModel
@@ -44,11 +40,11 @@ class EyeTracker:
         self.face_detector = MxnetDetectionModel("weights/16and32", 0, .6, gpu=gpu_ctx)
         self.face_alignment = CoordinateAlignmentModel('weights/2d106det', 0, gpu=gpu_ctx)
         # self.face_alignment = CoordinateAlignmentModel('weights/model-hg2d3-cab/model', 0, gpu=gpu_ctx)
-        self.iris_locator = IrisLocalizationModel("weights/iris_landmark.tflite")
-        self.head_pose_estimator = HeadPoseEstimator("weights/object_points.npy", video_width, video_height)
+        self.iris_locator = IrisLocalizationModel("../weights/iris_landmark.tflite")
+        self.head_pose_estimator = HeadPoseEstimator("../weights/object_points.npy", video_width, video_height)
 
     def __init_logger(self):
-        self.__logger = Logger()
+        self.__logger = ProcessingLogger()
         # self.__tracked_data = dict.fromkeys(LogData, None)
 
         # use the name of the enum as dict key as otherwise it would always generate a new key the next time
