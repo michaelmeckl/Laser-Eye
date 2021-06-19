@@ -16,6 +16,8 @@ from tracking.TrackingLogger import Logger, TrackingData, get_timestamp
 from tracking.FpsMeasuring import FpsMeasurer
 # from pynput import keyboard
 import keyboard
+from PyQt5 import QtWidgets
+from PyQt5.QtWidgets import QApplication, QMessageBox
 
 
 # TODO:
@@ -25,9 +27,11 @@ import keyboard
 # with title = pyautogui.getActiveWindow().title we could log the title of the current game if necessary
 
 
-class TrackingSystem:
+# class TrackingSystem(QtWidgets.QDialog):
+class TrackingSystem(QtWidgets.QMainWindow):
 
     def __init__(self, capturing_device):
+        super(TrackingSystem, self).__init__()
         self.__current_frame = None
         self.__tracking_active = False
 
@@ -36,6 +40,8 @@ class TrackingSystem:
         self.t2 = None
 
         self.capture = capturing_device
+
+        self.__init_gui()
         self.__init_logger()
 
         # TODO only for debugging! -> disable fps measuring later in the entire class
@@ -44,9 +50,47 @@ class TrackingSystem:
         self.fps_measurer.show_optimal_fps(capture_fps)
 
     def __init_logger(self):
-        self.__logger = Logger()
+        self.__logger = Logger(self.__on_upload_progress)
         self.__tracked_data = {key.name: None for key in TrackingData}
         self.__log_static_data()
+
+    def __init_gui(self):
+        self.setGeometry(50, 50, 600, 200)
+        self.setWindowTitle("Upload Progress")
+
+        self.label = QtWidgets.QLabel(self)
+        self.label.setGeometry(50, 10, 550, 20)
+        self.label.setText("Uploading webcam images... Please don't close until finished!")
+
+        self.progress_bar_overall = QtWidgets.QProgressBar(self)
+        self.progress_bar_overall.setGeometry(50, 40, 550, 40)
+        self.progress_bar_overall.setMaximum(100)
+
+        self.label_current = QtWidgets.QLabel(self)
+        self.label_current.setGeometry(200, 80, 60, 20)
+        self.label_all = QtWidgets.QLabel(self)
+        self.label_all.setGeometry(265, 80, 60, 20)
+
+    def closeEvent(self, event):
+        choice = QMessageBox.question(self, 'Warning', "Please close this window only if all images have been "
+                                                       "transferred! Do you really want to exit? ",
+                                      QMessageBox.Yes | QMessageBox.No)
+        if choice == QMessageBox.Yes:
+            # self.close()
+            event.accept()
+        else:
+            event.ignore()
+
+    # TODO ca 17 sec für 30 bilder  -> 0.57 sec pro bild (ca. 570 ms)
+    #  -> 1651/30(fps) = 55 sec
+    #  -> 1651*0.57 = 935.57 sec = knapp 16 minuten upload für eine knappe minute aufzeichnung ...
+
+    # TODO aktuell: 10% bei 167 bildern und bei 300 18%
+    def __on_upload_progress(self, current, overall):
+        self.label_current.setText(str(current))
+        self.label_all.setText(f"/ {overall}")
+        progress = (current / overall) * 100
+        self.progress_bar_overall.setValue(int(progress))
 
     def listen_for_hotkey(self, hotkey_toggle="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
         # keyboard module
@@ -94,7 +138,7 @@ class TrackingSystem:
         """
         This function runs on a background thread.
         """
-        self.__logger.start_async_upload()  # init server connection and start uploading data
+        self.__logger.start_async_upload()  # start uploading data
 
         self.fps_measurer.start()
         while True:
@@ -115,6 +159,7 @@ class TrackingSystem:
 
             cv2.putText(processed_frame, f"current FPS: {self.fps_measurer.get_current_fps():.3f}",
                         (10, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
             cv2.imshow("current_frame", processed_frame)
             # read until the video is finished or if no video was provided until the
             # user presses 'q' on the keyboard;
@@ -194,7 +239,9 @@ def main():
     # TODO test if using transform in the webcam thread like in file video capture would speed up things !
     capture = WebcamStream(src=0)
 
+    app = QApplication(sys.argv)
     tracking_system = TrackingSystem(capture)
+    tracking_system.show()
     tracking_system.listen_for_hotkey()
 
     print("Press ctrl + shift + a to toggle tracking and ctrl + shift + q to stop it!")
@@ -213,9 +260,12 @@ def main():
         fps = c / elapsed_time if elapsed_time != 0 else c
         cv2.putText(curr_frame, f"mainthread FPS: {fps:.3f}",
                     (350, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
         cv2.imshow("fps_main_thread", curr_frame)
         if cv2.waitKey(1) & 0xFF == ord('f'):
             break
+
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

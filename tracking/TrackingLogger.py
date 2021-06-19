@@ -12,7 +12,11 @@ import numpy as np
 import pandas as pd
 import pysftp
 import schedule
+from PyQt5 import QtWidgets
+from PyQt5.QtCore import pyqtSignal
+from plyer import notification
 import shutil
+from paramiko.ssh_exception import SSHException
 
 TrackingData = Enum("TrackingData", "SCREEN_WIDTH SCREEN_HEIGHT CAPTURE_WIDTH CAPTURE_HEIGHT CAPTURE_FPS "
                                     "CORE_COUNT CORE_COUNT_PHYSICAL CORE_COUNT_AVAILABLE SYSTEM SYSTEM_VERSION "
@@ -51,8 +55,13 @@ def run_continuously(interval=1):
 
 
 # noinspection PyAttributeOutsideInit
-class Logger:
-    def __init__(self, default_log_folder="tracking_data", default_log_file="tracking_log.csv"):
+class Logger(QtWidgets.QWidget):
+
+    signal_update_progress = pyqtSignal(int, int)
+
+    def __init__(self, upload_callback, default_log_folder="tracking_data", default_log_file="tracking_log.csv"):
+        super(Logger, self).__init__()
+        self.__upload_callback = upload_callback
         self.__log_folder = default_log_folder
         self.__log_file = default_log_file
         self.__log_file_path = pathlib.Path(self.__log_folder + "/" + self.__log_file)
@@ -140,8 +149,8 @@ class Logger:
 
     def stop_scheduling(self):
         while self.transfer_not_finished:
-            time.sleep(0.1)  # wait for 100 ms before trying again
-            self.stop_scheduling()  # TODO probably very inefficient?
+            time.sleep(5)  # wait for 5 s before trying again
+            self.stop_scheduling()  # TODO quickly reaches MaxRecursionDepth if too often called!
 
         # close the connection to the sftp server and remove local directory
         self.sftp.close()
@@ -161,8 +170,18 @@ class Logger:
         self.__logging_job.set()
 
     def __init_server_connection(self):
-        self.sftp = pysftp.Connection(host=self.__hostname, username=self.__username,
-                                      password=self.__password, port=self.__port, cnopts=self.__cnopts)
+        try:
+            self.sftp = pysftp.Connection(host=self.__hostname, username=self.__username,
+                                          password=self.__password, port=self.__port, cnopts=self.__cnopts)
+        except SSHException as e:
+            sys.stderr.write(f"Couldn't connect to server! Make sure you have an internet connection and the server "
+                             f"is running!\nError: {e}")
+            notification.notify(title="Connection Error",
+                                message="Couldn't connect to server! Make sure you have an internet connection and "
+                                        "the server is running!",
+                                timeout=5)
+            sys.exit(1)
+
         # create a directory for this user on the sftp server
         self.user_dir = f"/home/{self.__log_folder}__{self.__user_id}"
         if not self.sftp.exists(self.user_dir):
@@ -177,6 +196,9 @@ class Logger:
         self.num_transferred_images = 0
 
     def start_async_upload(self):
+        # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
+        # main thread and not from a background thread, otherwise it would just randomly crash after some time!!)
+        self.signal_update_progress.connect(self.__upload_callback)
         self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, daemon=False)
         self.upload_thread.start()
 
@@ -197,13 +219,11 @@ class Logger:
             for image in images_not_transferred:
                 self.sftp.put(localpath=f"{self.__images_file_path}/{image}",
                               remotepath=f"{self.user_dir}/images/{image}")
+                              # callback=self.__image_upload_callback)
                 self.num_transferred_images += 1
+                self.signal_update_progress.emit(self.num_transferred_images, all_images_count)
 
             self.transfer_not_finished = False
-
-            # show content of dir on sftp server
-            # self.sftp.cwd('/home/images/eyes')
-            # print("Eyes dir on sftp server:", self.sftp.listdir())
 
     def log_static_data(self, data: dict[TrackingData, Any]):
         # ** unpacks the given dictionary as key-value pairs
@@ -221,6 +241,8 @@ class Logger:
             # check if image is empty first as it crashes if given an empty array
             # (e.g. if face / eyes not fully visible)
             if image.size:
-                cv2.imwrite(f'{self.__images_file_path}/{filename}__{timestamp}.png', image)
+                pass
+                # FIXME: only for testing, disable new images!
+                # cv2.imwrite(f'{self.__images_file_path}/{filename}__{timestamp}.png', image)
 
         self.__image_data.clear()
