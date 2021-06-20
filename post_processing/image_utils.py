@@ -1,3 +1,4 @@
+import io
 import time
 import imutils
 from numpy import ndarray
@@ -211,13 +212,6 @@ def image_processing(eye_frame, threshold):
     return new_frame
 
 
-def resize_image(image, size=150, show_resized=False):
-    resized = imutils.resize(image, width=size)
-    if show_resized:
-        cv2.imshow(f"Size={size}dpx", resized)
-    return resized
-
-
 def apply_edge_detection(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     ratio, kernel_size = 3, 3
@@ -299,6 +293,26 @@ def convert_color_space(image):
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 
+def convert_bgr_to_rgb(frame):
+    rgb_frame = frame[:, :, ::-1]
+    return rgb_frame
+
+
+def scale_image(frame, scale_factor=0.25, show_scaled=False):
+    # Resize frame of video to 'scale_factor' of original size for faster processing
+    scaled_image = cv2.resize(frame, (0, 0), fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
+    if show_scaled:
+        cv2.imshow(f"Scale={scale_factor}", scaled_image)
+    return scaled_image
+
+
+def resize_image(image, size=150, show_resized=False):
+    resized = imutils.resize(image, width=size, inter=cv2.INTER_AREA)
+    if show_resized:
+        cv2.imshow(f"Size={size}dpx", resized)
+    return resized
+
+
 # @timeit
 def preprocess_frame(frame: ndarray, kernel_size=5, keep_dim=True) -> ndarray:
     """
@@ -316,18 +330,19 @@ def preprocess_frame(frame: ndarray, kernel_size=5, keep_dim=True) -> ndarray:
     return blurred_image
 
 
-def convert_to_grayscale(rgb_img):
-    """
-    Convert linear RGB values to linear grayscale values.
-    This function was taken from https://gitlab.com/brohrer/lodgepole/-/blob/main/lodgepole/image_tools.py;
-    read https://e2eml.school/convert_rgb_to_grayscale.html for an explanation of the values
-    """
-    red = rgb_img[:, :, 0]
-    green = rgb_img[:, :, 1]
-    blue = rgb_img[:, :, 2]
+def extract_image_region(image, x_start, y_start, x_end, y_end):
+    # make sure the bounding box coordinates are located in the image's bounding box; else take the outermost values
+    startX = max(0, x_start)
+    startY = max(0, y_start)
+    endX = min(x_end, image.shape[1])
+    endY = min(y_end, image.shape[0])
+    # round to integer so we can extract a region from the original image
+    return image[int(round(startY)): int(round(endY)), int(round(startX)): int(round(endX))]
 
-    gray_img = (0.299 * red + 0.587 * green + 0.114 * blue)
-    return gray_img
+
+def convert_to_bytes(image):
+    data = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return bytes(data)
 
 
 def eye_aspect_ratio(eye):
@@ -354,52 +369,31 @@ def eye_aspect_ratio(eye):
     return ear
 
 
-def zoom(img, center=None):
+def encode_image(image, img_format=".jpeg"):
     """
-    It takes the size of the image, finds the center value, calculates the size according to the scale,
-    crops it accordingly, and increases the size to the original size to return.
-
-    This function was taken from https://github.com/harimkang/openCV-with-Zoom/blob/master/Camera.py
+    Encodes the given image as a byte stream in working memory for faster transfer.
+    See https://jdhao.github.io/2019/07/06/python_opencv_pil_image_to_bytes/
     """
-    scale = 10
-    # zoom하는 실제 함수
-    height, width = img.shape[:2]
-    if center is None:
-        #   중심값이 초기값일 때의 계산
-        center_x = int(width / 2)
-        center_y = int(height / 2)
-        radius_x, radius_y = int(width / 2), int(height / 2)
-    else:
-        #   특정 위치 지정시 계산
-        rate = height / width
-        center_x, center_y = center
+    is_success, im_buf_arr = cv2.imencode(img_format, image)
+    # byte_im = im_buf_arr.tobytes()
 
-        #   비율 범위에 맞게 중심값 계산
-        if center_x < width * (1 - rate):
-            center_x = width * (1 - rate)
-        elif center_x > width * rate:
-            center_x = width * rate
-        if center_y < height * (1 - rate):
-            center_y = height * (1 - rate)
-        elif center_y > height * rate:
-            center_y = height * rate
+    byte_stream = io.BytesIO(im_buf_arr)
+    # byte_im = byte_stream.getvalue()
+    # byte_stream.seek(0)
+    return byte_stream
 
-        center_x, center_y = int(center_x), int(center_y)
-        left_x, right_x = center_x, int(width - center_x)
-        up_y, down_y = int(height - center_y), center_y
-        radius_x = min(left_x, right_x)
-        radius_y = min(up_y, down_y)
 
-    # 실제 zoom 코드
-    radius_x, radius_y = int(scale * radius_x), int(scale * radius_y)
+def decode_byte_image(byte_image_path):
+    """
+    Decodes the byte image at the given path back to a real image.
 
-    # size 계산
-    min_x, max_x = center_x - radius_x, center_x + radius_x
-    min_y, max_y = center_y - radius_y, center_y + radius_y
+    Args:
+        byte_image_path: the path to the image in byte format
 
-    # size에 맞춰 이미지를 자른다
-    cropped = img[min_y:max_y, min_x:max_x]
-    # 원래 사이즈로 늘려서 리턴
-    new_cropped = cv2.resize(cropped, (width, height))
-
-    return new_cropped
+    Returns: the decoded image as np.ndarray
+    """
+    with open(byte_image_path, "rb") as img:
+        byte_stream = io.BytesIO(img.read())
+        decoded_img = cv2.imdecode(np.frombuffer(byte_stream.getbuffer(), np.uint8), cv2.IMREAD_UNCHANGED)
+        cv2.imshow("decoded byte image", decoded_img)
+        return decoded_img

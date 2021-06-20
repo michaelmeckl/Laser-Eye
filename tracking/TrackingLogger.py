@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import datetime
 from enum import Enum
+from queue import Queue
 from typing import Any, Optional
 import cv2
 import numpy as np
@@ -17,6 +18,7 @@ from PyQt5.QtCore import pyqtSignal
 from plyer import notification
 import shutil
 from paramiko.ssh_exception import SSHException
+from post_processing.image_utils import encode_image
 
 TrackingData = Enum("TrackingData", "SCREEN_WIDTH SCREEN_HEIGHT CAPTURE_WIDTH CAPTURE_HEIGHT CAPTURE_FPS "
                                     "CORE_COUNT CORE_COUNT_PHYSICAL CORE_COUNT_AVAILABLE SYSTEM SYSTEM_VERSION "
@@ -58,6 +60,8 @@ def run_continuously(interval=1):
 class Logger(QtWidgets.QWidget):
 
     signal_update_progress = pyqtSignal(int, int)
+    image_queue = Queue()
+    # image_queue = Queue(maxsize=128) # TODO
 
     def __init__(self, upload_callback, default_log_folder="tracking_data", default_log_file="tracking_log.csv"):
         super(Logger, self).__init__()
@@ -202,10 +206,27 @@ class Logger(QtWidgets.QWidget):
         self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, daemon=False)
         self.upload_thread.start()
 
+    def __start_ftp_transfer_new(self):
+        while self.tracking_active:
+            all_images_count = self.image_queue.qsize()
+            if all_images_count > 0:
+                self.transfer_not_finished = True
+
+            filename, image, timestamp = self.image_queue.get()
+            # transfer image as bytestream directly without saving it locally first
+            # byte_stream = encode_image(image, img_format=".png")  #TODO: Time needed to upload 30 images: 13.402 seconds
+            byte_stream = encode_image(image, img_format=".jpeg")  #TODO: Time needed to upload 30 images: 5.180 seconds
+            self.sftp.putfo(byte_stream, f"{self.user_dir}/images/{filename}__{timestamp}")
+
+            self.num_transferred_images += 1
+            self.signal_update_progress.emit(self.num_transferred_images, all_images_count)
+
+            # TODO self.image_queue.task_done()
+
+        self.transfer_not_finished = False
+
     def __start_ftp_transfer(self):
         while self.tracking_active:
-            # TODO make sure only new images are uploaded! (via timestamps? or by saving the last image that was
-            #  uploaded? or make a diff between local and remote dir (probably too expensive)?)
             # we use a formatted string as we have a path object and not a string
             all_images = os.listdir(f"{self.__images_file_path}")
             all_images_count = len(all_images)
@@ -216,10 +237,12 @@ class Logger(QtWidgets.QWidget):
             if len(images_not_transferred) > 0:
                 self.transfer_not_finished = True
 
+            # TODO: JPEG mit bytestream machts deutlich schneller: 55 -> 18 s (im vergleich zu png bytestream)
+
             for image in images_not_transferred:
-                self.sftp.put(localpath=f"{self.__images_file_path}/{image}",
-                              remotepath=f"{self.user_dir}/images/{image}")
-                              # callback=self.__image_upload_callback)
+                # TODO: Time needed to upload 30 images: 12.471 seconds
+                self.sftp.put(localpath=f"{self.__images_file_path}/{image}",remotepath=f"{self.user_dir}/images/{image}")
+
                 self.num_transferred_images += 1
                 self.signal_update_progress.emit(self.num_transferred_images, all_images_count)
 
@@ -229,8 +252,12 @@ class Logger(QtWidgets.QWidget):
         # ** unpacks the given dictionary as key-value pairs
         tracking_df = pd.DataFrame({'date': datetime.now(), **data}, index=[0])
         tracking_df.to_csv(self.__log_file_path, sep=";", index=False)
-        # TODO transfer directly without saving locally first
+
+        # with self.sftp.open(f"{self.user_dir}/{self.__log_file}", 'w+', bufsize=32768) as f:
         self.sftp.put(localpath=f"{self.__log_file_path}", remotepath=f"{self.user_dir}/{self.__log_file}")
+
+    def add_image_to_queue(self, filename: str, image: np.ndarray, timestamp: float):
+        self.image_queue.put((filename, image, timestamp))
 
     def log_image(self, filename: str, image: np.ndarray, timestamp: float):
         self.__image_data.append((filename, image, timestamp))
