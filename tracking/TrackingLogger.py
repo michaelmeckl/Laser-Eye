@@ -4,6 +4,7 @@ import pathlib
 import sys
 import threading
 import time
+from concurrent import futures
 from datetime import datetime
 from enum import Enum
 from queue import Queue
@@ -19,6 +20,15 @@ from plyer import notification
 import shutil
 from paramiko.ssh_exception import SSHException
 from post_processing.image_utils import encode_image
+import asyncio
+import asyncssh
+from concurrent.futures import ThreadPoolExecutor
+import logging
+from functools import partial
+
+# logging.basicConfig(
+#     level=logging.DEBUG, format="%(asctime)s %(thread)s %(funcName)s %(message)s"
+# )
 
 TrackingData = Enum("TrackingData", "SCREEN_WIDTH SCREEN_HEIGHT CAPTURE_WIDTH CAPTURE_HEIGHT CAPTURE_FPS "
                                     "CORE_COUNT CORE_COUNT_PHYSICAL CORE_COUNT_AVAILABLE SYSTEM SYSTEM_VERSION "
@@ -206,7 +216,62 @@ class Logger(QtWidgets.QWidget):
         self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, daemon=False)
         self.upload_thread.start()
 
-    def __start_ftp_transfer_new(self):
+    def run_upload_task(self, sftp, image):
+        return sftp.put(localpaths=f"{self.__images_file_path}/{image}",
+                        remotepath=f"{self.user_dir}/images/{image}")
+
+    def log_progress(self, source_path, destination_path, bytes_uploaded, total_bytes):
+        print(f"Progress:\n{bytes_uploaded} / {total_bytes} (source: {source_path}, dest: {destination_path}")
+        if bytes_uploaded == total_bytes:
+            self.cc += 1
+        if self.cc == 30:
+            print(f"Finished: Took {time.time() - self.start}")
+
+    async def transfer(self):
+        self.cc = 0
+        self.start = time.time()
+
+        loop = asyncio.get_running_loop()
+        executor = ThreadPoolExecutor(max_workers=4)
+
+        async with asyncssh.connect(self.__hostname, port=self.__port, username=self.__username,
+                                    password=self.__password, known_hosts=None) as conn:
+            async with conn.start_sftp_client() as sftp:
+                print('connected')
+                all_images = os.listdir(f"{self.__images_file_path}")
+                all_images_count = len(all_images)
+                print("All images currently: ", all_images_count)
+                images_not_transferred = all_images[self.num_transferred_images:]
+                print("Number transferred:", self.num_transferred_images)
+                print("All images not transferred: ", len(images_not_transferred))
+                if len(images_not_transferred) > 0:
+                    self.transfer_not_finished = True
+
+                logging.info("1.")
+                futures = [
+                    loop.run_in_executor(executor, partial(self.run_upload_task, sftp, i))
+                    for i in images_not_transferred[:31]
+                ]
+
+                logging.info("3.")
+                results = await asyncio.gather(*futures)
+                logging.info("5.")
+                for (i, result) in zip(images_not_transferred[:31], results):
+                    logging.info("6. Result: %s, %s", i, result)
+
+                # # tasks = (self.run_client(sftp, img) for img in images_not_transferred[:31])
+                # tasks = []
+                # for img in images_not_transferred[:31]:
+                #     task = asyncio.ensure_future(self.run_upload_task(sftp, img))
+                #     tasks.append(task)
+                # results = await asyncio.gather(*tasks, return_exceptions=True)
+                # for result in results:
+                #     print(result)
+
+    def start_async_upload_asyncio_version(self):
+        asyncio.run(self.transfer())
+
+    def __start_ftp_transfer_byte_version(self):
         while self.tracking_active:
             all_images_count = self.image_queue.qsize()
             if all_images_count > 0:
@@ -225,12 +290,21 @@ class Logger(QtWidgets.QWidget):
 
         self.transfer_not_finished = False
 
+    def __upload_image(self, image):
+        # TODO: Time needed to upload 30 images: 12.471 seconds
+        # lock.acquire()
+        self.sftp.put(localpath=f"{self.__images_file_path}/{image}", remotepath=f"{self.user_dir}/images/{image}")
+
+        self.num_transferred_images += 1
+        self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+        # lock.release()
+
     def __start_ftp_transfer(self):
         while self.tracking_active:
             # we use a formatted string as we have a path object and not a string
             all_images = os.listdir(f"{self.__images_file_path}")
-            all_images_count = len(all_images)
-            print("All images currently: ", all_images_count)
+            self.all_images_count = len(all_images)
+            print("All images currently: ", self.all_images_count)
             images_not_transferred = all_images[self.num_transferred_images:]
             print("Number transferred:", self.num_transferred_images)
             print("All images not transferred: ", len(images_not_transferred))
@@ -239,12 +313,30 @@ class Logger(QtWidgets.QWidget):
 
             # TODO: JPEG mit bytestream machts deutlich schneller: 55 -> 18 s (im vergleich zu png bytestream)
 
+            # threads = []
+            # lock = threading.Lock()
             for image in images_not_transferred:
-                # TODO: Time needed to upload 30 images: 12.471 seconds
-                self.sftp.put(localpath=f"{self.__images_file_path}/{image}",remotepath=f"{self.user_dir}/images/{image}")
+                self.__upload_image(image)
+                # new_thread = threading.Thread(target=self.__upload_image, args=(image, lock), daemon=True)
+                # new_thread.start()
+                # threads.append(new_thread)
 
-                self.num_transferred_images += 1
-                self.signal_update_progress.emit(self.num_transferred_images, all_images_count)
+            # executor.map(self.__upload_image, images_not_transferred)
+
+            # process = []
+            # with ThreadPoolExecutor(max_workers=5) as executor:
+            #     for image in images_not_transferred:
+            #         process.append(executor.submit(self.__upload_image, image))
+
+            # future_to_url = {executor.submit(self.__upload_image, img): img for img in images_not_transferred}
+            # for future in futures.as_completed(future_to_url):
+            #     url = future_to_url[future]
+            #     try:
+            #         data = future.result()
+            #     except Exception as exc:
+            #         print('%r generated an exception: %s' % (url, exc))
+            #     else:
+            #         print('%r page is %d bytes' % (url, len(data)))
 
             self.transfer_not_finished = False
 
@@ -257,6 +349,13 @@ class Logger(QtWidgets.QWidget):
         self.sftp.put(localpath=f"{self.__log_file_path}", remotepath=f"{self.user_dir}/{self.__log_file}")
 
     def add_image_to_queue(self, filename: str, image: np.ndarray, timestamp: float):
+        """
+        # if using maxsize for queue init:
+        if not self.image_queue.full():
+            self.image_queue.put((filename, image, timestamp))
+        else:
+            time.sleep(0.1)  # Rest for 100ms, we have a full queue
+        """
         self.image_queue.put((filename, image, timestamp))
 
     def log_image(self, filename: str, image: np.ndarray, timestamp: float):
