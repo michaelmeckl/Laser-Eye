@@ -2,15 +2,22 @@
 # -*- coding:utf-8 -*-
 
 import argparse
+import io
+import math
+import time
 from datetime import datetime
 import platform
 import sys
 import threading
 import cv2
+import dlib
 import numpy as np
 import psutil
 import pyautogui
+from PIL import Image
 from plyer import notification
+from post_processing.image_utils import scale_image, resize_image, preprocess_frame, extract_image_region
+from service.face_detector import MxnetDetectionModel
 from tracking.ThreadedWebcamCapture import WebcamStream
 from tracking.TrackingLogger import Logger, TrackingData, get_timestamp
 from tracking.FpsMeasuring import FpsMeasurer
@@ -40,6 +47,9 @@ class TrackingSystem(QtWidgets.QMainWindow):
         self.t2 = None
 
         self.capture = capturing_device
+
+        self.hog_detector = dlib.get_frontal_face_detector()
+        self.face_detector = MxnetDetectionModel("weights/16and32", 0, .6, gpu=-1)
 
         self.__init_gui()
         self.__init_logger()
@@ -71,6 +81,9 @@ class TrackingSystem(QtWidgets.QMainWindow):
         self.label_all = QtWidgets.QLabel(self)
         self.label_all.setGeometry(265, 80, 60, 20)
 
+        self.label_eta = QtWidgets.QLabel(self)
+        self.label_eta.setGeometry(220, 120, 250, 20)
+
     def closeEvent(self, event):
         choice = QMessageBox.question(self, 'Warning', "Please close this window only if all images have been "
                                                        "transferred! Do you really want to exit? ",
@@ -81,15 +94,27 @@ class TrackingSystem(QtWidgets.QMainWindow):
         else:
             event.ignore()
 
-    # TODO ca 17 sec für 30 bilder  -> 0.57 sec pro bild (ca. 570 ms)
-    #  -> 1651/30(fps) = 55 sec
-    #  -> 1651*0.57 = 935.57 sec = knapp 16 minuten upload für eine knappe minute aufzeichnung ...
-
-    # TODO aktuell: 10% bei 167 bildern und bei 300 18%
+    # TODO ca 5 sec für 30 bilder  -> 0.16 sec pro bild (ca. 160 ms)
+    # TODO # aktuell in etwa 150 ms pro Frame
+    #  11 min für 5200 Frames -> 50min * 60 * 25fps = 75000 frames -> 158 min
     def __on_upload_progress(self, current, overall):
+        if overall == 0 or current > overall:
+            return
+
+        seconds_per_frame = (time.time() - self.__upload_start) / current
+        eta_seconds = (overall - current) * seconds_per_frame
+
+        minutes = math.floor(eta_seconds / 60)
+        seconds = round(eta_seconds % 60)
+        self.label_eta.setText(f"ETA: {minutes} min, {seconds} seconds")
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
         progress = (current / overall) * 100
+
+        if current in [30, 167]:
+            needed_time = time.time() - self.__upload_start
+            print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
+
         self.progress_bar_overall.setValue(int(progress))
 
     def listen_for_hotkey(self, hotkey_toggle="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
@@ -140,6 +165,7 @@ class TrackingSystem(QtWidgets.QMainWindow):
         """
         self.__logger.start_async_upload()  # start uploading data
 
+        self.__upload_start = time.time()
         self.fps_measurer.start()
         while True:
             if not self.__tracking_active:
@@ -155,6 +181,8 @@ class TrackingSystem(QtWidgets.QMainWindow):
             self.fps_measurer.update()
 
             processed_frame = self.__process_frame(frame)
+            if processed_frame is None:
+                continue
             self.__current_frame = processed_frame
 
             cv2.putText(processed_frame, f"current FPS: {self.fps_measurer.get_current_fps():.3f}",
@@ -181,12 +209,78 @@ class TrackingSystem(QtWidgets.QMainWindow):
             self.t2 = get_timestamp()
             print(f"########\nTime between frames {(self.t2 - self.t1):.2f} seconds\n#######")
 
+    def downsample(self, frame):
+        scaled = scale_image(frame, scale_factor=0.5, show_scaled=True)
+        print(f"Shape_scaled: {scaled.shape[0]}, {scaled.shape[1]}")
+        resized = resize_image(frame, size=300, show_resized=True)
+        print(f"Shape_resized: {resized.shape[0]}, {resized.shape[1]}")
+        return scaled
+
+    def to_gray(self, frame):
+        grayscale_image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        return grayscale_image
+
+    def find_face_hog(self, frame):
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # dlib requires RGB while opencv uses BGR per default
+        bboxes = self.hog_detector(rgb_frame, 0)  # 0 so it won't be upsampled
+        if len(bboxes) > 0:
+            # only take the first face if more were found (in most cases there should be only one anyway)
+            face = bboxes[0]
+            region = extract_image_region(frame, face.left(), face.top(), face.right(), face.bottom())
+            cv2.imshow("extracted_region_mxnet", region)
+            return region
+
+    def find_face_mxnet(self, frame):
+        bboxes = self.face_detector.detect(frame)  # TODO if this is used bboxes should be logged as well?
+        face_region = None
+        for face in bboxes:
+            face_region = extract_image_region(frame, face[0], face[1], face[2], face[3])
+            cv2.imshow("extracted_region_mxnet", face_region)
+            break  # break to take only the first face (in most cases there should be only one anyway)
+        return face_region
+
+    def find_face_mxnet_resized(self, frame, inHeight=300, inWidth=0):
+        image_frame = frame.copy()
+        frameHeight = image_frame.shape[0]
+        frameWidth = image_frame.shape[1]
+        if not inWidth:
+            inWidth = int((frameWidth / frameHeight) * inHeight)
+        scaleHeight = frameHeight / inHeight
+        scaleWidth = frameWidth / inWidth
+
+        image_frame_small = cv2.resize(image_frame, (inWidth, inHeight))
+        # image_frame_small = cv2.cvtColor(image_frame_small, cv2.COLOR_BGR2RGB)
+        bboxes = self.face_detector.detect(image_frame_small)
+        face_region = None
+        for face in bboxes:
+            face_region = extract_image_region(frame,
+                                               face[0] * scaleWidth,
+                                               face[1] * scaleHeight,
+                                               face[2] * scaleWidth,
+                                               face[3] * scaleHeight)
+            cv2.imshow("extracted_region_mxnet", face_region)
+            break  # break to take only the first face (in most cases there should be only one anyway)
+        return face_region
+
+    """
+    30 Frames dauern aktuell in etwa 5 sek; ca. 25 fps mit facedetect;
+    wenn ich alle 20 sekunden schedule, die aktuellen bilder zu nehmen würde das für das erste mal bedeuten:
+    20*25 = 500 frames -> 500 / 30 * 16 -> 5 * 16 = 80sec  (Baseline)
+    TODO: zip versuchen!
+    """
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
-        # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
-        # can't be matched later!
-        log_timestamp = get_timestamp()
-        # TODO resize images to larger ones before saving?
-        self.__logger.log_image("capture", frame, log_timestamp)
+        face_image = self.find_face_mxnet(frame)
+        # face_image = self.find_face_mxnet_resized(frame)  # ca. 2 seconds faster?
+        # face_image = self.find_face_hog(frame)
+        # new_image = self.downsample(frame)
+        # new_image = self.to_gray(face_image)
+
+        if face_image is not None:
+            # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
+            # can't be matched later!
+            log_timestamp = get_timestamp()
+            self.__logger.log_image("capture", face_image, log_timestamp)
+            # self.__logger.add_image_to_queue("capture", face_image, log_timestamp)
         return frame
 
     def __log_static_data(self):
