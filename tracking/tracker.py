@@ -351,22 +351,19 @@ def main():
 if __name__ == "__main__":
     main()
 
-
 """
-For creating exe with pyinstaller:
-add-data C:/Users/Michael/Documents/GitHub/Tracking_System_Version_1.0.1/weights
+Creating an exe file:
+
+1. Comment out the config parsing in the logger and add server credentials directly in the code.
+
+For creating exe with auto-py-to-exe:
+select --onefile and window based
+add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights
 add-data C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet
+add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service
+add hidden-imports: pandas, pysftp, plyer.platforms.win.notification and requests
+# for plyer import see https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a-executable-using-pyinstaller
 
-hidden-imports: pandas, pysftp and plyer.platforms.win.notification
-# for plyer see https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a
--executable-using-pyinstaller
-
-
-Created pyinstaller command:
-
-pyinstaller --noconfirm --onefile --windowed 
---add-data "C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/"
---add-data "C:/Users/Michael/Documents/GitHub/Tracking_System_Version_1.0.1/weights;weights/"
---hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp"
-"C:/Users/Michael/Documents/GitHub/Tracking_System_Version_1.0.1/tracker.py"
+2. Pyinstaller command for the above:
+pyinstaller --noconfirm --onefile --windowed --add-data "C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests"  "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
 """

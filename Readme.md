@@ -3,6 +3,27 @@ the University of Regensburg in the summer semester 2021 as a webcam eye-trackin
 library that would work well enough to extract precise enough data to measure a
 user's workload while playing a video game.
 
+### Requirements:
+**TODO**
+(see requirements.txt)
+
+### Generating an exe file for the tracking system:
+1. Comment out the config parsing in the logger and add the server credentials directly in the code.
+
+2. For creating exe with auto-py-to-exe:
+* select --onefile and window mode
+* add-data: ```C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights```
+* add-data: ```C:/Users/[user]/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet``` (or wherever mxnet 
+  has been installed)
+* add-data: ```C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service```
+* add hidden-imports: ```pandas```, ```pysftp```, ```requests``` and ```plyer.platforms.win.notification```
+  (for plyer import see https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a-executable-using-pyinstaller)
+
+3. Pyinstaller command for the above:
+```shell
+pyinstaller --noconfirm --onefile --windowed --add-data "C:/Users/[user]/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" --add-data "C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests"  "C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
+```
+
 # Original Documentation below:
 
 ## Laser Eye : Gaze Estimation via Deep Neural Networks
