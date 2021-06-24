@@ -28,11 +28,6 @@ from PyQt5.QtWidgets import QApplication, QMessageBox
 # TODO # aktuell in etwa 150 ms pro Frame
 #  11 min für 5200 Frames -> 50min * 60 * 25fps = 75000 frames -> 158 min
 
-
-# FIXME: tracking can be restarted (via button and shortcut) after being stopped which completely destroys everything
-# -> simply unregister callbacks and disconnect slots in stop ?
-
-
 class TrackingSystem(QtWidgets.QWidget):
 
     def __init__(self, debug_active=True):
@@ -93,11 +88,17 @@ class TrackingSystem(QtWidgets.QWidget):
         self.layout.addWidget(self.tracking_status)
 
         # add buttons to manually start and stop tracking
+        self.__setup_button_layout()  # TODO only for debugging!
+
+        self.layout.setContentsMargins(10, 10, 10, 10)
+        self.setLayout(self.layout)
+
+    def __setup_button_layout(self):
         self.start_button = QtWidgets.QPushButton(self)
         self.start_button.setText("Start tracking")
         self.start_button.setStyleSheet("QPushButton {background-color: rgb(87, 205, 0); color: black; "
                                         "padding: 10px 10px 10px 10px; border-radius: 2px;}")
-        self.start_button.clicked.connect(self.__activate_tracking)
+        self.start_button.clicked.connect(self.__activate_tracking)  # connect start method to this button
 
         self.stop_button = QtWidgets.QPushButton(self)
         self.stop_button.setText("Stop tracking")
@@ -109,9 +110,6 @@ class TrackingSystem(QtWidgets.QWidget):
         button_layout.addWidget(self.start_button, alignment=Qt.AlignLeft)
         button_layout.addWidget(self.stop_button, alignment=Qt.AlignRight)
         self.layout.addLayout(button_layout)
-
-        self.layout.setContentsMargins(10, 10, 10, 10)
-        self.setLayout(self.layout)
 
     def __setup_progress_bar(self):
         # show a progressbar for the upload
@@ -174,6 +172,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.progress_bar.setValue(int(progress))
 
     def listen_for_hotkey(self, hotkey_start="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
+        # start_hotkey = keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
         keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
         keyboard.add_hotkey(hotkey_stop, self.__stop_tracking, suppress=False, trigger_on_release=False)
 
@@ -302,6 +301,12 @@ class TrackingSystem(QtWidgets.QWidget):
             self.capture.stop()
             cv2.destroyAllWindows()
 
+            # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
+            # the program itself
+            self.start_button.disconnect()
+            self.stop_button.disconnect()
+            keyboard.remove_all_hotkeys()
+
             if self.debug:
                 self.fps_measurer.stop()
                 print(f"[INFO] elapsed time: {self.fps_measurer.elapsed():.2f} seconds")
@@ -356,14 +361,22 @@ Creating an exe file:
 
 1. Comment out the config parsing in the logger and add server credentials directly in the code.
 
-For creating exe with auto-py-to-exe:
-select --onefile and window based
-add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights
-add-data C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet
-add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service
+For creating exe with auto-py-to-exe: select --onefile and window based add-data 
+C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights add-data 
+C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet add-data 
+C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service
 add hidden-imports: pandas, pysftp, plyer.platforms.win.notification and requests
-# for plyer import see https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a-executable-using-pyinstaller
+# for plyer import see 
+https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a-executable-using-pyinstaller 
 
 2. Pyinstaller command for the above:
-pyinstaller --noconfirm --onefile --windowed --add-data "C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests"  "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
+pyinstaller --noconfirm --onefile --windowed 
+--add-data "C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" 
+--add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" 
+--add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" 
+--hidden-import "plyer.platforms.win.notification" 
+--hidden-import "pandas" 
+--hidden-import "pysftp" 
+--hidden-import "requests"  
+"C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
 """
