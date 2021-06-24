@@ -5,9 +5,6 @@ import argparse
 import cv2
 from datetime import datetime
 from post_processing.eye_tracker import EyeTracker
-# from plyer import notification
-# import sounddevice as sd
-# import soundfile as sf
 
 
 # we need:
@@ -36,7 +33,7 @@ def main():
     # use a custom threaded video captures to increase fps;
     # see https://www.pyimagesearch.com/2015/12/21/increasing-webcam-fps-with-python-and-opencv/
     if args.video_file:
-        from tracking.ThreadedFileVideoCapture import FileVideoStream
+        from post_processing.ThreadedFileVideoCapture import FileVideoStream
         capture = FileVideoStream(path=args.video_file, transform=None)
     else:
         from tracking.ThreadedWebcamCapture import WebcamStream
