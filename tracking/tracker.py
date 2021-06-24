@@ -8,17 +8,17 @@ import platform
 import sys
 import threading
 from pathlib import Path
-from tracking.tracking_utils import scale_image, find_face_mxnet, find_face_mxnet_resized
+from tracking_utils import scale_image, find_face_mxnet
 import cv2
 import numpy as np
 import psutil
 import pyautogui
 from PyQt5.QtCore import Qt
 from plyer import notification
-from service.face_detector import MxnetDetectionModel
-from tracking.ThreadedWebcamCapture import WebcamStream
-from tracking.TrackingLogger import Logger, TrackingData, get_timestamp
-from tracking.FpsMeasuring import FpsMeasurer
+from tracking_service.face_detector import MxnetDetectionModel
+from ThreadedWebcamCapture import WebcamStream
+from TrackingLogger import Logger, TrackingData, get_timestamp
+from FpsMeasuring import FpsMeasurer
 import keyboard
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QApplication, QMessageBox
@@ -52,11 +52,13 @@ class TrackingSystem(QtWidgets.QWidget):
         # necessary for building the exe file with pyinstaller with the --one-file option as the path changes;
         # see https://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile for more
         if getattr(sys, 'frozen', False):
-            # change the path if we are executing the exe file; the warning can be ignored ;)
+            # change the path if we are executing the exe file; the lint warning here can be ignored ;)
             folder = Path(sys._MEIPASS)
+            data_path = folder/'weights/16and32'
         else:
             folder = Path(__file__).parent
-        data_path = folder/'weights/16and32'
+            data_path = folder/'../weights/16and32'
+
         self.face_detector = MxnetDetectionModel(data_path, 0, .6, gpu=-1)
 
         self.__setup_gui()
@@ -294,6 +296,7 @@ class TrackingSystem(QtWidgets.QWidget):
         Also stop the logging.
         """
         if self.__tracking_active:
+            notification.notify(title="Tracking stopped", message="Tracking has been stopped!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
             self.capture.stop()

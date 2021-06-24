@@ -9,12 +9,12 @@ from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from post_processing.ProcessingLogger import ProcessingLogger, LogData, get_timestamp
 from post_processing.image_utils import preprocess_frame
-from service.blink_detector import BlinkDetector
-# from service.saccade_fixation_detector import SaccadeFixationDetector
-from service.face_alignment import CoordinateAlignmentModel
-from service.face_detector import MxnetDetectionModel
-from service.head_pose import HeadPoseEstimator
-from service.iris_localization import IrisLocalizationModel
+from post_processing_service.blink_detector import BlinkDetector
+# from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
+from post_processing_service.face_alignment import CoordinateAlignmentModel
+from tracking_service.face_detector import MxnetDetectionModel
+from post_processing_service.head_pose import HeadPoseEstimator
+from post_processing_service.iris_localization import IrisLocalizationModel
 
 
 # noinspection PyAttributeOutsideInit

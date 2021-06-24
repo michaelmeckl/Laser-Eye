@@ -127,7 +127,7 @@ class CoordinateAlignmentModel(BaseAlignmentorModel):
 
 if __name__ == '__main__':
 
-    from face_detector import MxnetDetectionModel
+    from tracking_service.face_detector import MxnetDetectionModel
     import sys
     import os
 

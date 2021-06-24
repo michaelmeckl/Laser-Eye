@@ -98,7 +98,7 @@ if __name__ == "__main__":
     import sys
     from head_pose import HeadPoseEstimator
     from face_alignment import CoordinateAlignmentModel
-    from face_detector import MxnetDetectionModel
+    from tracking_service.face_detector import MxnetDetectionModel
 
     import os
 
