@@ -154,7 +154,7 @@ class Logger(QtWidgets.QWidget):
 
     def start_saving_images_to_disk(self):
         self.tracking_active = True
-        self.image_save_thread = threading.Thread(target=self.__save_images, daemon=True)
+        self.image_save_thread = threading.Thread(target=self.__save_images, name="SaveToDisk", daemon=True)
         self.image_save_thread.start()
 
     def __save_images(self, image_format="jpeg"):
@@ -173,8 +173,10 @@ class Logger(QtWidgets.QWidget):
         # main thread and not from a background thread, otherwise it would just randomly crash after some time!!)
         self.signal_update_progress.connect(self.__upload_callback)
 
-        self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, daemon=False)  # must be False!
-        # self.upload_thread = threading.Thread(target=self.__start_ftp_transfer_byte_version, daemon=False)
+        # must not be a daemon thread here!
+        self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
+        # self.upload_thread = threading.Thread(target=self.__start_ftp_transfer_byte_version, name="UploadThread",
+        # daemon=False)
         self.upload_thread.start()
 
     def __start_ftp_transfer(self):

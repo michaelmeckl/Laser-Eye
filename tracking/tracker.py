@@ -71,9 +71,9 @@ class TrackingSystem(QtWidgets.QWidget):
 
         # show some instructions
         self.label = QtWidgets.QLabel(self)
-        self.label.setText("Press Ctrl + Shift + A to start tracking and Ctrl + Shift + Q to stop it (or use the "
-                           "button below).\n\nPlease don't close this window until the upload is finished!\n"
-                           "This may take some time depending on your hardware and internet connection.")
+        self.label.setText("Press Ctrl + Shift + A to start tracking and Ctrl + Shift + Q to stop it (once stopped it "
+                           "cannot be restarted with the hotkey!).\n\nPlease don't close this window until the upload"
+                           " is finished!\nThis may take some time depending on your hardware and internet connection.")
         self.label.setContentsMargins(10, 10, 10, 10)
         self.label.setStyleSheet("QLabel {font-size: 9pt;}")
         self.layout.addWidget(self.label)
@@ -159,7 +159,7 @@ class TrackingSystem(QtWidgets.QWidget):
         eta_seconds = (overall - current) * seconds_per_frame
         minutes = math.floor(eta_seconds / 60)
         seconds = round(eta_seconds % 60)
-        self.label_eta.setText(f"ETA: {minutes} min, {seconds} seconds")
+        self.label_eta.setText(f"Remaining Time: {minutes} min, {seconds} seconds")
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
         progress = (current / overall) * 100
@@ -172,7 +172,6 @@ class TrackingSystem(QtWidgets.QWidget):
         self.progress_bar.setValue(int(progress))
 
     def listen_for_hotkey(self, hotkey_start="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
-        # start_hotkey = keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
         keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
         keyboard.add_hotkey(hotkey_stop, self.__stop_tracking, suppress=False, trigger_on_release=False)
 
@@ -184,7 +183,7 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__set_tracking_status_ui()
             notification.notify(title="Tracking started", message="Tracking is now active!", timeout=1)
             self.capture.start()  # start reading frames from webcam
-            self.tracking_thread = threading.Thread(target=self.__start_tracking, daemon=True)
+            self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
             self.tracking_thread.start()
         else:
             notification.notify(title="Can't start tracking!", message="Tracking is already active!", timeout=2)
@@ -205,17 +204,16 @@ class TrackingSystem(QtWidgets.QWidget):
                 break
 
             frame = self.capture.read()
+            self.capture.reset_frame()  # immediately reset frame to prevent reading it twice if this thread is faster!
             if frame is None:
-                sys.stderr.write("Frame from stream thread is None! This shouldn't happen!")
-                break
+                # print("Frame from capture thread is None!")
+                continue
 
             processed_frame = self.__process_frame(frame)
             if processed_frame is None:
                 continue
-
             self.__current_frame = processed_frame
             # self.__measure_frame_count()  # TODO delete
-
             if self.debug:
                 self.fps_measurer.update()
                 cv2.putText(processed_frame, f"current FPS: {self.fps_measurer.get_current_fps():.3f}",

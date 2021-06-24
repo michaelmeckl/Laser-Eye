@@ -41,20 +41,28 @@ class WebcamStream:
         while True:
             # if the thread indicator variable is set, stop the thread
             if self.stopped:
-                return
+                break
 
             # otherwise, read the next frame from the stream
             (self.grabbed, self.frame) = self.stream.read()
             self.c += 1
             if not self.grabbed:
                 sys.stderr.write("Unknown error while trying to get current frame!")
-                return
+                break
 
-    # FIXME: use a queue instead to prevent other thread from accessing the same frame twice
-    #  if he is faster than this one!
+        self.stream.release()
+
     def read(self):
         # return the frame most recently read
         return self.frame
+
+    def reset_frame(self):
+        """
+        Immediately called after reading the current frame.
+        Reset the current frame to prevent the tracking thread from accessing the same image
+        more than once if it would be faster than this thread (i.e. the capture rate of the webcam).
+        """
+        self.frame = None
 
     def stop(self):
         # indicate that the thread should be stopped
