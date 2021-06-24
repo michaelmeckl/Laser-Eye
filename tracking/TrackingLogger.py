@@ -16,6 +16,7 @@ from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal
 from plyer import notification
 import shutil
+import py7zr
 from paramiko.ssh_exception import SSHException
 
 

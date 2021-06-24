@@ -4,8 +4,9 @@ library that would work well enough to extract precise enough data to measure a
 user's workload while playing a video game.
 
 ### Requirements:
-**TODO**
-(see requirements.txt)
+Python 3.9 is recommended, but 3.8 and 3.7 should also work fine.
+
+For other requirements have a look at the [requirements.txt](requirements.txt).
 
 ### Generating an exe file for the tracking system:
 1. Comment out the config parsing in the logger and add the server credentials directly in the code.
