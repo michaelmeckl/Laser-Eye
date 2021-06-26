@@ -38,6 +38,7 @@ class Logger(QtWidgets.QWidget):
 
     signal_update_progress = pyqtSignal(int, int)
     image_queue = Queue()  # (maxsize=128)
+    upload_queue = Queue()
 
     def __init__(self, upload_callback, default_log_folder="tracking_data", default_log_file="tracking_log.csv"):
         super(Logger, self).__init__()
@@ -109,7 +110,7 @@ class Logger(QtWidgets.QWidget):
         """
         if self.__log_folder_path.is_dir():
             # remove old log folder if there is already one (probably some unwanted leftover)
-            shutil.rmtree(self.__log_folder)
+            shutil.rmtree(self.__log_folder_path)
 
         self.__log_folder_path.mkdir()
         self.__images_path.mkdir()
@@ -186,26 +187,16 @@ class Logger(QtWidgets.QWidget):
                     cv2.imwrite(image_path, image)
                     self.all_images_count += 1
 
-                    # TODO make the code below on a separate thread that simply checks the image count every 100 ms?
-
                     # check if the current number of saved images is a multiple of the batch size
                     if (self.all_images_count % self.batch_size) == 0:
-                        # we finished a batch of images so we create a new folder and zip the old one
-                        self.__zip_folder(str(self.folder_count))
+                        # a batch of images is finished so we put this one in a queue to be zipped and uploaded
+                        self.upload_queue.put(str(self.folder_count))
 
+                        # and create a new folder for the next batch
                         self.folder_count += 1
                         self.__get_curr_image_folder().mkdir()
 
             time.sleep(0.030)  # wait for 30 ms as this is the maximum we can get new frames from our webcam
-
-    def __zip_folder(self, folder_name: str):
-        """
-        Converts the given folder to a 7zip archive file to speed up the upload.
-        """
-        folder_path = f"{self.__images_path / folder_name}"
-        zip_filters = None
-        with py7zr.SevenZipFile(f"{self.__images_zipped_path / folder_name}.7z", 'w', filters=zip_filters) as archive:
-            archive.writeall(folder_path)
 
     def start_async_upload(self):
         # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
@@ -214,24 +205,36 @@ class Logger(QtWidgets.QWidget):
 
         # must not be a daemon thread here!
         self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
-        # self.upload_thread = threading.Thread(target=self.__start_ftp_transfer_byte_version, name="UploadThread",
-        # daemon=False)
         self.upload_thread.start()
 
     def __start_ftp_transfer(self):
         while self.tracking_active:
-            all_folders = os.listdir(str(self.__images_zipped_path))
-            folders_not_transferred = all_folders[self.num_transferred_folders:]
+            if self.upload_queue.qsize() > 0:
+                file_name = self.upload_queue.get()
+                # zip the the folder with the given name
+                zip_file_name = self.__zip_folder(file_name)
+                # upload this folder to the server
+                self.__upload_zipped_images(zip_file_name)
 
-            for folder_name in folders_not_transferred:
-                # upload this folder
-                self.__upload_zipped_images(folder_name)
-
-                # update progressbar
+                # update progressbar in gui
                 self.num_transferred_folders += 1
                 self.num_transferred_images += self.batch_size
-                # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
-                self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+                self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+
+            time.sleep(0.03)  # wait for the same amount of time as the other queue
+
+    def __zip_folder(self, folder_name: str):
+        """
+        Converts the given folder to a 7zip archive file to speed up the upload.
+        """
+        folder_path = f"{self.__images_path / folder_name}"
+        zip_file_name = folder_name + ".7z"
+        zip_filters = None
+
+        with py7zr.SevenZipFile(f"{self.__images_zipped_path / zip_file_name}", 'w', filters=zip_filters) as archive:
+            archive.writeall(folder_path)
+        return zip_file_name
 
     def __upload_zipped_images(self, file_name):
         try:
@@ -251,7 +254,26 @@ class Logger(QtWidgets.QWidget):
         # clear the image queue in a thread safe way
         with self.image_queue.mutex:
             self.image_queue.queue.clear()
+        with self.upload_queue.mutex:
+            self.upload_queue.queue.clear()
 
         # remove local dir after uploading everything
         # TODO enable again:
-        # shutil.rmtree(self.__log_folder)
+        # shutil.rmtree(self.__log_folder_path)
+
+    """
+    def __start_ftp_transfer(self):
+        while self.tracking_active:
+            all_folders = os.listdir(str(self.__images_zipped_path))
+            folders_not_transferred = all_folders[self.num_transferred_folders:]
+
+            for folder_name in folders_not_transferred:
+                # upload this folder
+                self.__upload_zipped_images(folder_name)
+
+                # update progressbar
+                self.num_transferred_folders += 1
+                self.num_transferred_images += self.batch_size
+                # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+    """
