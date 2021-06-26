@@ -192,6 +192,14 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         This function runs on a background thread.
         """
+
+        # TODO use this instead of starting all manually after each other?
+        """
+        processes = []
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            processes.append(executor.submit(self.__logger.start_saving_images_to_disk))
+            processes.append(executor.submit(self.__logger.start_async_upload))
+        """
         self.__logger.start_saving_images_to_disk()  # start saving webcam frames to disk
         self.__logger.start_async_upload()  # start uploading data to sftp server
 
@@ -243,7 +251,7 @@ class TrackingSystem(QtWidgets.QWidget):
         return scaled
 
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
-        face_image = find_face_mxnet(self.face_detector, frame)  # TODO if this is used bboxes should be logged as well?
+        face_image = find_face_mxnet(self.face_detector, frame)
         # face_image = find_face_mxnet_resized(self.face_detector, frame)  # TODO ?
         # new_image = self.downsample(frame)
 
@@ -323,6 +331,14 @@ class TrackingSystem(QtWidgets.QWidget):
         else:
             event.ignore()
 
+    # TODO delete later:
+    def debug_me(self):
+        self.__tracking_active = True
+        self.__set_tracking_status_ui()
+        self.capture.start()  # start reading frames from webcam
+        self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
+        self.tracking_thread.start()
+
 
 def main():
     app = QApplication(sys.argv)
@@ -331,7 +347,8 @@ def main():
     tracking_system.listen_for_hotkey()
 
     # TODO only for debugging fps:
-    """
+
+    tracking_system.debug_me()
     c = 0
     start_time = datetime.now()
     while True:
@@ -347,7 +364,7 @@ def main():
         cv2.imshow("fps_main_thread", curr_frame)
         if cv2.waitKey(1) & 0xFF == ord('f'):
             break
-    """
+
     sys.exit(app.exec_())
 
 

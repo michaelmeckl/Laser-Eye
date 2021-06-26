@@ -41,11 +41,20 @@ class Logger(QtWidgets.QWidget):
 
     def __init__(self, upload_callback, default_log_folder="tracking_data", default_log_file="tracking_log.csv"):
         super(Logger, self).__init__()
+        self.all_images_count = 0
+        self.num_transferred_images = 0
+        self.num_transferred_folders = 0
+        # FIXME: 1200 or higher
+        self.batch_size = 10  # the number of images per subfolder
+
         self.__upload_callback = upload_callback
         self.__log_folder = default_log_folder
         self.__log_file = default_log_file
-        self.__log_file_path = pathlib.Path(self.__log_folder + "/" + self.__log_file)
-        self.__images_file_path = pathlib.Path(self.__log_folder + "/images")
+
+        self.__log_folder_path = pathlib.Path(__file__).parent / self.__log_folder  # creates base folder in "tracking/"
+        self.__log_file_path = self.__log_folder_path / self.__log_file  # tracking/tracking_data/file.csv
+        self.__images_path = self.__log_folder_path / "images"  # tracking/tracking_data/images/
+        self.__images_zipped_path = self.__log_folder_path / "images_zipped"  # tracking/tracking_data/images_zipped/
         self.__log_tag = "logger"
         self.__init_log()
 
@@ -65,9 +74,6 @@ class Logger(QtWidgets.QWidget):
         self.__cnopts.hostkeys = None
 
         self.__init_server_connection()
-
-        self.transfer_not_finished = False
-        self.num_transferred_images = 0
 
     def __get_credentials(self) -> Optional[cp.SectionProxy]:
         """
@@ -98,12 +104,23 @@ class Logger(QtWidgets.QWidget):
             return None
 
     def __init_log(self):
-        # create log and images folder if they don't exist yet
-        folder_path = pathlib.Path(self.__log_folder)
-        if not folder_path.is_dir():
-            folder_path.mkdir()
-        if not self.__images_file_path.is_dir():
-            self.__images_file_path.mkdir()
+        """
+        Creates all log and images folders that are needed later.
+        """
+        if self.__log_folder_path.is_dir():
+            # remove old log folder if there is already one (probably some unwanted leftover)
+            shutil.rmtree(self.__log_folder)
+
+        self.__log_folder_path.mkdir()
+        self.__images_path.mkdir()
+        self.__images_zipped_path.mkdir()
+
+        self.folder_count = 1
+        # create the first subfolder for the first image batch
+        self.__get_curr_image_folder().mkdir()
+
+    def __get_curr_image_folder(self):
+        return self.__images_path / str(self.folder_count)
 
     def __init_server_connection(self):
         try:
@@ -157,16 +174,38 @@ class Logger(QtWidgets.QWidget):
         self.image_save_thread = threading.Thread(target=self.__save_images, name="SaveToDisk", daemon=True)
         self.image_save_thread.start()
 
-    def __save_images(self, image_format="jpeg"):
+    def __save_images(self, img_format="jpeg"):
         while self.tracking_active:
             if self.image_queue.qsize() > 0:
                 filename, image, timestamp = self.image_queue.get()
                 # check if image is empty first as it crashes if given an empty array
                 # (e.g. if face / eyes not fully visible)
                 if image.size:
-                    cv2.imwrite(f'{self.__images_file_path}/{filename}__{timestamp}.{image_format}', image)
+                    image_id = f"{filename}__{timestamp}.{img_format}"
+                    image_path = f"{self.__get_curr_image_folder() / image_id}"
+                    cv2.imwrite(image_path, image)
+                    self.all_images_count += 1
 
-            time.sleep(0.033)  # wait for 33 ms as this is the maximum we can get new frames from our webcam
+                    # TODO make the code below on a separate thread that simply checks the image count every 100 ms?
+
+                    # check if the current number of saved images is a multiple of the batch size
+                    if (self.all_images_count % self.batch_size) == 0:
+                        # we finished a batch of images so we create a new folder and zip the old one
+                        self.__zip_folder(str(self.folder_count))
+
+                        self.folder_count += 1
+                        self.__get_curr_image_folder().mkdir()
+
+            time.sleep(0.030)  # wait for 30 ms as this is the maximum we can get new frames from our webcam
+
+    def __zip_folder(self, folder_name: str):
+        """
+        Converts the given folder to a 7zip archive file to speed up the upload.
+        """
+        folder_path = f"{self.__images_path / folder_name}"
+        zip_filters = None
+        with py7zr.SevenZipFile(f"{self.__images_zipped_path / folder_name}.7z", 'w', filters=zip_filters) as archive:
+            archive.writeall(folder_path)
 
     def start_async_upload(self):
         # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
@@ -181,34 +220,29 @@ class Logger(QtWidgets.QWidget):
 
     def __start_ftp_transfer(self):
         while self.tracking_active:
-            # we use a formatted string as we have a path object and not a string
-            all_images = os.listdir(f"{self.__images_file_path}")
-            self.all_images_count = len(all_images)
-            images_not_transferred = all_images[self.num_transferred_images:]
-            if len(images_not_transferred) > 0:
-                self.transfer_not_finished = True
+            all_folders = os.listdir(str(self.__images_zipped_path))
+            folders_not_transferred = all_folders[self.num_transferred_folders:]
 
-            for image in images_not_transferred:
-                self.__upload_image(image)
-            self.transfer_not_finished = False
+            for folder_name in folders_not_transferred:
+                # upload this folder
+                self.__upload_zipped_images(folder_name)
 
-    def __upload_image(self, image):
+                # update progressbar
+                self.num_transferred_folders += 1
+                self.num_transferred_images += self.batch_size
+                # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+
+    def __upload_zipped_images(self, file_name):
         try:
-            self.sftp.put(localpath=f"{self.__images_file_path}/{image}",
-                          remotepath=f"{self.user_dir}/images/{image}")
-            self.num_transferred_images += 1
-            self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+            self.sftp.put(localpath=f"{self.__images_zipped_path / file_name}",
+                          remotepath=f"{self.user_dir}/images/{file_name}")
         except Exception as e:
             sys.stderr.write(f"Exception during image upload occurred: {e}")
 
     def stop_upload(self):
-        # while self.transfer_not_finished:
-        #    time.sleep(5)  # wait for 5 s before trying again  # TODO this prevents it from finishing the upload
-
         self.tracking_active = False
-
-        # use join as this is no daemon thread
-        # TODO (but also waits till current upload batch is finished which is not very user-friendly)
+        # use join to wait for thread finish as this is no daemon thread (this blocks main ui!)
         # self.upload_thread.join()
 
         # close the connection to the sftp server
@@ -219,31 +253,5 @@ class Logger(QtWidgets.QWidget):
             self.image_queue.queue.clear()
 
         # remove local dir after uploading everything
-        shutil.rmtree(self.__log_folder)
-
-    """
-    def __start_ftp_transfer_byte_version(self):
-        while self.tracking_active:
-            all_images_count = self.image_queue.qsize()
-            if all_images_count > 0:
-                self.transfer_not_finished = True
-            else:
-                self.transfer_not_finished = False
-
-            self.__upload_byte_image(all_images_count)
-
-    def __upload_byte_image(self, all_images_count):
-        filename, image, timestamp = self.image_queue.get()  # FIXME: won't work atm as we need a separate queue for
-        # this now!
-        # transfer image as bytestream directly without saving it locally first
-        byte_stream = encode_image(image, img_format=".jpeg")
-
-        try:
-            self.sftp.putfo(byte_stream, f"{self.user_dir}/images/{filename}__{timestamp}")
-            self.num_transferred_images += 1
-            self.signal_update_progress.emit(self.num_transferred_images, all_images_count)
-        except Exception as e:
-            sys.stderr.write(f"Exception during byte image upload occurred: {e}")
-
-        # self.image_queue.task_done()
-    """
+        # TODO enable again:
+        # shutil.rmtree(self.__log_folder)

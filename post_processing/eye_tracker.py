@@ -8,7 +8,7 @@ import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from post_processing.ProcessingLogger import ProcessingLogger, LogData, get_timestamp
-from post_processing.image_utils import preprocess_frame
+from post_processing.image_utils import preprocess_frame, extract_image_region
 from post_processing_service.blink_detector import BlinkDetector
 # from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
 from post_processing_service.face_alignment import CoordinateAlignmentModel
@@ -37,9 +37,8 @@ class EyeTracker:
 
         # self.saccade_detector = SaccadeFixationDetector()
         self.blink_detector = BlinkDetector()
-        self.face_detector = MxnetDetectionModel("weights/16and32", 0, .6, gpu=gpu_ctx)
-        self.face_alignment = CoordinateAlignmentModel('weights/2d106det', 0, gpu=gpu_ctx)
-        # self.face_alignment = CoordinateAlignmentModel('weights/model-hg2d3-cab/model', 0, gpu=gpu_ctx)
+        self.face_detector = MxnetDetectionModel("../weights/16and32", 0, .6, gpu=gpu_ctx)
+        self.face_alignment = CoordinateAlignmentModel('../weights/2d106det', 0, gpu=gpu_ctx)
         self.iris_locator = IrisLocalizationModel("../weights/iris_landmark.tflite")
         self.head_pose_estimator = HeadPoseEstimator("../weights/object_points.npy", video_width, video_height)
 
@@ -83,6 +82,8 @@ class EyeTracker:
         # eye_region_bbox = None
 
         bboxes = self.face_detector.detect(self.__current_frame)
+        self.show_face_region(bboxes)
+
         for landmarks in self.face_alignment.get_landmarks(self.__current_frame, bboxes, calibrate=True):
             self.__landmarks = landmarks
             # calculate head pose
@@ -120,6 +121,14 @@ class EyeTracker:
         #     return resize_image(eye_region_bbox, size=150)
         # else:
         #     return None
+
+    def show_face_region(self, bboxes):
+        for face in bboxes:
+            face_region = extract_image_region(self.__current_frame, face[0], face[1], face[2], face[3])
+            cv2.rectangle(self.__current_frame, (int(face[0]), int(face[1])), (int(face[2]), int(face[3])), color=(0,
+                                                                                                                   0, 255))
+            cv2.imshow("extracted", face_region)
+            break  # break to take only the first face (in most cases there should be only one anyway)
 
     def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox):
         # fill dict with all relevant data so we don't have to pass all params manually
