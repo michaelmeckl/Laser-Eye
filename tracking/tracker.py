@@ -8,7 +8,7 @@ import platform
 import sys
 import threading
 from pathlib import Path
-from tracking_utils import scale_image, find_face_mxnet
+from tracking_utils import scale_image, to_gray, find_face_mxnet_resized
 import cv2
 import numpy as np
 import psutil
@@ -17,16 +17,13 @@ from PyQt5.QtCore import Qt
 from plyer import notification
 from tracking_service.face_detector import MxnetDetectionModel
 from ThreadedWebcamCapture import WebcamStream
-from TrackingLogger import Logger, TrackingData, get_timestamp
+from TrackingLogger import TrackingData, get_timestamp
+from TrackingLogger import Logger as TrackingLogger
 from FpsMeasuring import FpsMeasurer
 import keyboard
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
-
-# TODO ca 5 sec für 30 bilder  -> 0.16 sec pro bild (ca. 160 ms)
-# TODO # aktuell in etwa 150 ms pro Frame
-#  11 min für 5200 Frames -> 50min * 60 * 25fps = 75000 frames -> 158 min
 
 class TrackingSystem(QtWidgets.QWidget):
 
@@ -66,7 +63,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
     def __setup_gui(self):
         self.setGeometry(50, 50, 600, 200)
-        self.setWindowTitle("Upload Progress")
+        self.setWindowTitle("Tracking System")
         self.layout = QtWidgets.QVBoxLayout()
 
         # show some instructions
@@ -147,25 +144,30 @@ class TrackingSystem(QtWidgets.QWidget):
             self.tracking_status.setStyleSheet("QLabel {color: red;}")
 
     def __init_logger(self):
-        self.__logger = Logger(self.__on_upload_progress)
+        self.__logger = TrackingLogger(self.__on_upload_progress)
+
         self.__tracked_data = {key.name: None for key in TrackingData}
         self.__log_static_data()
 
     def __on_upload_progress(self, current, overall):
-        if overall == 0 or current > overall:
+        if overall == 0 or current > overall:  # FIXME this current > overall prevents the ui from reaching 100%
             return
 
-        seconds_per_frame = (time.time() - self.__upload_start) / current
-        eta_seconds = (overall - current) * seconds_per_frame
-        minutes = math.floor(eta_seconds / 60)
-        seconds = round(eta_seconds % 60)
-        self.label_eta.setText(f"Remaining Time: {minutes} min, {seconds} seconds")
+        if current != 0:
+            seconds_per_frame = (time.time() - self.__upload_start) / current
+            eta_seconds = (overall - current) * seconds_per_frame
+            minutes = math.floor(eta_seconds / 60)
+            seconds = round(eta_seconds % 60)
+            self.label_eta.setText(f"Remaining Upload Time: {minutes} min, {seconds} seconds")
+        else:
+            self.label_eta.setText(f"Waiting for more data...")
+
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
         progress = (current / overall) * 100
 
         # TODO remove later:
-        if current in [30, 167]:
+        if current in [30, 100, 500, 1200]:
             needed_time = time.time() - self.__upload_start
             print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
 
@@ -181,7 +183,8 @@ class TrackingSystem(QtWidgets.QWidget):
             # start tracking on a background thread
             self.__tracking_active = True
             self.__set_tracking_status_ui()
-            notification.notify(title="Tracking started", message="Tracking is now active!", timeout=1)
+            # TODO enable again:
+            #  notification.notify(title="Tracking started", message="Tracking is now active!", timeout=1)
             self.capture.start()  # start reading frames from webcam
             self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
             self.tracking_thread.start()
@@ -212,7 +215,8 @@ class TrackingSystem(QtWidgets.QWidget):
                 break
 
             frame = self.capture.read()
-            self.capture.reset_frame()  # immediately reset frame to prevent reading it twice if this thread is faster!
+            # self.capture.reset_frame()  # immediately reset frame to prevent reading it twice if this thread is
+            # faster!
             if frame is None:
                 # print("Frame from capture thread is None!")
                 continue
@@ -251,9 +255,8 @@ class TrackingSystem(QtWidgets.QWidget):
         return scaled
 
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
-        face_image = find_face_mxnet(self.face_detector, frame)
-        # face_image = find_face_mxnet_resized(self.face_detector, frame)  # TODO ?
-        # new_image = self.downsample(frame)
+        face_image = find_face_mxnet_resized(self.face_detector, frame)
+        # face_image = to_gray(face_image)
 
         if face_image is not None:
             # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
@@ -301,11 +304,14 @@ class TrackingSystem(QtWidgets.QWidget):
         Also stop the logging.
         """
         if self.__tracking_active:
-            notification.notify(title="Tracking stopped", message="Tracking has been stopped!", timeout=1)
+            # TODO enable again:
+            # notification.notify(title="Tracking stopped", message="Tracking has been stopped!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
             self.capture.stop()
             cv2.destroyAllWindows()
+
+            self.__logger.finish_logging()
 
             # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
             # the program itself
@@ -347,7 +353,7 @@ def main():
     tracking_system.listen_for_hotkey()
 
     # TODO only for debugging fps:
-
+    """
     tracking_system.debug_me()
     c = 0
     start_time = datetime.now()
@@ -364,7 +370,7 @@ def main():
         cv2.imshow("fps_main_thread", curr_frame)
         if cv2.waitKey(1) & 0xFF == ord('f'):
             break
-
+    """
     sys.exit(app.exec_())
 
 

@@ -1,9 +1,15 @@
+"""
+Alternative version for zipping and uploading.
+"""
+
 import configparser as cp
+import math
 import os
 import pathlib
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
 from queue import Queue
@@ -16,11 +22,10 @@ from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal
 from plyer import notification
 import shutil
-from py7zr import FILTER_BROTLI, SevenZipFile
+import py7zr
 from paramiko.ssh_exception import SSHException
-from tracking.FpsMeasuring import timeit
-import concurrent.futures
 
+from tracking.FpsMeasuring import timeit
 
 TrackingData = Enum("TrackingData", "SCREEN_WIDTH SCREEN_HEIGHT CAPTURE_WIDTH CAPTURE_HEIGHT CAPTURE_FPS "
                                     "CORE_COUNT CORE_COUNT_PHYSICAL CORE_COUNT_AVAILABLE SYSTEM SYSTEM_VERSION "
@@ -37,16 +42,17 @@ def get_timestamp() -> float:
 
 # noinspection PyAttributeOutsideInit
 class Logger(QtWidgets.QWidget):
+
     signal_update_progress = pyqtSignal(int, int)
     image_queue = Queue()  # (maxsize=128)
-    upload_queue = Queue()
 
     def __init__(self, upload_callback, default_log_folder="tracking_data", default_log_file="tracking_log.csv"):
         super(Logger, self).__init__()
         self.all_images_count = 0
         self.num_transferred_images = 0
         self.num_transferred_folders = 0
-        self.batch_size = 500  # the number of images per subfolder
+        # FIXME: 1200 or higher
+        self.batch_size = 30  # the number of images per subfolder
 
         self.__upload_callback = upload_callback
         self.__log_folder = default_log_folder
@@ -160,6 +166,13 @@ class Logger(QtWidgets.QWidget):
             sys.stderr.write(f"Exception during csv upload occurred: {e}")
 
     def add_image_to_queue(self, filename: str, image: np.ndarray, timestamp: float):
+        """
+        # if using maxsize for queue:
+        if not self.image_queue.full():
+            self.image_queue.put((filename, image, timestamp))
+        else:
+            time.sleep(0.1)  # Rest for 100ms, we have a full queue
+        """
         self.image_queue.put((filename, image, timestamp))
 
     def start_saving_images_to_disk(self):
@@ -167,7 +180,7 @@ class Logger(QtWidgets.QWidget):
         self.image_save_thread = threading.Thread(target=self.__save_images, name="SaveToDisk", daemon=True)
         self.image_save_thread.start()
 
-    def __save_images(self, img_format="png"):
+    def __save_images(self, img_format="png"):  # jpeg
         while self.tracking_active:
             if self.image_queue.qsize() > 0:
                 filename, image, timestamp = self.image_queue.get()
@@ -183,98 +196,96 @@ class Logger(QtWidgets.QWidget):
                     # check if the current number of saved images is a multiple of the batch size
                     if (self.all_images_count % self.batch_size) == 0:
                         # a batch of images is finished so we put this one in a queue to be zipped and uploaded
-                        self.upload_queue.put(str(self.folder_count))
+                        self.__start_upload_thread(str(self.folder_count))
+
+                        """
+                        zip_file_name = self.__zip_folder(str(self.folder_count))
+                        # upload this folder to the server
+                        self.__upload_zipped_images(zip_file_name)
+
+                        # update progressbar in gui
+                        self.num_transferred_folders += 1
+                        self.num_transferred_images += self.batch_size
+                        self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                        """
 
                         # and create a new folder for the next batch
                         self.folder_count += 1
                         # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
                         self.__get_curr_image_folder().mkdir()
 
-            # wait to prevent constantly asking the queue for new images which would have a huge impact on the fps;
-            # 30 ms as this is the maximum we can get new frames from the webcam anyway
-            time.sleep(0.03)
+            time.sleep(0.030)  # wait for 30 ms as this is the maximum we can get new frames from our webcam
 
-    def start_async_upload(self):
-        # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
-        # main thread and not from a background thread, otherwise it would just randomly crash after some time!!)
-        self.signal_update_progress.connect(self.__upload_callback)
-        # must not be a daemon thread here!
-        self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
-        self.upload_thread.start()
+    def __start_upload_thread(self, folder_name: str):
+        with ThreadPoolExecutor() as executor:
+            executor.submit(self.__zip_and_upload, folder_name)
+        # https://stackoverflow.com/questions/37116721/typeerror-in-threading-function-takes-x-positional-argument-but-y-were-given/37116824#37116824
+        # self.zip_and_upload = threading.Thread(target=self.__zip_and_upload, args=(folder_name,),
+        #                                        name="ZipUploadThread", daemon=False)
+        # self.zip_and_upload.start()
 
-    def __start_ftp_transfer(self):
-        while self.tracking_active:
-            if self.upload_queue.qsize() > 0:
-                file_name = self.upload_queue.get()
-                """
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    executor.submit(self.__zip_and_upload, file_name).add_done_callback(self.__update_progress)
-                """
-
-                # zip the the folder with the given name
-                zip_file_name = self.__zip_folder(file_name)
-                # upload this folder to the server
-                self.__upload_zipped_images(zip_file_name)
-
-                # update progressbar in gui
-                self.num_transferred_folders += 1
-                self.num_transferred_images += self.batch_size
-                self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
-                # TODO use folder instead (and in the other function as well):
-                # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
-
-            time.sleep(0.03)  # wait for the same amount of time as the other queue
-
-    """
     def __zip_and_upload(self, folder_name: str):
         zip_file_name = self.__zip_folder(folder_name)
         # upload this folder to the server
         self.__upload_zipped_images(zip_file_name)
 
-    def __update_progress(self, future):
-        # print("result: ", future.done())
+        # update progressbar in gui
         self.num_transferred_folders += 1
         self.num_transferred_images += self.batch_size
         self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
-    """
+        # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
 
-    # @timeit
+    def start_async_upload(self):
+        # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
+        # main thread and not from a background thread, otherwise it would just randomly crash after some time!!)
+        self.signal_update_progress.connect(self.__upload_callback)
+
+    @timeit
     def __zip_folder(self, folder_name: str):
         """
         Converts the given folder to a 7zip archive file to speed up the upload.
         """
         folder_path = f"{self.__images_path / folder_name}"
         zip_file_name = folder_name + ".7z"
-        # zip_filters = [{'id': FILTER_DELTA}, {'id': FILTER_LZMA2, 'preset': PRESET_DEFAULT}]
-        zip_filters = [{'id': FILTER_BROTLI, 'level': 3}]
+        zip_filters = None
 
-        with SevenZipFile(f"{self.__images_zipped_path / zip_file_name}", 'w', filters=zip_filters) as archive:
+        with py7zr.SevenZipFile(f"{self.__images_zipped_path / zip_file_name}", 'w', filters=zip_filters) as archive:
             archive.writeall(folder_path)
         return zip_file_name
 
-    # @timeit
+    @timeit
     def __upload_zipped_images(self, file_name):
+        # self.__time_start = get_timestamp()
         try:
             self.sftp.put(localpath=f"{self.__images_zipped_path / file_name}",
                           remotepath=f"{self.user_dir}/images/{file_name}")
+                          # callback=self.__on_upload_progress)
         except Exception as e:
             sys.stderr.write(f"Exception during image upload occurred: {e}")
 
+    def __on_upload_progress(self, current, total):
+        if current != 0:
+            seconds_per_frame = (time.time() - self.__time_start) / current
+            eta_seconds = (total - current) * seconds_per_frame
+            minutes = math.floor(eta_seconds / 60)
+            seconds = round(eta_seconds % 60)
+            print(f"Remaining Time: {minutes} min, {seconds} seconds")
+
     def finish_logging(self):
-        # when tracking is stopped the last batch of images will never reach the
-        # upload condition (as it won't be a full batch), so we set it manually
-        self.upload_queue.put(str(self.folder_count))
+        # when tracking is stopped the current batch of images will never reach the upload condition, so we do it now
+        self.__zip_and_upload(str(self.folder_count))
 
     def stop_upload(self):
         self.tracking_active = False
+        # use join to wait for thread finish as this is no daemon thread (this blocks main ui!)
+        # self.upload_thread.join()
+
         # close the connection to the sftp server
         self.sftp.close()
 
-        # clear the image and upload queues in a thread safe way
+        # clear the image queue in a thread safe way
         with self.image_queue.mutex:
             self.image_queue.queue.clear()
-        with self.upload_queue.mutex:
-            self.upload_queue.queue.clear()
 
         # remove local dir after uploading everything
         # TODO enable again:

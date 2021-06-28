@@ -28,17 +28,22 @@ def find_face_mxnet(face_detector, frame):
     return face_region
 
 
-def find_face_mxnet_resized(face_detector, frame, inHeight=300, inWidth=0):
+def find_face_mxnet_resized(face_detector, frame, new_height=250, new_width=0):
+    """
+    The same algorithm as above but scales the input image smaller first so the face detection is faster,
+    then upscales the resulting face image by the same amount the frame was scaled at the start.
+
+    Taken from https://github.com/spmallick/learnopencv/tree/master/FaceDetectionComparison and adapted.
+    """
     image_frame = frame.copy()
     frameHeight = image_frame.shape[0]
     frameWidth = image_frame.shape[1]
-    if not inWidth:
-        inWidth = int((frameWidth / frameHeight) * inHeight)
-    scaleHeight = frameHeight / inHeight
-    scaleWidth = frameWidth / inWidth
+    if not new_width:
+        new_width = int((frameWidth / frameHeight) * new_height)
+    scaleHeight = frameHeight / new_height
+    scaleWidth = frameWidth / new_width
 
-    image_frame_small = cv2.resize(image_frame, (inWidth, inHeight))
-    # image_frame_small = cv2.cvtColor(image_frame_small, cv2.COLOR_BGR2RGB)
+    image_frame_small = cv2.resize(image_frame, (new_width, new_height))
     bboxes = face_detector.detect(image_frame_small)
     face_region = None
     for face in bboxes:

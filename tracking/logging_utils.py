@@ -1,6 +1,7 @@
 import gzip
 import io
 import shutil
+import sys
 import threading
 import time
 import zlib
@@ -120,3 +121,26 @@ def _compress_zlib(self, all_images_count):
     self.sftp.putfo(io.BytesIO(compressed_bt), f"{self.user_dir}/images/{filename}__{timestamp}")
     self.num_transferred_images += 1
     self.signal_update_progress.emit(self.num_transferred_images, all_images_count)
+
+
+def __start_ftp_transfer_byte_version(self):
+    while self.tracking_active:
+        all_images_count = self.image_queue.qsize()
+
+        self.__upload_byte_image(all_images_count)
+
+
+def __upload_byte_image(self, all_images_count):
+    filename, image, timestamp = self.image_queue.get()  # FIXME: won't work atm as we need a separate queue for
+    # this now!
+    # transfer image as bytestream directly without saving it locally first
+    byte_stream = encode_image(image, img_format=".jpeg")
+
+    try:
+        self.sftp.putfo(byte_stream, f"{self.user_dir}/images/{filename}__{timestamp}")
+        self.num_transferred_images += 1
+        self.signal_update_progress.emit(self.num_transferred_images, all_images_count)
+    except Exception as e:
+        sys.stderr.write(f"Exception during byte image upload occurred: {e}")
+
+    # self.image_queue.task_done()

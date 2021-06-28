@@ -56,13 +56,13 @@ class WebcamStream:
         # return the frame most recently read
         return self.frame
 
-    def reset_frame(self):
-        """
-        Immediately called after reading the current frame.
-        Reset the current frame to prevent the tracking thread from accessing the same image
-        more than once if it would be faster than this thread (i.e. the capture rate of the webcam).
-        """
-        self.frame = None
+    # def reset_frame(self):
+    #     """
+    #     Immediately called after reading the current frame.
+    #     Reset the current frame to prevent the tracking thread from accessing the same image
+    #     more than once if it would be faster than this thread (i.e. the capture rate of the webcam).
+    #     """
+    #     self.frame = None
 
     def stop(self):
         # indicate that the thread should be stopped
