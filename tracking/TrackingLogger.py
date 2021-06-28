@@ -28,7 +28,10 @@ TrackingData = Enum("TrackingData", "SCREEN_WIDTH SCREEN_HEIGHT CAPTURE_WIDTH CA
 
 
 def get_timestamp() -> float:
-    return time.time()
+    """
+    Returns the current (unix) timestamp in milliseconds.
+    """
+    return time.time_ns() / 1000000
 
 
 # FIXME: handle internet connection errors by always saving the index of the last transferred image and retrying
