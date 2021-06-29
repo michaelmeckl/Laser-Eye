@@ -17,7 +17,7 @@ import pyautogui
 from PyQt5.QtCore import Qt
 from plyer import notification
 from tracking_service.face_detector import MxnetDetectionModel
-from ThreadedWebcamCapture import WebcamStream
+# from ThreadedWebcamCapture import WebcamStream
 from TrackingLogger import TrackingData, get_timestamp
 from TrackingLogger import Logger as TrackingLogger
 from FpsMeasuring import FpsMeasurer
@@ -40,7 +40,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
         # use a custom threaded video capture to increase fps;
         # see https://www.pyimagesearch.com/2015/12/21/increasing-webcam-fps-with-python-and-opencv/
-        self.capture = WebcamStream(src=0)
+        # self.capture = WebcamStream(src=0)
 
         # necessary for building the exe file with pyinstaller with the --one-file option as the path changes;
         # see https://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile for more
@@ -59,8 +59,9 @@ class TrackingSystem(QtWidgets.QWidget):
 
         if self.debug:
             self.fps_measurer = FpsMeasurer()
-            capture_fps = self.capture.get_stream_fps()
-            self.fps_measurer.show_optimal_fps(capture_fps)
+
+            # capture_fps = self.get_stream_fps()
+            # self.fps_measurer.show_optimal_fps(capture_fps)
 
     def __setup_gui(self):
         self.setGeometry(50, 50, 600, 200)
@@ -146,9 +147,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
     def __init_logger(self):
         self.__logger = TrackingLogger(self.__on_upload_progress)
-
         self.__tracked_data = {key.name: None for key in TrackingData}
-        self.__log_static_data()
 
     def __on_upload_progress(self, current, overall):
         if overall == 0:
@@ -170,7 +169,7 @@ class TrackingSystem(QtWidgets.QWidget):
         # TODO remove later:
         if current in [30, 100, 500, 1200]:
             needed_time = time.time() - self.__upload_start
-            # print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
+            print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
 
         self.progress_bar.setValue(int(progress))
 
@@ -186,7 +185,7 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__set_tracking_status_ui()
             # TODO enable again:
             #  notification.notify(title="Tracking started", message="Tracking is now active!", timeout=1)
-            self.capture.start()  # start reading frames from webcam
+            # self.capture.start()  # start reading frames from webcam
             self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
             self.tracking_thread.start()
         else:
@@ -196,6 +195,8 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         This function runs on a background thread.
         """
+        self.capture = cv2.VideoCapture(0)
+        self.__log_static_data()
         self.__logger.start_saving_images_to_disk()  # start saving webcam frames to disk
         self.__logger.start_async_upload()  # start uploading data to sftp server
 
@@ -203,15 +204,14 @@ class TrackingSystem(QtWidgets.QWidget):
         if self.debug:
             self.fps_measurer.start()
 
-        while True:
-            if not self.__tracking_active:
+        while self.__tracking_active:
+            # read the next frame from the webcam
+            return_val, frame = self.capture.read()
+            if not return_val:
+                sys.stderr.write("Unknown error while trying to get current frame!")
                 break
-
-            frame = self.capture.read()
-            # self.capture.reset_frame()  # immediately reset frame to prevent reading it twice if this thread is
-            # faster!
             if frame is None:
-                # print("Frame from capture thread is None!")
+                print("Frame from webcam is None!")
                 continue
 
             processed_frame = self.__process_frame(frame)
@@ -229,6 +229,8 @@ class TrackingSystem(QtWidgets.QWidget):
                 # replace 1 with 0 to step manually through the video "frame-by-frame"
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
+
+        self.capture.release()  # cleanup the webcam capture
 
     def __measure_frame_count(self):
         self.frame_count += 1
@@ -261,7 +263,7 @@ class TrackingSystem(QtWidgets.QWidget):
     # TODO in der einverständniserklärung unbedingt mit angeben, dass das auch geloggt wird!
     def __log_static_data(self):
         # get the dimensions of the webcam
-        video_width, video_height = self.capture.get_stream_dimensions()
+        video_width, video_height = self.get_stream_dimensions()
         # get the dimensions of the primary monitor.
         screenWidth, screenHeight = pyautogui.size()
 
@@ -279,7 +281,7 @@ class TrackingSystem(QtWidgets.QWidget):
             TrackingData.SCREEN_HEIGHT.name: screenHeight,
             TrackingData.CAPTURE_WIDTH.name: video_width,
             TrackingData.CAPTURE_HEIGHT.name: video_height,
-            TrackingData.CAPTURE_FPS.name: self.capture.get_stream_fps(),
+            TrackingData.CAPTURE_FPS.name: self.get_stream_fps(),
             TrackingData.CORE_COUNT.name: psutil.cpu_count(logical=True),
             TrackingData.CORE_COUNT_PHYSICAL.name: psutil.cpu_count(logical=False),
             TrackingData.CORE_COUNT_AVAILABLE.name: len(psutil.Process().cpu_affinity()),  # number of usable cpus by
@@ -296,6 +298,12 @@ class TrackingSystem(QtWidgets.QWidget):
         })
         self.__logger.log_csv_data(data=self.__tracked_data)
 
+    def get_stream_fps(self):
+        return self.capture.get(cv2.CAP_PROP_FPS)
+
+    def get_stream_dimensions(self):
+        return self.capture.get(3), self.capture.get(4)
+
     def get_current_frame(self) -> np.ndarray:
         return self.__current_frame
 
@@ -309,7 +317,7 @@ class TrackingSystem(QtWidgets.QWidget):
             # notification.notify(title="Tracking stopped", message="Tracking has been stopped!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
-            self.capture.stop()
+            # self.capture.stop()
             cv2.destroyAllWindows()
 
             self.__logger.finish_logging()
@@ -342,7 +350,7 @@ class TrackingSystem(QtWidgets.QWidget):
     def debug_me(self):
         self.__tracking_active = True
         self.__set_tracking_status_ui()
-        self.capture.start()  # start reading frames from webcam
+        # self.capture.start()  # start reading frames from webcam
         self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
         self.tracking_thread.start()
 
