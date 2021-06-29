@@ -7,17 +7,6 @@ def to_gray(frame):
     return grayscale_image
 
 
-def find_face_hog(hog_detector, frame):
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # dlib requires RGB while opencv uses BGR per default
-    bboxes = hog_detector(rgb_frame, 0)  # 0 so it won't be upsampled
-    if len(bboxes) > 0:
-        # only take the first face if more were found (in most cases there should be only one anyway)
-        face = bboxes[0]
-        region = extract_image_region(frame, face.left(), face.top(), face.right(), face.bottom())
-        cv2.imshow("extracted_region_mxnet", region)
-        return region
-
-
 def find_face_mxnet(face_detector, frame):
     bboxes = face_detector.detect(frame)
     face_region = None
