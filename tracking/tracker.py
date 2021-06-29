@@ -9,9 +9,10 @@ import sys
 import threading
 from pathlib import Path
 from tracking_utils import scale_image, to_gray, find_face_mxnet_resized
-import cv2
+import cv2   # pip install opencv-python
 import numpy as np
 import psutil
+from gpuinfo.windows import get_gpus  # pip install gpu-info
 import pyautogui
 from PyQt5.QtCore import Qt
 from plyer import notification
@@ -150,7 +151,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.__log_static_data()
 
     def __on_upload_progress(self, current, overall):
-        if overall == 0 or current > overall:  # FIXME this current > overall prevents the ui from reaching 100%
+        if overall == 0:
             return
 
         if current != 0:
@@ -169,7 +170,7 @@ class TrackingSystem(QtWidgets.QWidget):
         # TODO remove later:
         if current in [30, 100, 500, 1200]:
             needed_time = time.time() - self.__upload_start
-            print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
+            # print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
 
         self.progress_bar.setValue(int(progress))
 
@@ -194,14 +195,6 @@ class TrackingSystem(QtWidgets.QWidget):
     def __start_tracking(self):
         """
         This function runs on a background thread.
-        """
-
-        # TODO use this instead of starting all manually after each other?
-        """
-        processes = []
-        with ThreadPoolExecutor(max_workers=20) as executor:
-            processes.append(executor.submit(self.__logger.start_saving_images_to_disk))
-            processes.append(executor.submit(self.__logger.start_async_upload))
         """
         self.__logger.start_saving_images_to_disk()  # start saving webcam frames to disk
         self.__logger.start_async_upload()  # start uploading data to sftp server
@@ -265,6 +258,7 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__logger.add_image_to_queue("capture", face_image, log_timestamp)
         return frame
 
+    # TODO in der einverständniserklärung unbedingt mit angeben, dass das auch geloggt wird!
     def __log_static_data(self):
         # get the dimensions of the webcam
         video_width, video_height = self.capture.get_stream_dimensions()
@@ -273,6 +267,11 @@ class TrackingSystem(QtWidgets.QWidget):
 
         system_info = platform.uname()._asdict()
         ram_info = psutil.virtual_memory()._asdict()
+        cpu_current_freq, _, cpu_max_freq = psutil.cpu_freq()  # in Mhz
+        try:
+            gpu_name = [x.name for x in get_gpus()]
+        except Exception:
+            gpu_name = ["no gpu"]
 
         # noinspection PyProtectedMember
         self.__tracked_data.update({
@@ -285,13 +284,15 @@ class TrackingSystem(QtWidgets.QWidget):
             TrackingData.CORE_COUNT_PHYSICAL.name: psutil.cpu_count(logical=False),
             TrackingData.CORE_COUNT_AVAILABLE.name: len(psutil.Process().cpu_affinity()),  # number of usable cpus by
             # this process
+            TrackingData.CPU_FREQUENCY_MHZ.name: f"Max: {cpu_max_freq}, current: {cpu_current_freq}",
+            TrackingData.GPU_INFO.name: gpu_name,
             TrackingData.SYSTEM.name: system_info["system"],
             TrackingData.SYSTEM_VERSION.name: system_info["release"],
             TrackingData.MODEL_NAME.name: system_info["node"],
             TrackingData.PROCESSOR.name: system_info["machine"],
-            TrackingData.RAM_OVERALL.name: ram_info["total"] / 1000000000,  # convert from Bytes to GB
-            TrackingData.RAM_AVAILABLE.name: ram_info["available"] / 1000000000,
-            TrackingData.RAM_FREE.name: ram_info["free"] / 1000000000,
+            TrackingData.RAM_OVERALL_GB.name: ram_info["total"] / 1000000000,  # convert from Bytes to GB
+            TrackingData.RAM_AVAILABLE_GB.name: ram_info["available"] / 1000000000,
+            TrackingData.RAM_FREE_GB.name: ram_info["free"] / 1000000000,
         })
         self.__logger.log_csv_data(data=self.__tracked_data)
 

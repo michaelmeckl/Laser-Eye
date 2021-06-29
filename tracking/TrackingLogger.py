@@ -19,12 +19,13 @@ import shutil
 from py7zr import FILTER_BROTLI, SevenZipFile
 from paramiko.ssh_exception import SSHException
 from tracking.FpsMeasuring import timeit
-import concurrent.futures
 
 
+# whitespaces at the end are necessary!!
 TrackingData = Enum("TrackingData", "SCREEN_WIDTH SCREEN_HEIGHT CAPTURE_WIDTH CAPTURE_HEIGHT CAPTURE_FPS "
-                                    "CORE_COUNT CORE_COUNT_PHYSICAL CORE_COUNT_AVAILABLE SYSTEM SYSTEM_VERSION "
-                                    "MODEL_NAME PROCESSOR RAM_OVERALL RAM_AVAILABLE RAM_FREE")
+                                    "CORE_COUNT CORE_COUNT_PHYSICAL CORE_COUNT_AVAILABLE CPU_FREQUENCY_MHZ GPU_INFO "
+                                    "SYSTEM SYSTEM_VERSION MODEL_NAME PROCESSOR RAM_OVERALL_GB RAM_AVAILABLE_GB "
+                                    "RAM_FREE_GB")
 
 
 def get_timestamp() -> float:
@@ -213,7 +214,6 @@ class Logger(QtWidgets.QWidget):
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     executor.submit(self.__zip_and_upload, file_name).add_done_callback(self.__update_progress)
                 """
-
                 # zip the the folder with the given name
                 zip_file_name = self.__zip_folder(file_name)
                 # upload this folder to the server
@@ -248,8 +248,8 @@ class Logger(QtWidgets.QWidget):
         """
         folder_path = f"{self.__images_path / folder_name}"
         zip_file_name = folder_name + ".7z"
-        # zip_filters = [{'id': FILTER_DELTA}, {'id': FILTER_LZMA2, 'preset': PRESET_DEFAULT}]
         zip_filters = [{'id': FILTER_BROTLI, 'level': 3}]
+        # for others compression options, see https://py7zr.readthedocs.io/en/latest/api.html#compression-methods
 
         with SevenZipFile(f"{self.__images_zipped_path / zip_file_name}", 'w', filters=zip_filters) as archive:
             archive.writeall(folder_path)
