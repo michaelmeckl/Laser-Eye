@@ -22,7 +22,7 @@ from TrackingLogger import TrackingData, get_timestamp
 from TrackingLogger import Logger as TrackingLogger
 from FpsMeasuring import FpsMeasurer
 import keyboard
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 
@@ -59,25 +59,11 @@ class TrackingSystem(QtWidgets.QWidget):
 
         if self.debug:
             self.fps_measurer = FpsMeasurer()
-
             # capture_fps = self.get_stream_fps()
             # self.fps_measurer.show_optimal_fps(capture_fps)
 
     def __setup_gui(self):
-        self.setGeometry(50, 50, 600, 200)
-        self.setWindowTitle("Tracking System")
         self.layout = QtWidgets.QVBoxLayout()
-
-        # show some instructions
-        self.label = QtWidgets.QLabel(self)
-        self.label.setText("Press Ctrl + Shift + A to start tracking and Ctrl + Shift + Q to stop it (once stopped it "
-                           "cannot be restarted with the hotkey!).\n\nPlease don't close this window until the upload"
-                           " is finished!\nThis may take some time depending on your hardware and internet connection.")
-        self.label.setContentsMargins(10, 10, 10, 10)
-        self.label.setStyleSheet("QLabel {font-size: 9pt;}")
-        self.layout.addWidget(self.label)
-
-        self.__setup_progress_bar()
 
         # show status of tracking
         self.tracking_status = QtWidgets.QLabel(self)
@@ -86,11 +72,56 @@ class TrackingSystem(QtWidgets.QWidget):
         self.__set_tracking_status_ui()
         self.layout.addWidget(self.tracking_status)
 
+        # show some instructions
+        self.label = QtWidgets.QLabel(self)
+        self.label.setText(
+            "Verwendung:\n\nMit Ctrl + Shift + A kann das Tracking gestartet und mit Ctrl + Shift + Q wieder "
+            "gestoppt werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, bis der "
+            "Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken). "
+            "Abhängig von der Internetgeschwindigkeit und Leistung des Rechners kann dies einige Zeit in "
+            "Anspruch nehmen! Während dieser Zeit muss der Rechner eingeschaltet bleiben!"
+        )
+        self.label.setContentsMargins(10, 10, 10, 10)
+        self.label.setWordWrap(True)
+        self.label.setStyleSheet("QLabel {font-size: 9pt;}")
+        self.layout.addWidget(self.label)
+
+        # show a progress bar for the upload
+        self.__setup_progress_bar()
+
+        self.label_general = QtWidgets.QLabel(self)
+        self.label_general.setText("Hinweise:")
+        self.label_general.setStyleSheet("QLabel {font-size: 10pt; margin-top: 40px;}")
+        self.layout.addWidget(self.label_general)
+
+        self.general_instructions = QtWidgets.QTextEdit(self)
+        self.general_instructions.setStyleSheet("QTextEdit {font-size: 9pt; background-color : rgba(0, 0, 0, 0%); "
+                                                "border: 0; margin-top: 20px}")
+        self.general_instructions.setReadOnly(True)  # don't let user edit this text field
+        self.general_instructions.setHtml(
+            "<ul>"
+            "<li>Bitte versuchen Sie während das Tracking aktiv ist, <b>möglichst ruhig zu sitzen</b> und den Kopf "
+            "nicht zu viel oder zu schnell zu bewegen (normale Kopfbewegungen sind selbstverständlich in Ordnung).</li>"
+            "<li>Bitte tragen Sie während des Trackings <b>keine Brille</b>, da die dabei auftretenden Reflexionen "
+            "ein Problem bei der Verarbeitung der Daten darstellen!</li>"
+            "<li>Versuchen Sie <b>nicht zu weit weg von der Kamera</b> zu sein. Der Abstand zwischen Kamera und "
+            "Gesicht sollte nicht mehr als 60-70 cm betragen.</li>"
+            "<li>Die Kamera sollte beim Tracking möglichst gerade und frontal zum Gesicht positioniert sein, sodass "
+            "das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
+            "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen!</li>"
+            "<li>Die zu Beginn genannte Hotkeys zum Starten und Stoppen funktionieren nur einmal! Nach Stoppen des "
+            "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten!</li>"
+            "</ul>"
+        )
+        self.layout.addWidget(self.general_instructions)
+
         # add buttons to manually start and stop tracking
-        self.__setup_button_layout()  # TODO only for debugging!
+        # self.__setup_button_layout()  # TODO only for debugging!
 
         self.layout.setContentsMargins(10, 10, 10, 10)
         self.setLayout(self.layout)
+        self.setGeometry(100, 100, 1000, 800)
+        self.setWindowTitle("Tracking System")
 
     def __setup_button_layout(self):
         self.start_button = QtWidgets.QPushButton(self)
@@ -119,6 +150,7 @@ class TrackingSystem(QtWidgets.QWidget):
         progress_bar_layout.addStretch(1)
         progress_bar_layout.addWidget(self.progress_bar, stretch=7)
         progress_bar_layout.addStretch(1)
+        progress_bar_layout.setContentsMargins(0, 20, 0, 0)
         self.layout.addLayout(progress_bar_layout)
 
         # show how much files have been uploaded
@@ -139,10 +171,10 @@ class TrackingSystem(QtWidgets.QWidget):
 
     def __set_tracking_status_ui(self):
         if self.__tracking_active:
-            self.tracking_status.setText("Tracking active")
+            self.tracking_status.setText("Tracking aktiv")
             self.tracking_status.setStyleSheet("QLabel {color: green;}")
         else:
-            self.tracking_status.setText("Tracking not active")
+            self.tracking_status.setText("Tracking nicht aktiv")
             self.tracking_status.setStyleSheet("QLabel {color: red;}")
 
     def __init_logger(self):
@@ -158,9 +190,9 @@ class TrackingSystem(QtWidgets.QWidget):
             eta_seconds = (overall - current) * seconds_per_frame
             minutes = math.floor(eta_seconds / 60)
             seconds = round(eta_seconds % 60)
-            self.label_eta.setText(f"Remaining Upload Time: {minutes} min, {seconds} seconds")
+            self.label_eta.setText(f"Verbliebene Zeit: {minutes} min, {seconds} Sekunden")
         else:
-            self.label_eta.setText(f"Waiting for more data...")
+            self.label_eta.setText(f"Mehr Daten werden benötigt ...")
 
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
