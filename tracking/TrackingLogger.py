@@ -18,7 +18,7 @@ from plyer import notification
 import shutil
 from py7zr import FILTER_BROTLI, SevenZipFile
 from paramiko.ssh_exception import SSHException
-from tracking.FpsMeasuring import timeit
+# from tracking.FpsMeasuring import timeit
 
 
 # whitespaces at the end are necessary!!
@@ -133,9 +133,9 @@ class Logger(QtWidgets.QWidget):
         except SSHException as e:
             sys.stderr.write(f"Couldn't connect to server! Make sure you have an internet connection and the server "
                              f"is running, then start the program again!\nError: {e}")
-            notification.notify(title="Connection Error",
-                                message="Couldn't connect to server! Make sure you have an internet connection and "
-                                        "the server is running, then start the program again!",
+            notification.notify(title="Verbindungsfehler",
+                                message="Die Verbindung zum Server konnte nicht hergestellt werden! Bitte stellen Sie "
+                                        "sicher, dass sie während des Trackings eine stabile Internetverbindung haben!",
                                 timeout=5)
             sys.exit(1)
 
@@ -182,7 +182,7 @@ class Logger(QtWidgets.QWidget):
                     image_path = f"{self.__get_curr_image_folder() / image_id}"
                     cv2.imwrite(image_path, image)
                     self.all_images_count += 1
-                    self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                    # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
 
                     # check if the current number of saved images is a multiple of the batch size
                     if (self.all_images_count % self.batch_size) == 0:
@@ -191,7 +191,7 @@ class Logger(QtWidgets.QWidget):
 
                         # and create a new folder for the next batch
                         self.folder_count += 1
-                        # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+                        self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
                         self.__get_curr_image_folder().mkdir()
 
             # wait to prevent constantly asking the queue for new images which would have a huge impact on the fps;
@@ -222,9 +222,9 @@ class Logger(QtWidgets.QWidget):
                 # update progressbar in gui
                 self.num_transferred_folders += 1
                 self.num_transferred_images += self.batch_size
-                self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
                 # TODO use folder instead (and in the other function as well):
-                # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+                self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
 
             time.sleep(0.03)  # wait for the same amount of time as the other queue
 

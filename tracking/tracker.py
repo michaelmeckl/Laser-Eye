@@ -8,7 +8,7 @@ import platform
 import sys
 import threading
 from pathlib import Path
-from tracking_utils import scale_image, to_gray, find_face_mxnet_resized
+from tracking_utils import find_face_mxnet_resized
 import cv2   # pip install opencv-python
 import numpy as np
 import psutil
@@ -17,13 +17,13 @@ import pyautogui
 from PyQt5.QtCore import Qt
 from plyer import notification
 from tracking_service.face_detector import MxnetDetectionModel
-# from ThreadedWebcamCapture import WebcamStream
 from TrackingLogger import TrackingData, get_timestamp
 from TrackingLogger import Logger as TrackingLogger
 from FpsMeasuring import FpsMeasurer
 import keyboard
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QApplication, QMessageBox
+# from ThreadedWebcamCapture import WebcamStream
 
 
 class TrackingSystem(QtWidgets.QWidget):
@@ -31,6 +31,7 @@ class TrackingSystem(QtWidgets.QWidget):
     def __init__(self, debug_active=True):
         super(TrackingSystem, self).__init__()
         self.__tracking_active = False
+        self.progress = None  # the upload progress
         self.debug = debug_active
 
         self.__current_frame = None
@@ -77,7 +78,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.label.setText(
             "Verwendung:\n\nMit Ctrl + Shift + A kann das Tracking gestartet und mit Ctrl + Shift + Q wieder "
             "gestoppt werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, bis der "
-            "Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken). "
+            "Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken unterhalb). "
             "Abhängig von der Internetgeschwindigkeit und Leistung des Rechners kann dies einige Zeit in "
             "Anspruch nehmen! Während dieser Zeit muss der Rechner eingeschaltet bleiben!"
         )
@@ -109,7 +110,7 @@ class TrackingSystem(QtWidgets.QWidget):
             "<li>Die Kamera sollte beim Tracking möglichst gerade und frontal zum Gesicht positioniert sein, sodass "
             "das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
             "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen!</li>"
-            "<li>Die zu Beginn genannte Hotkeys zum Starten und Stoppen funktionieren nur einmal! Nach Stoppen des "
+            "<li>Die zu Beginn genannten Hotkeys zum Starten und Stoppen funktionieren nur einmal! Nach Stoppen des "
             "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten!</li>"
             "</ul>"
         )
@@ -196,14 +197,14 @@ class TrackingSystem(QtWidgets.QWidget):
 
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
-        progress = (current / overall) * 100
+        self.progress = int((current / overall) * 100)
 
         # TODO remove later:
         if current in [30, 100, 500, 1200]:
             needed_time = time.time() - self.__upload_start
-            print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
+            # print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
 
-        self.progress_bar.setValue(int(progress))
+        self.progress_bar.setValue(self.progress)
 
     def listen_for_hotkey(self, hotkey_start="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
         keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
@@ -216,12 +217,13 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__tracking_active = True
             self.__set_tracking_status_ui()
             # TODO enable again:
-            #  notification.notify(title="Tracking started", message="Tracking is now active!", timeout=1)
+            notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
             # self.capture.start()  # start reading frames from webcam
             self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
             self.tracking_thread.start()
         else:
-            notification.notify(title="Can't start tracking!", message="Tracking is already active!", timeout=2)
+            notification.notify(title="Tracking kann nicht gestartet werden!", message="Das Tracking läuft bereits!",
+                                timeout=2)
 
     def __start_tracking(self):
         """
@@ -273,16 +275,9 @@ class TrackingSystem(QtWidgets.QWidget):
             self.t2 = get_timestamp()
             print(f"########\nTime between frames {(self.t2 - self.t1):.2f} seconds\n#######")
 
-    # TODO remove?
-    def downsample(self, frame):
-        scaled = scale_image(frame, scale_factor=0.5, show_scaled=True)
-        print(f"Shape_scaled: {scaled.shape[0]}, {scaled.shape[1]}")
-        # resized = resize_image(frame, size=300, show_resized=True)
-        # print(f"Shape_resized: {resized.shape[0]}, {resized.shape[1]}")
-        return scaled
-
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
         face_image = find_face_mxnet_resized(self.face_detector, frame)
+        # scaled = scale_image(frame, scale_factor=0.5, show_scaled=True)
         # face_image = to_gray(face_image)
 
         if face_image is not None:
@@ -339,6 +334,9 @@ class TrackingSystem(QtWidgets.QWidget):
     def get_current_frame(self) -> np.ndarray:
         return self.__current_frame
 
+    # TODO: upload the folders from the unity system as well when the user presses the stop hot key!
+    #  -> make sure we wait until this upload has finished!
+    #  -> shouldn't take too long (800ms ca. for 50kb) ->
     def __stop_tracking(self):
         """
         Stop and cleanup active webcam captures and destroy open windows if any.
@@ -346,7 +344,7 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         if self.__tracking_active:
             # TODO enable again:
-            # notification.notify(title="Tracking stopped", message="Tracking has been stopped!", timeout=1)
+            notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
             # self.capture.stop()
@@ -356,8 +354,8 @@ class TrackingSystem(QtWidgets.QWidget):
 
             # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
             # the program itself
-            self.start_button.disconnect()
-            self.stop_button.disconnect()
+            # self.start_button.disconnect()
+            # self.stop_button.disconnect()
             keyboard.remove_all_hotkeys()
 
             if self.debug:
@@ -366,17 +364,28 @@ class TrackingSystem(QtWidgets.QWidget):
                 print(f"[INFO] approx. FPS on background thread: {self.fps_measurer.fps():.2f}")
                 print("Frames on main thread:", self.fps_measurer._numFrames)
 
+    def finish_tracking_system(self):
+        self.__stop_tracking()
+        self.__logger.stop_upload()
+
     def closeEvent(self, event):
-        choice = QMessageBox.question(self, 'Stop tracking system?',
-                                      "Please close this window only if the upload is finished! Do you "
-                                      "really want to exit? ",
-                                      QMessageBox.Yes | QMessageBox.No)
-        if choice == QMessageBox.Yes:
-            self.__stop_tracking()
-            self.__logger.stop_upload()
+        if self.progress == 100 or self.progress is None:
+            self.finish_tracking_system()
             event.accept()
         else:
-            event.ignore()
+            # show warning if the upload progress hasn't reach 100% yet to prevent users from accidentally
+            # closing the system
+            # TODO translate the buttons as well!
+            choice = QMessageBox.question(self, 'Tracking-System beenden?',
+                                          "Bitte schließen Sie das Tracking-System erst, wenn der Fortschrittsbalken "
+                                          "bei 100% angekommen ist! Möchten Sie das System wirklich beenden?",
+                                          QMessageBox.Yes | QMessageBox.No)
+            if choice == QMessageBox.Yes:
+                # TODO log this as well? (small txt. with "User quitted too early") ?
+                self.finish_tracking_system()
+                event.accept()
+            else:
+                event.ignore()
 
     # TODO delete later:
     def debug_me(self):
