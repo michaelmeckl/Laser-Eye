@@ -63,7 +63,9 @@ def resize_image(image, size=150, show_resized=False):
     return resized
 
 
-def extract_image_region(image, x_start, y_start, x_end, y_end):
+def extract_image_region(image, x_start, y_start, x_end, y_end, padding=5):
+    # add small padding to every corner point to make sure there is enough of the face visible for the post processing
+    x_start, y_start, x_end, y_end = x_start - padding, y_start - padding, x_end + padding, y_end + padding
     # make sure the bounding box coordinates are located in the image's bounding box; else take the outermost values
     startX = max(0, x_start)
     startY = max(0, y_start)
