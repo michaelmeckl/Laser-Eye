@@ -50,16 +50,31 @@ class Logger(QtWidgets.QWidget):
         self.all_images_count = 0
         self.num_transferred_images = 0
         self.num_transferred_folders = 0
-        self.batch_size = 500  # the number of images per subfolder
+        self.batch_size = 100  # the number of images per subfolder  # TODO 500 again
 
         self.__upload_callback = upload_callback
         self.__log_folder = default_log_folder
         self.__log_file = default_log_file
 
-        self.__log_folder_path = pathlib.Path(__file__).parent / self.__log_folder  # creates base folder in "tracking/"
+        # get path depending on whether this is started as an exe or normally
+        if getattr(sys, 'frozen', False):
+            # the program was started as exe
+            self.__is_exe = True
+            self.__log_folder_path = pathlib.Path(self.__log_folder)
+        else:
+            self.__is_exe = False
+            # creates base folder in "tracking/"
+            self.__log_folder_path = pathlib.Path(__file__).parent / self.__log_folder
+
         self.__log_file_path = self.__log_folder_path / self.__log_file  # tracking/tracking_data/file.csv
         self.__images_path = self.__log_folder_path / "images"  # tracking/tracking_data/images/
         self.__images_zipped_path = self.__log_folder_path / "images_zipped"  # tracking/tracking_data/images_zipped/
+        if self.__is_exe:
+            # If we are starting this as exe, we also have a folder with the unity logs that need to be uploaded as well
+            # The python exe needs to be in the same folder as the game is!
+            self.unity_log_folder = self.__log_folder_path.parent / "Game_Data" / "StudyLogs"
+            self.uploading_game_data = False
+
         self.__init_log()
 
         credentials = self.__get_credentials()
@@ -162,6 +177,29 @@ class Logger(QtWidgets.QWidget):
             self.sftp.put(localpath=f"{self.__log_file_path}", remotepath=f"{self.user_dir}/{self.__log_file}")
         except Exception as e:
             sys.stderr.write(f"Exception during csv upload occurred: {e}")
+
+    def upload_game_data(self):
+        # only upload game data if this is actually running as an exe, otherwise we don't have game data!
+        if not self.__is_exe:
+            return
+        self.uploading_game_data = True
+
+        # zip the game data folder first
+        file_name = "game_log.7z"
+        zipped_location = self.__log_folder_path.parent / file_name
+        with SevenZipFile(f"{zipped_location}", 'w') as archive:
+            archive.writeall(self.unity_log_folder)
+
+        try:
+            # we need a new pysftp connection to not get in conflict with the existing image upload on the other thread!
+            with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
+                                   port=self.__port, cnopts=self.__cnopts) as sftp_connection:
+                # on remote server we always have a POSIX-like path system so there is no need for pathlib in remotepath
+                sftp_connection.put(localpath=f"{zipped_location}", remotepath=f"{self.user_dir}/{file_name}")
+        except Exception as e:
+            sys.stderr.write(f"Exception during game data upload occurred: {e}")
+
+        self.uploading_game_data = False
 
     def add_image_to_queue(self, filename: str, image: np.ndarray, timestamp: float):
         self.image_queue.put((filename, image, timestamp))
@@ -269,6 +307,11 @@ class Logger(QtWidgets.QWidget):
         self.upload_queue.put(str(self.folder_count))
 
     def stop_upload(self):
+        # if uploading the game data hasn't finished yet, wait for it first!
+        while self.uploading_game_data:
+            time.sleep(0.1)  # wait for 100 ms, then try again
+            self.stop_upload()
+
         self.tracking_active = False
         # close the connection to the sftp server
         self.sftp.close()
@@ -282,3 +325,5 @@ class Logger(QtWidgets.QWidget):
         # remove local dir after uploading everything
         # TODO enable again:
         # shutil.rmtree(self.__log_folder_path)
+
+        # TODO remove game data folder as well if running as exe??

@@ -8,6 +8,7 @@ PyQt5~=5.15.4
 plyer~=2.0.0
 schedule~=1.1.0
 imutils~=0.5.4
+gpu-info~=2.0.1
 pandas~=1.2.4
 pysftp~=0.2.9
 py7zr~=0.16.1

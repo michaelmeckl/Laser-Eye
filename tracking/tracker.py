@@ -117,7 +117,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.layout.addWidget(self.general_instructions)
 
         # add buttons to manually start and stop tracking
-        # self.__setup_button_layout()  # TODO only for debugging!
+        self.__setup_button_layout()  # TODO only for debugging!
 
         self.layout.setContentsMargins(10, 10, 10, 10)
         self.setLayout(self.layout)
@@ -135,7 +135,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.stop_button.setText("Stop tracking")
         self.stop_button.setStyleSheet("QPushButton {background-color: rgb(153, 25, 25); color: white; "
                                        "padding: 10px 10px 10px 10px; border-radius: 2px;}")
-        self.stop_button.clicked.connect(self.__stop_tracking)  # connect stop method to this button
+        self.stop_button.clicked.connect(self.__stop_study)  # connect stop method to this button
 
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(self.start_button, alignment=Qt.AlignLeft)
@@ -173,10 +173,10 @@ class TrackingSystem(QtWidgets.QWidget):
     def __set_tracking_status_ui(self):
         if self.__tracking_active:
             self.tracking_status.setText("Tracking aktiv")
-            self.tracking_status.setStyleSheet("QLabel {color: green;}")
+            self.tracking_status.setStyleSheet("QLabel {color: green; font-size: 10pt;}")
         else:
             self.tracking_status.setText("Tracking nicht aktiv")
-            self.tracking_status.setStyleSheet("QLabel {color: red;}")
+            self.tracking_status.setStyleSheet("QLabel {color: red; font-size: 10pt;}")
 
     def __init_logger(self):
         self.__logger = TrackingLogger(self.__on_upload_progress)
@@ -208,7 +208,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
     def listen_for_hotkey(self, hotkey_start="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
         keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
-        keyboard.add_hotkey(hotkey_stop, self.__stop_tracking, suppress=False, trigger_on_release=False)
+        keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
 
     def __activate_tracking(self):
         # activate tracking on hotkey press
@@ -217,7 +217,7 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__tracking_active = True
             self.__set_tracking_status_ui()
             # TODO enable again:
-            notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
+            # notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
             # self.capture.start()  # start reading frames from webcam
             self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
             self.tracking_thread.start()
@@ -334,9 +334,11 @@ class TrackingSystem(QtWidgets.QWidget):
     def get_current_frame(self) -> np.ndarray:
         return self.__current_frame
 
-    # TODO: upload the folders from the unity system as well when the user presses the stop hot key!
-    #  -> make sure we wait until this upload has finished!
-    #  -> shouldn't take too long (800ms ca. for 50kb) ->
+    def __stop_study(self):
+        self.__stop_tracking()
+        # upload the log folders from the unity game when tracking has finished
+        self.__logger.upload_game_data()
+
     def __stop_tracking(self):
         """
         Stop and cleanup active webcam captures and destroy open windows if any.
@@ -344,7 +346,7 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         if self.__tracking_active:
             # TODO enable again:
-            notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
+            # notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
             # self.capture.stop()
@@ -380,6 +382,8 @@ class TrackingSystem(QtWidgets.QWidget):
                                           "Bitte schließen Sie das Tracking-System erst, wenn der Fortschrittsbalken "
                                           "bei 100% angekommen ist! Möchten Sie das System wirklich beenden?",
                                           QMessageBox.Yes | QMessageBox.No)
+            # TODO check if we can simply pass normal custom buttons as well or text for QMessageBox.question!
+
             if choice == QMessageBox.Yes:
                 # TODO log this as well? (small txt. with "User quitted too early") ?
                 self.finish_tracking_system()
@@ -398,6 +402,13 @@ class TrackingSystem(QtWidgets.QWidget):
 
 def main():
     app = QApplication(sys.argv)
+
+    # TODO change locale of the built-in messagebox buttons ??
+    # locale = QLocale.system().name()
+    # qtTranslator = QTranslator()
+    # if qtTranslator.load("qt_" + locale):
+    #     app.installTranslator(qtTranslator)
+
     tracking_system = TrackingSystem()
     tracking_system.show()
     tracking_system.listen_for_hotkey()
@@ -432,22 +443,15 @@ Creating an exe file:
 
 1. Comment out the config parsing in the logger and add server credentials directly in the code.
 
-For creating exe with auto-py-to-exe: select --onefile and window based add-data 
-C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights add-data 
-C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet add-data 
-C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service
+For creating exe with auto-py-to-exe: select --onefile and window based
+add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights 
+add-data C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet 
+add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service
 add hidden-imports: pandas, pysftp, plyer.platforms.win.notification and requests
 # for plyer import see 
 https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a-executable-using-pyinstaller 
 
 2. Pyinstaller command for the above:
-pyinstaller --noconfirm --onefile --windowed 
---add-data "C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" 
---add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" 
---add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" 
---hidden-import "plyer.platforms.win.notification" 
---hidden-import "pandas" 
---hidden-import "pysftp" 
---hidden-import "requests"  
-"C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
+(add --debug "all" to the command below if things go wrong...)
+pyinstaller --noconfirm --onefile --windowed --add-data "C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests" "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
 """
