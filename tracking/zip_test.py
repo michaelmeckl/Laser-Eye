@@ -65,6 +65,81 @@ def get_size_format(b, factor=1024, suffix="B"):
     return f"{b:.2f}Y{suffix}"
 
 
+"""
+100:
+    798
+    1243
+    1248
+    1248
+    1254
+    1906
+    1933
+    905
+    881
+    807
+    1194
+    1240
+    1239
+    1245
+    
+    upload:
+    74608
+    74798
+    74812
+    75695
+    21323
+
+500:
+    3970
+    5260
+    5263
+    5271
+    3970
+    5260
+    5263
+    5271
+    
+    upload:
+    94989
+    3392
+    225370
+    
+1000:
+    7866
+    7629
+    7925
+    7910
+    7934
+    7619
+    8151
+    
+    upload:
+    194819 ms
+    196446
+    188416
+"""
+
+
+def print_mean():
+    print("100:", np.mean([798,1243, 1248,1248,1254,1906,1933,905,881,807,1194,1240,1239,1245]))
+    print("500:", np.mean([3970,5260,5263,5271,3970,5260,5263,5271]))
+    print("1000:", np.mean([7866,7629,7925,7910,7934,7619]))
+    print("100:", np.mean([74608, 74798, 74812, 75695, 21323]))
+    print("500:", np.mean([94989, 3392, 225370]))
+    print("1000:", np.mean([196446, 194819, 188416]))
+    """
+    zip:
+    100: 1224.36
+    500: 4941.0
+    1000: 7813.83
+    
+    upload:
+    64247.2
+    107917.0
+    193227.0
+    """
+
+
 # noinspection PyAttributeOutsideInit
 class ZipTest(QtWidgets.QWidget):
 
@@ -80,7 +155,7 @@ class ZipTest(QtWidgets.QWidget):
 
         self.zip_time = 0
         self.upload_time = 0
-        self.batch_size = 500  # the number of images per subfolder
+        self.batch_size = 1000  # the number of images per subfolder
 
         """
         100:
@@ -293,6 +368,7 @@ class ZipTest(QtWidgets.QWidget):
         self.num_transferred_images += self.batch_size
         self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
 
+    @timeit
     def __zip_folder(self, folder_name: str):
         """
         Converts the given folder to a 7zip archive file to speed up the upload.
@@ -382,6 +458,7 @@ class ZipTest(QtWidgets.QWidget):
     Average improvement over 3 folders: 5.97MB
     """
 
+    @timeit
     def __upload_zipped_images(self, file_name):
         try:
             with pysftp.Connection(host=self.__hostname,
@@ -538,7 +615,7 @@ class ZipMain(QtWidgets.QWidget):
         # TODO remove later:
         if current in [30, 100, 1200]:
             needed_time = time.time() - self.__upload_start
-            print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
+            # print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
 
         self.progress_bar.setValue(int(progress))
 
@@ -609,6 +686,8 @@ class ZipMain(QtWidgets.QWidget):
 
 
 def main():
+    print_mean()
+
     app = QApplication(sys.argv)
     zt = ZipMain()
     zt.show()
