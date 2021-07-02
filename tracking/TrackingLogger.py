@@ -307,10 +307,11 @@ class Logger(QtWidgets.QWidget):
         self.upload_queue.put(str(self.folder_count))
 
     def stop_upload(self):
-        # if uploading the game data hasn't finished yet, wait for it first!
-        while self.uploading_game_data:
-            time.sleep(0.1)  # wait for 100 ms, then try again
-            self.stop_upload()
+        if self.__is_exe:
+            # if uploading the game data hasn't finished yet, wait for it first!
+            while self.uploading_game_data:
+                time.sleep(0.1)  # wait for 100 ms, then try again
+                self.stop_upload()
 
         self.tracking_active = False
         # close the connection to the sftp server
