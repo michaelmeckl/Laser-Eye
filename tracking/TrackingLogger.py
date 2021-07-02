@@ -50,7 +50,7 @@ class Logger(QtWidgets.QWidget):
         self.all_images_count = 0
         self.num_transferred_images = 0
         self.num_transferred_folders = 0
-        self.batch_size = 100  # the number of images per subfolder  # TODO 500 again
+        self.batch_size = 1000  # the number of images per subfolder  # TODO 500 or 800 for faster gui updates?
 
         self.__upload_callback = upload_callback
         self.__log_folder = default_log_folder
@@ -266,7 +266,7 @@ class Logger(QtWidgets.QWidget):
                 # TODO use folder instead (and in the other function as well):
                 # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
 
-            # time.sleep(0.01)  # wait for the same amount of time as the other queue
+            time.sleep(0.01)  # wait for the same amount of time as the other queue
 
     """
     def __zip_and_upload(self, folder_name: str):

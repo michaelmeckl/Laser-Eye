@@ -56,12 +56,22 @@ class TrackingSystem(QtWidgets.QWidget):
         self.face_detector = MxnetDetectionModel(data_path, 0, .6, gpu=-1)
 
         self.__setup_gui()
-        self.__init_logger()
 
-        if self.debug:
-            self.fps_measurer = FpsMeasurer()
-            # capture_fps = self.get_stream_fps()
-            # self.fps_measurer.show_optimal_fps(capture_fps)
+        available_indexes = find_attached_cameras()
+        if len(available_indexes) > 0:
+            # set the available camera available_indexes in the gui dropdown (and convert them to strings before)
+            self.camera_selection.addItems(map(str, available_indexes))
+
+            self.__init_logger()
+            if self.debug:
+                self.fps_measurer = FpsMeasurer()
+                # capture_fps = self.get_stream_fps()
+                # self.fps_measurer.show_optimal_fps(capture_fps)
+        else:
+            # there seems to be no available camera!
+            self.error_label.setText("Leider wurde keine verfügbare Kamera gefunden! Bitte stellen Sie sicher, dass "
+                                     "eine Kamera an den Computer angeschlossen (oder direkt eingebaut ist), und "
+                                     "starten Sie dann das Programm erneut!")
 
     def __setup_gui(self):
         self.layout = QtWidgets.QVBoxLayout()
@@ -116,13 +126,42 @@ class TrackingSystem(QtWidgets.QWidget):
         )
         self.layout.addWidget(self.general_instructions)
 
+        self.__setup_camera_selection()
         # add buttons to manually start and stop tracking
         self.__setup_button_layout()  # TODO only for debugging!
 
         self.layout.setContentsMargins(10, 10, 10, 10)
         self.setLayout(self.layout)
-        self.setGeometry(100, 100, 1000, 800)
+        self.setGeometry(100, 50, 1200, 900)
         self.setWindowTitle("Tracking System")
+
+    def __setup_camera_selection(self):
+        """
+        Show a dropdown menu to choose between all available cameras for tracking.
+        """
+        self.selected_camera = 0  # use the in-built camera (index 0) per default
+
+        self.camera_select_label = QtWidgets.QLabel(self)
+        self.camera_select_label.setStyleSheet("QLabel {font-size: 9pt;")
+        self.camera_select_label.setText("Kamera-Auswahl (0 sollte in den meisten Fällen in Ordnung sein):")
+        self.camera_selection = QtWidgets.QComboBox(self)
+        self.camera_selection.currentIndexChanged.connect(self.__selected_cam_changed)
+
+        dropdown_layout = QtWidgets.QHBoxLayout()
+        dropdown_layout.addWidget(self.camera_select_label)
+        dropdown_layout.addWidget(self.camera_selection, alignment=Qt.AlignLeft)
+        dropdown_layout.setContentsMargins(0, 0, 0, 15)
+        dropdown_layout.setAlignment(Qt.AlignCenter)
+        self.layout.addLayout(dropdown_layout)
+
+        self.error_label = QtWidgets.QLabel(self)
+        self.error_label.setAlignment(Qt.AlignCenter)
+        self.error_label.setStyleSheet("QLabel {color: rgba(255, 0, 0);}")
+        self.layout.addWidget(self.error_label)
+
+    def __selected_cam_changed(self, index):
+        # self.selected_camera = self.camera_selection.currentText()
+        self.selected_camera = index
 
     def __setup_button_layout(self):
         self.start_button = QtWidgets.QPushButton(self)
@@ -229,7 +268,7 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         This function runs on a background thread.
         """
-        self.capture = cv2.VideoCapture(0)
+        self.capture = cv2.VideoCapture(self.selected_camera)
         self.__log_static_data()
         self.__logger.start_saving_images_to_disk()  # start saving webcam frames to disk
         self.__logger.start_async_upload()  # start uploading data to sftp server
@@ -252,7 +291,7 @@ class TrackingSystem(QtWidgets.QWidget):
             if processed_frame is None:
                 continue
             self.__current_frame = processed_frame
-            # self.__measure_frame_count()  # TODO delete
+
             if self.debug:
                 self.fps_measurer.update()
                 cv2.putText(processed_frame, f"current FPS: {self.fps_measurer.get_current_fps():.3f}",
@@ -400,14 +439,24 @@ class TrackingSystem(QtWidgets.QWidget):
         self.tracking_thread.start()
 
 
+def find_attached_cameras():
+    # Taken from https://stackoverflow.com/questions/8044539/listing-available-devices-in-python-opencv
+    # Checks the first 10 indexes for available cameras and returns all positions where a working camera was found.
+    index = 0
+    arr = []
+    i = 10
+    while i > 0:
+        cap = cv2.VideoCapture(index)
+        if cap.read()[0]:
+            arr.append(index)
+            cap.release()
+        index += 1
+        i -= 1
+    return arr
+
+
 def main():
     app = QApplication(sys.argv)
-
-    # TODO change locale of the built-in messagebox buttons ??
-    # locale = QLocale.system().name()
-    # qtTranslator = QTranslator()
-    # if qtTranslator.load("qt_" + locale):
-    #     app.installTranslator(qtTranslator)
 
     tracking_system = TrackingSystem()
     tracking_system.show()
