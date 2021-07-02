@@ -203,6 +203,7 @@ class Logger(QtWidgets.QWidget):
 
     def add_image_to_queue(self, filename: str, image: np.ndarray, timestamp: float):
         self.image_queue.put((filename, image, timestamp))
+        # print(f"\nput new frame in image queue; new size: {self.image_queue.qsize()}\n")
 
     def start_saving_images_to_disk(self):
         self.tracking_active = True
@@ -213,6 +214,7 @@ class Logger(QtWidgets.QWidget):
         while self.tracking_active:
             if self.image_queue.qsize() > 0:
                 filename, image, timestamp = self.image_queue.get()
+
                 # check if image is empty first as it crashes if given an empty array
                 # (e.g. if face / eyes not fully visible)
                 if image.size:
@@ -220,7 +222,7 @@ class Logger(QtWidgets.QWidget):
                     image_path = f"{self.__get_curr_image_folder() / image_id}"
                     cv2.imwrite(image_path, image)
                     self.all_images_count += 1
-                    # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                    self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
 
                     # check if the current number of saved images is a multiple of the batch size
                     if (self.all_images_count % self.batch_size) == 0:
@@ -229,12 +231,12 @@ class Logger(QtWidgets.QWidget):
 
                         # and create a new folder for the next batch
                         self.folder_count += 1
-                        self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+                        # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
                         self.__get_curr_image_folder().mkdir()
 
             # wait to prevent constantly asking the queue for new images which would have a huge impact on the fps;
-            # 30 ms as this is the maximum we can get new frames from the webcam anyway
-            time.sleep(0.03)
+            # FIXME: this can actually cause huge memory problems if waiting too long as the queue will expand rapidly!
+            time.sleep(0.01)
 
     def start_async_upload(self):
         # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
@@ -260,11 +262,11 @@ class Logger(QtWidgets.QWidget):
                 # update progressbar in gui
                 self.num_transferred_folders += 1
                 self.num_transferred_images += self.batch_size
-                # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
                 # TODO use folder instead (and in the other function as well):
-                self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+                # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
 
-            time.sleep(0.03)  # wait for the same amount of time as the other queue
+            # time.sleep(0.01)  # wait for the same amount of time as the other queue
 
     """
     def __zip_and_upload(self, folder_name: str):
