@@ -86,7 +86,7 @@ class TrackingSystem(QtWidgets.QWidget):
         # show some instructions
         self.label = QtWidgets.QLabel(self)
         self.label.setText(
-            "Verwendung:\n\nMit Ctrl + Shift + A kann das Tracking gestartet und mit Ctrl + Shift + Q wieder "
+            "Verwendung:\n\nMit Ctrl + A kann das Tracking gestartet und mit Ctrl + Q wieder "
             "gestoppt werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, bis der "
             "Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken unterhalb). "
             "Abhängig von der Internetgeschwindigkeit und Leistung des Rechners kann dies einige Zeit in "
@@ -245,7 +245,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
         self.progress_bar.setValue(self.progress)
 
-    def listen_for_hotkey(self, hotkey_start="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
+    def listen_for_hotkey(self, hotkey_start="ctrl+a", hotkey_stop="ctrl+q"):
         keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
         keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
 
@@ -302,8 +302,6 @@ class TrackingSystem(QtWidgets.QWidget):
                 # replace 1 with 0 to step manually through the video "frame-by-frame"
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
-
-        self.capture.release()  # cleanup the webcam capture
 
     def __measure_frame_count(self):
         self.frame_count += 1
@@ -389,6 +387,7 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__tracking_active = False
             self.__set_tracking_status_ui()
             # self.capture.stop()
+            self.capture.release()  # cleanup the webcam capture
             cv2.destroyAllWindows()
 
             self.__logger.finish_logging()
