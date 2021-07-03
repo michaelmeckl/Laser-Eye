@@ -1,17 +1,15 @@
 import cv2
-from datetime import datetime
-from plyer import notification
-# import sounddevice as sd
-# import soundfile as sf
 import numpy as np
 import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
-from post_processing.ProcessingLogger import ProcessingLogger, LogData, get_timestamp
+from post_processing.ProcessingLogger import ProcessingLogger, ProcessingData
 from post_processing.image_utils import preprocess_frame, extract_image_region
 from post_processing_service.blink_detector import BlinkDetector
-# from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
+from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
 from post_processing_service.face_alignment import CoordinateAlignmentModel
+from tracking.TrackingLogger import get_timestamp
+from tracking.tracking_utils import find_face_mxnet_resized
 from tracking_service.face_detector import MxnetDetectionModel
 from post_processing_service.head_pose import HeadPoseEstimator
 from post_processing_service.iris_localization import IrisLocalizationModel
@@ -20,70 +18,43 @@ from post_processing_service.iris_localization import IrisLocalizationModel
 # noinspection PyAttributeOutsideInit
 class EyeTracker:
 
-    def __init__(self, video_width: int, video_height: int, debug_active=False,
-                 enable_annotation=False, show_video=True, gpu_ctx=-1):
+    def __init__(self, width: int, height: int, enable_annotation=False, show_video=True,
+                 debug_active=False, gpu_ctx=-1):
         self.__debug = debug_active
         self.__annotation_enabled = enable_annotation
         self.__show_video = show_video
-
-        self.frame_count = 0
-        self.t1 = None
-        self.t2 = None
 
         self.__screenWidth, self.__screenHeight = pyautogui.size()
         self.gaze_left, self.gaze_right = None, None
 
         self.__init_logger()
 
-        # self.saccade_detector = SaccadeFixationDetector()
+        # self.saccade_detector = SaccadeFixationDetector()  # TODO
         self.blink_detector = BlinkDetector()
         self.face_detector = MxnetDetectionModel("../weights/16and32", 0, .6, gpu=gpu_ctx)
         self.face_alignment = CoordinateAlignmentModel('../weights/2d106det', 0, gpu=gpu_ctx)
         self.iris_locator = IrisLocalizationModel("../weights/iris_landmark.tflite")
-        self.head_pose_estimator = HeadPoseEstimator("../weights/object_points.npy", video_width, video_height)
+        self.head_pose_estimator = HeadPoseEstimator("../weights/object_points.npy", width, height)
 
     def __init_logger(self):
         self.__logger = ProcessingLogger()
-        # self.__tracked_data = dict.fromkeys(LogData, None)
-
         # use the name of the enum as dict key as otherwise it would always generate a new key the next time
         # and would therefore always append new columns to our pandas dataframe!
-        self.__tracked_data = {key.name: None for key in LogData}
+        self.__tracked_data = {key.name: None for key in ProcessingData}
 
-    def measure_frame_count(self):
-        self.frame_count += 1
-        print(f"########\nFrame {self.frame_count} at {datetime.now()}\n#######")
-        if self.frame_count % 2 == 1:
-            self.t1 = get_timestamp()
-        elif self.frame_count % 2 == 0:
-            self.t2 = get_timestamp()
-            print(f"########\nTime between frames {(self.t2 - self.t1):.2f} seconds\n#######")
-
-    # TODO the only things that could actually be necessary live would be resizing and grayscale
-    # conversion for faster transfer
     def process_current_frame(self, frame: np.ndarray):
         """
         Args:
             frame: video frame in the format [width, height, channels]
         """
+        # TODO
+        # processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
 
-        # measure actual frame count per second with current implementation:
-        # ca. 100 ms avg zwischen Frames; bei meiner meiner 30 FPS cam heißt das:
-        # 1000/30 = 33.3ms => 33.3 + 100 = 133ms zwischen Frames! => 1000/133 ~= 7.5 frames pro sekunde!
-        # self.measure_frame_count()
-
-        # TODO überlegen, ob multiprocessing / parallelisieren irgendwo sinnvoll sein könnte! (frühestens nach der head
-        #  pos); sinnvoll, womöglich blink und saccaden detection (aber wieder joinen befor logging)
-        # use PoolProcessExecuter instead of multiprocessing module probably
-
-        processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
-        self.__current_frame = processed_frame
-
-        # eye_region_bbox = None
+        face_region = find_face_mxnet_resized(self.face_detector, frame) if frame is not None else None
+        self.__current_frame = frame
 
         bboxes = self.face_detector.detect(self.__current_frame)
-        self.show_face_region(bboxes)
-
+        # self.show_face_region(bboxes)
         for landmarks in self.face_alignment.get_landmarks(self.__current_frame, bboxes, calibrate=True):
             self.__landmarks = landmarks
             # calculate head pose
@@ -113,40 +84,36 @@ class EyeTracker:
             # find_pupil(left_eye_bbox, save=True)
 
         if self.__show_video:
-            # show current annotated frame and save it as a png
+            # show current annotated frame
             cv2.imshow('res', self.__current_frame)
 
         return self.__current_frame
-        # if eye_region_bbox is not None:
-        #     return resize_image(eye_region_bbox, size=150)
-        # else:
-        #     return None
 
     def show_face_region(self, bboxes):
         for face in bboxes:
             face_region = extract_image_region(self.__current_frame, face[0], face[1], face[2], face[3])
-            cv2.rectangle(self.__current_frame, (int(face[0]), int(face[1])), (int(face[2]), int(face[3])), color=(0,
-                                                                                                                   0, 255))
+            cv2.rectangle(self.__current_frame, (int(face[0]), int(face[1])), (int(face[2]), int(face[3])),
+                          color=(0, 0, 255))
             cv2.imshow("extracted", face_region)
             break  # break to take only the first face (in most cases there should be only one anyway)
 
     def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox):
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
-            LogData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
-            LogData.FACE_LANDMARKS.name: self.__landmarks,  # .tolist(),
-            LogData.LEFT_EYE.name: self.__left_eye,
-            LogData.RIGHT_EYE.name: self.__right_eye,
-            LogData.LEFT_EYE_CENTER.name: self.__eye_centers[0],
-            LogData.RIGHT_EYE_CENTER.name: self.__eye_centers[1],
-            LogData.LEFT_EYE_WIDTH.name: self.__left_eye_width,
-            LogData.RIGHT_EYE_WIDTH.name: self.__right_eye_width,
-            LogData.LEFT_EYE_HEIGHT.name: self.__left_eye_height,
-            LogData.RIGHT_EYE_HEIGHT.name: self.__right_eye_height,
-            LogData.LEFT_PUPIL_POS.name: self.__pupils[0],
-            LogData.RIGHT_PUPIL_POS.name: self.__pupils[1],
-            LogData.LEFT_PUPIL_DIAMETER.name: 0,  # TODO wie pupillen durchmesser bestimmen?
-            LogData.RIGHT_PUPIL_DIAMETER.name: 0,
+            ProcessingData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
+            ProcessingData.FACE_LANDMARKS.name: self.__landmarks,  # .tolist(),
+            ProcessingData.LEFT_EYE.name: self.__left_eye,
+            ProcessingData.RIGHT_EYE.name: self.__right_eye,
+            ProcessingData.LEFT_EYE_CENTER.name: self.__eye_centers[0],
+            ProcessingData.RIGHT_EYE_CENTER.name: self.__eye_centers[1],
+            ProcessingData.LEFT_EYE_WIDTH.name: self.__left_eye_width,
+            ProcessingData.RIGHT_EYE_WIDTH.name: self.__right_eye_width,
+            ProcessingData.LEFT_EYE_HEIGHT.name: self.__left_eye_height,
+            ProcessingData.RIGHT_EYE_HEIGHT.name: self.__right_eye_height,
+            ProcessingData.LEFT_PUPIL_POS.name: self.__pupils[0],
+            ProcessingData.RIGHT_PUPIL_POS.name: self.__pupils[1],
+            ProcessingData.LEFT_PUPIL_DIAMETER.name: 0,  # TODO wie pupillen durchmesser bestimmen?
+            ProcessingData.RIGHT_PUPIL_DIAMETER.name: 0,
         })
         # TODO count, avg and std of blinks, fixations, saccades (also duration and peak)
         # TODO wann loggen, pro Frame macht keinen Sinn!
@@ -348,9 +315,6 @@ class EyeTracker:
         else:
             self.__roll -= 180
 
-        # TODO
-        # self.__watch_head_position()
-
         real_angle = zeta + self.__roll * pi / 180
         if self.__debug:
             print(f"Gaze angle: {real_angle}°")
@@ -361,32 +325,6 @@ class EyeTracker:
 
         if self.__annotation_enabled:
             self.__draw_gaze(offset)
-
-    def __watch_head_position(self):
-        # TODO use euler angles to give warnings if the head pos changed too much
-        #  -> only show one notification at a time (use boolean flag maybe)
-        if not -15 <= self.__roll <= 15:
-            notification.notify(title="Head Position wrong (Roll)!",
-                                message="Bringe deinen Kopf in eine gerade, aufrechte Position!",
-                                timeout=5)
-            """
-            # also play a short audio
-            try:
-                data, fs = sf.read("./asset/notify.wav", dtype='float32')
-                sd.play(data, fs)
-                status = sd.wait()
-            except Exception as e:
-                sys.stderr.write(type(e).__name__ + ': ' + str(e))
-            """
-        if not -10 <= self.__pitch <= 10:
-            notification.notify(title="Head Position wrong (Pitch)!",
-                                message="Bringe deinen Kopf in eine gerade, aufrechte Position!",
-                                timeout=5)
-        if not -20 <= self.__yaw <= 20:
-            notification.notify(title="Head Position wrong (Yaw)!",
-                                message="Bringe deinen Kopf in eine gerade, aufrechte Position!",
-                                timeout=5)
-        # print(f"Yaw: {self.__yaw}, Pitch: {self.__pitch}, Roll: {self.__roll}")
 
     def __calculate_gaze_point(self):
         """

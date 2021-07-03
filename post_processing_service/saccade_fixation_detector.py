@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 from scipy.spatial import distance as dist
-from post_processing.ProcessingLogger import get_timestamp
+from tracking.TrackingLogger import get_timestamp
 
 
 # noinspection PyAttributeOutsideInit

@@ -1,7 +1,3 @@
-"""
-TODO: refactor this later: this logger could easily be merged with the existing EyeLogger!
-"""
-
 import sys
 from datetime import datetime
 from enum import Enum
@@ -14,13 +10,10 @@ import schedule
 import time
 import threading
 
-LogData = Enum("LogData", "HEAD_POS_ROLL_PITCH_YAW FACE_LANDMARKS LEFT_EYE RIGHT_EYE LEFT_EYE_CENTER "
-                          "RIGHT_EYE_CENTER LEFT_EYE_WIDTH RIGHT_EYE_WIDTH LEFT_EYE_HEIGHT RIGHT_EYE_HEIGHT "
-                          "LEFT_PUPIL_POS RIGHT_PUPIL_POS LEFT_PUPIL_DIAMETER RIGHT_PUPIL_DIAMETER")
-
-
-def get_timestamp() -> float:
-    return time.time()
+ProcessingData = Enum("ProcessingData", "HEAD_POS_ROLL_PITCH_YAW FACE_LANDMARKS LEFT_EYE RIGHT_EYE LEFT_EYE_CENTER "
+                                        "RIGHT_EYE_CENTER LEFT_EYE_WIDTH RIGHT_EYE_WIDTH LEFT_EYE_HEIGHT "
+                                        "RIGHT_EYE_HEIGHT LEFT_PUPIL_POS RIGHT_PUPIL_POS LEFT_PUPIL_DIAMETER "
+                                        "RIGHT_PUPIL_DIAMETER")
 
 
 def run_continuously(interval=1):
@@ -103,7 +96,7 @@ class ProcessingLogger:
         # Stop the background thread on the next schedule interval
         self.__logging_job.set()
 
-    def log_frame_data(self, frame_id: float, data: dict[LogData, Any]):
+    def log_frame_data(self, frame_id: float, data: dict[ProcessingData, Any]):
         # ** unpacks the dictionary as key-value pairs
         self.__processed_data.append({'date': datetime.now(), 'frame_id': frame_id, **data})
 
