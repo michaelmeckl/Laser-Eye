@@ -178,6 +178,16 @@ class Logger(QtWidgets.QWidget):
         except Exception as e:
             sys.stderr.write(f"Exception during csv upload occurred: {e}")
 
+    def log_too_early_quit(self):
+        # log when a user quit too early (i.e. if the image upload hasn't been finished yet)
+        try:
+            with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
+                                   port=self.__port, cnopts=self.__cnopts) as sftp_connection:
+                # open automatically creates the file on the server
+                sftp_connection.open(remote_file=f"{self.user_dir}/user_quit_too_early.txt", mode="w+")
+        except Exception as e:
+            sys.stderr.write(f"Exception during quit too early upload occurred: {e}")
+
     def upload_game_data(self):
         # only upload game data if this is actually running as an exe, otherwise we don't have game data!
         if not self.__is_exe:

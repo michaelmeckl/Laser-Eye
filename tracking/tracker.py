@@ -22,7 +22,7 @@ from TrackingLogger import Logger as TrackingLogger
 from FpsMeasuring import FpsMeasurer
 import keyboard
 from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton
 # from ThreadedWebcamCapture import WebcamStream
 
 
@@ -415,15 +415,20 @@ class TrackingSystem(QtWidgets.QWidget):
         else:
             # show warning if the upload progress hasn't reach 100% yet to prevent users from accidentally
             # closing the system
-            # TODO translate the buttons as well!
-            choice = QMessageBox.question(self, 'Tracking-System beenden?',
-                                          "Bitte schließen Sie das Tracking-System erst, wenn der Fortschrittsbalken "
-                                          "bei 100% angekommen ist! Möchten Sie das System wirklich beenden?",
-                                          QMessageBox.Yes | QMessageBox.No)
-            # TODO check if we can simply pass normal custom buttons as well or text for QMessageBox.question!
+            message_box = QMessageBox(QMessageBox.Warning, "Tracking-System beenden?",
+                                      "Bitte schließen Sie das Tracking-System erst, wenn der Fortschrittsbalken bei "
+                                      "100% angekommen ist! Bei frühzeitigem Abbruch des Uploads können keine "
+                                      "Versuchspersonenstunden vergeben werden! Möchten Sie das System wirklich "
+                                      "beenden?", parent=self)
+            # create and set custom buttons for yes and no
+            yes_button = QPushButton("Ja")
+            message_box.addButton(yes_button, QMessageBox.YesRole)
+            no_button = QPushButton("Nein")
+            message_box.addButton(no_button, QMessageBox.NoRole)
+            message_box.exec_()  # show the message box
 
-            if choice == QMessageBox.Yes:
-                # TODO log this as well? (small txt. with "User quitted too early") ?
+            if message_box.clickedButton() == yes_button:
+                self.__logger.log_too_early_quit()
                 self.finish_tracking_system()
                 event.accept()
             else:
