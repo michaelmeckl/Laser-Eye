@@ -230,7 +230,7 @@ class TrackingSystem(QtWidgets.QWidget):
             eta_seconds = (overall - current) * seconds_per_frame
             minutes = math.floor(eta_seconds / 60)
             seconds = round(eta_seconds % 60)
-            self.label_eta.setText(f"Verbliebene Zeit: {minutes} min, {seconds} Sekunden")
+            self.label_eta.setText(f"Verbleibende Zeit: {minutes} min, {seconds} Sekunden")
         else:
             self.label_eta.setText(f"Mehr Daten werden benötigt ...")
 
@@ -241,7 +241,7 @@ class TrackingSystem(QtWidgets.QWidget):
         # TODO remove later:
         if current in [30, 100, 500, 1200]:
             needed_time = time.time() - self.__upload_start
-            # print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
+            print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
 
         self.progress_bar.setValue(self.progress)
 
@@ -313,8 +313,7 @@ class TrackingSystem(QtWidgets.QWidget):
             print(f"########\nTime between frames {(self.t2 - self.t1):.2f} seconds\n#######")
 
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
-        face_image = find_face_mxnet_resized(self.face_detector, frame)
-        # scaled = scale_image(frame, scale_factor=0.5, show_scaled=True)
+        face_image = find_face_mxnet_resized(self.face_detector, frame, show_result=True)
         # face_image = to_gray(face_image)
 
         if face_image is not None:

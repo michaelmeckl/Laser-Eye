@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pysftp
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, QThreadPool
 from plyer import notification
 import shutil
 from py7zr import FILTER_BROTLI, SevenZipFile
@@ -42,6 +42,7 @@ def get_timestamp() -> float:
 # noinspection PyAttributeOutsideInit
 class Logger(QtWidgets.QWidget):
     signal_update_progress = pyqtSignal(int, int)
+
     image_queue = Queue()  # (maxsize=128)
     upload_queue = Queue()
 
@@ -155,7 +156,8 @@ class Logger(QtWidgets.QWidget):
             sys.exit(1)
 
         # we use the timestamp in ms at the init of the tracking system as the user id as we don't have access to the
-        # participant_id from the unity application
+        # participant_id from the unity application (this should be fine as it is highly unlikely that 2 people start
+        # at the exact same millisecond)
         # TODO wir könnten auch einfach ein kleines GUI am anfang einbauen, wo er die ID eingeben muss wie in Unity
         self.__user_id = get_timestamp()
 
@@ -252,9 +254,13 @@ class Logger(QtWidgets.QWidget):
         # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
         # main thread and not from a background thread, otherwise it would just randomly crash after some time!!)
         self.signal_update_progress.connect(self.__upload_callback)
+
+        threadCount = QThreadPool.globalInstance().maxThreadCount()  # get the maximal thread count that we can use
+        self.upload_lock = threading.Lock()
         # must not be a daemon thread here!
-        self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
-        self.upload_thread.start()
+        for i in range(threadCount):
+            self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
+            self.upload_thread.start()
 
     def __start_ftp_transfer(self):
         while self.tracking_active:
@@ -266,8 +272,10 @@ class Logger(QtWidgets.QWidget):
                 """
                 # zip the the folder with the given name
                 zip_file_name = self.__zip_folder(file_name)
+                self.upload_lock.acquire()
                 # upload this folder to the server
                 self.__upload_zipped_images(zip_file_name)
+                self.upload_lock.release()
 
                 # update progressbar in gui
                 self.num_transferred_folders += 1
