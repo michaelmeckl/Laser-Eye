@@ -17,7 +17,7 @@ def find_face_mxnet(face_detector, frame):
     return face_region
 
 
-def find_face_mxnet_resized(face_detector, frame, new_height=250, new_width=0):
+def find_face_mxnet_resized(face_detector, frame, scale_factor=0.5, show_result=True):
     """
     The same algorithm as above but scales the input image smaller first so the face detection is faster,
     then upscales the resulting face image by the same amount the frame was scaled at the start.
@@ -27,12 +27,10 @@ def find_face_mxnet_resized(face_detector, frame, new_height=250, new_width=0):
     image_frame = frame.copy()
     frameHeight = image_frame.shape[0]
     frameWidth = image_frame.shape[1]
-    if not new_width:
-        new_width = int((frameWidth / frameHeight) * new_height)
-    scaleHeight = frameHeight / new_height
-    scaleWidth = frameWidth / new_width
+    image_frame_small = cv2.resize(image_frame, (0, 0), fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
+    scaleHeight = frameHeight / (frameHeight * scale_factor)
+    scaleWidth = frameWidth / (frameWidth * scale_factor)
 
-    image_frame_small = cv2.resize(image_frame, (new_width, new_height))
     bboxes = face_detector.detect(image_frame_small)
     face_region = None
     for face in bboxes:
@@ -41,7 +39,8 @@ def find_face_mxnet_resized(face_detector, frame, new_height=250, new_width=0):
                                            face[1] * scaleHeight,
                                            face[2] * scaleWidth,
                                            face[3] * scaleHeight)
-        cv2.imshow("extracted_region_mxnet", face_region)
+        if show_result:
+            cv2.imshow("extracted_region_mxnet", face_region)
         break  # break to take only the first face (in most cases there should be only one anyway)
     return face_region
 
