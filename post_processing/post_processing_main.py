@@ -3,9 +3,11 @@
 
 import argparse
 import os
+import pathlib
 import sys
 import cv2
 from datetime import datetime
+import py7zr
 from post_processing.eye_tracker import EyeTracker
 
 
@@ -70,6 +72,14 @@ def main(debug=False):
     else:
         image_folder = "./tracking_data/images"
         frame_width, frame_height = None, None
+
+        # TODO unzip .7z files first!
+        """
+        archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent / f"{filename}.7z", mode="r")
+        archive.extractall(path=pathlib.Path(__file__).parent.parent)
+        archive.close()
+        """
+
         for sub_folder in os.listdir(image_folder):
             for image in os.listdir(f"{image_folder}/{sub_folder}"):
                 first_image = cv2.imread(f"{image_folder}/{sub_folder}/{image}")
