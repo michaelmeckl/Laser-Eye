@@ -3,11 +3,9 @@
 
 import argparse
 import os
-import pathlib
 import sys
 import cv2
 from datetime import datetime
-import py7zr
 from post_processing.eye_tracker import EyeTracker
 
 
@@ -40,7 +38,7 @@ def main(debug=False):
             from post_processing.ThreadedFileVideoCapture import FileVideoStream
             capture = FileVideoStream(path=args.video_file, transform=None)
         else:
-            from tracking.ThreadedWebcamCapture import WebcamStream
+            from post_processing.ThreadedWebcamCapture import WebcamStream
             # fall back to webcam (0) if no input video was provided
             capture = WebcamStream(src=0)
 

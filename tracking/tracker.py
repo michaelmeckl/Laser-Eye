@@ -2,46 +2,36 @@
 # -*- coding:utf-8 -*-
 
 import math
-import time
-from datetime import datetime
 import platform
 import sys
 import threading
+import time
 from pathlib import Path
-from tracking_utils import find_face_mxnet_resized
-import cv2   # pip install opencv-python
+import cv2  # pip install opencv-python
 import numpy as np
 import psutil
-from gpuinfo.windows import get_gpus  # pip install gpu-info
 import pyautogui
-from PyQt5.QtCore import Qt
-from plyer import notification
-from tracking_service.face_detector import MxnetDetectionModel
-from TrackingLogger import TrackingData, get_timestamp
-from TrackingLogger import Logger as TrackingLogger
-from FpsMeasuring import FpsMeasurer
-import keyboard
 from PyQt5 import QtWidgets
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton
-# from ThreadedWebcamCapture import WebcamStream
+from gpuinfo.windows import get_gpus  # pip install gpu-info
+from plyer import notification
+from FpsMeasuring import FpsMeasurer
+from TrackingLogger import Logger as TrackingLogger
+from TrackingLogger import TrackingData, get_timestamp
+from tracking_service.face_detector import MxnetDetectionModel
+from tracking_utils import find_face_mxnet_resized
+# import keyboard  # for hotkeys
 
 
 class TrackingSystem(QtWidgets.QWidget):
 
-    def __init__(self, debug_active=True):
+    def __init__(self, debug_active=True):  # TODO set to False for actual study
         super(TrackingSystem, self).__init__()
         self.__tracking_active = False
         self.progress = None  # the upload progress
         self.debug = debug_active
-
-        self.__current_frame = None
-        self.frame_count = 0
-        self.t1 = None
-        self.t2 = None
-
-        # use a custom threaded video capture to increase fps;
-        # see https://www.pyimagesearch.com/2015/12/21/increasing-webcam-fps-with-python-and-opencv/
-        # self.capture = WebcamStream(src=0)
+        self.__current_frame = None  # TODO remove
 
         # necessary for building the exe file with pyinstaller with the --one-file option as the path changes;
         # see https://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile for more
@@ -65,8 +55,6 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__init_logger()
             if self.debug:
                 self.fps_measurer = FpsMeasurer()
-                # capture_fps = self.get_stream_fps()
-                # self.fps_measurer.show_optimal_fps(capture_fps)
         else:
             # there seems to be no available camera!
             self.error_label.setText("Leider wurde keine verfügbare Kamera gefunden! Bitte stellen Sie sicher, dass "
@@ -80,13 +68,12 @@ class TrackingSystem(QtWidgets.QWidget):
         self.tracking_status = QtWidgets.QLabel(self)
         self.tracking_status.setContentsMargins(0, 10, 0, 10)
         self.tracking_status.setAlignment(Qt.AlignCenter)
-        self.__set_tracking_status_ui()
         self.layout.addWidget(self.tracking_status)
 
         # show some instructions
         self.label = QtWidgets.QLabel(self)
         self.label.setText(
-            "Verwendung:\n\nMit Ctrl + A kann das Tracking gestartet und mit Ctrl + Q wieder "
+            "Verwendung:\n\nMit den Buttons unten kann das Tracking gestartet und wieder "
             "gestoppt werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, bis der "
             "Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken unterhalb). "
             "Abhängig von der Internetgeschwindigkeit und Leistung des Rechners kann dies einige Zeit in "
@@ -120,15 +107,17 @@ class TrackingSystem(QtWidgets.QWidget):
             "<li>Die Kamera sollte beim Tracking möglichst gerade und frontal zum Gesicht positioniert sein, sodass "
             "das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
             "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen!</li>"
-            "<li>Die zu Beginn genannten Hotkeys zum Starten und Stoppen funktionieren nur einmal! Nach Stoppen des "
+            "<li>Die Buttons zum Starten und Stoppen funktionieren nur einmal! Nach Stoppen des "
             "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten!</li>"
             "</ul>"
         )
         self.layout.addWidget(self.general_instructions)
 
         self.__setup_camera_selection()
-        # add buttons to manually start and stop tracking
-        self.__setup_button_layout()  # TODO only for debugging!
+        # add buttons to start and stop tracking
+        self.__setup_button_layout()
+
+        self.__set_tracking_status_ui()
 
         self.layout.setContentsMargins(10, 10, 10, 10)
         self.setLayout(self.layout)
@@ -143,8 +132,10 @@ class TrackingSystem(QtWidgets.QWidget):
 
         self.camera_select_label = QtWidgets.QLabel(self)
         self.camera_select_label.setStyleSheet("QLabel {font-size: 9pt;")
-        self.camera_select_label.setText("Kamera-Auswahl (0 sollte in den meisten Fällen in Ordnung sein):")
+        self.camera_select_label.setText("Kamera-Auswahl für Tracking (0 sollte in der Regel die Richtige sein):")
         self.camera_selection = QtWidgets.QComboBox(self)
+        self.camera_selection.setStyleSheet("QComboBox {min-width: 1em; border: 1px solid gray; border-radius: 2px; "
+                                            "padding: 1px 18px 1px 3px;}")
         self.camera_selection.currentIndexChanged.connect(self.__selected_cam_changed)
 
         dropdown_layout = QtWidgets.QHBoxLayout()
@@ -160,21 +151,25 @@ class TrackingSystem(QtWidgets.QWidget):
         self.layout.addWidget(self.error_label)
 
     def __selected_cam_changed(self, index):
-        # self.selected_camera = self.camera_selection.currentText()
         self.selected_camera = index
 
     def __setup_button_layout(self):
+        button_common_style = "QPushButton {font: 16px; padding: 12px; min-width: 10em; border-radius: 8px;} " \
+                              ":disabled {background-color: lightGray; color: gray;}"
         self.start_button = QtWidgets.QPushButton(self)
-        self.start_button.setText("Start tracking")
-        self.start_button.setStyleSheet("QPushButton {background-color: rgb(87, 205, 0); color: black; "
-                                        "padding: 10px 10px 10px 10px; border-radius: 2px;}")
+        self.start_button.setText("Starte Tracking")
+        self.start_button.setStyleSheet(f"{button_common_style}"
+                                        ":enabled {background-color: rgb(87, 205, 0); color: black;}"
+                                        ":pressed {background-color: rgb(47, 165, 0);}")
         self.start_button.clicked.connect(self.__activate_tracking)  # connect start method to this button
 
         self.stop_button = QtWidgets.QPushButton(self)
-        self.stop_button.setText("Stop tracking")
-        self.stop_button.setStyleSheet("QPushButton {background-color: rgb(153, 25, 25); color: white; "
-                                       "padding: 10px 10px 10px 10px; border-radius: 2px;}")
+        self.stop_button.setText("Tracking stoppen")
+        self.stop_button.setStyleSheet(f"{button_common_style}"
+                                       ":enabled {background-color: rgb(153, 25, 25); color: white;}"
+                                       ":pressed {background-color: rgb(141, 12, 12);}")
         self.stop_button.clicked.connect(self.__stop_study)  # connect stop method to this button
+        self.stop_button.setEnabled(False)  # disable stop button at the start
 
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(self.start_button, alignment=Qt.AlignLeft)
@@ -217,10 +212,6 @@ class TrackingSystem(QtWidgets.QWidget):
             self.tracking_status.setText("Tracking nicht aktiv")
             self.tracking_status.setStyleSheet("QLabel {color: red; font-size: 10pt;}")
 
-    def __init_logger(self):
-        self.__logger = TrackingLogger(self.__on_upload_progress)
-        self.__tracked_data = {key.name: None for key in TrackingData}
-
     def __on_upload_progress(self, current, overall):
         if overall == 0:
             return
@@ -245,19 +236,30 @@ class TrackingSystem(QtWidgets.QWidget):
 
         self.progress_bar.setValue(self.progress)
 
-    def listen_for_hotkey(self, hotkey_start="ctrl+a", hotkey_stop="ctrl+q"):
-        keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
-        keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
+    def __init_logger(self):
+        self.__logger = TrackingLogger(self.__on_upload_progress)
+        self.__tracked_data = {key.name: None for key in TrackingData}
+
+    # The following could be used instead of the buttons to automatically start and stop tracking via hotkeys:
+    # def listen_for_hotkey(self, hotkey_start="ctrl+a", hotkey_stop="ctrl+q"):
+    #     keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
+    #     keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
 
     def __activate_tracking(self):
-        # activate tracking on hotkey press
         if not self.__tracking_active:
-            # start tracking on a background thread
             self.__tracking_active = True
             self.__set_tracking_status_ui()
+
+            # disable camera selection after tracking has started
+            self.camera_selection.setEnabled(False)
+            # toggle button active status
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+
             # TODO enable again:
             # notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
-            # self.capture.start()  # start reading frames from webcam
+
+            # start tracking on a background thread
             self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
             self.tracking_thread.start()
         else:
@@ -266,9 +268,12 @@ class TrackingSystem(QtWidgets.QWidget):
 
     def __start_tracking(self):
         """
-        This function runs on a background thread.
+        This function runs on a background thread so the fps of the video games the user is playing aren't reduced.
         """
+        # setup webcam capture
         self.capture = cv2.VideoCapture(self.selected_camera)
+        # and start the logging and the uploading on other background threads (so the reading from the webcam isn't
+        # blocked by the processing there)
         self.__log_static_data()
         self.__logger.start_saving_images_to_disk()  # start saving webcam frames to disk
         self.__logger.start_async_upload()  # start uploading data to sftp server
@@ -284,7 +289,7 @@ class TrackingSystem(QtWidgets.QWidget):
                 sys.stderr.write("Unknown error while trying to get current frame!")
                 break
             if frame is None:
-                print("Frame from webcam is None!")
+                sys.stderr.write("Frame from webcam is None!")
                 continue
 
             processed_frame = self.__process_frame(frame)
@@ -302,15 +307,6 @@ class TrackingSystem(QtWidgets.QWidget):
                 # replace 1 with 0 to step manually through the video "frame-by-frame"
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
-
-    def __measure_frame_count(self):
-        self.frame_count += 1
-        print(f"########\nFrame {self.frame_count} at {datetime.now()}\n#######")
-        if self.frame_count % 2 == 1:
-            self.t1 = get_timestamp()
-        elif self.frame_count % 2 == 0:
-            self.t2 = get_timestamp()
-            print(f"########\nTime between frames {(self.t2 - self.t1):.2f} seconds\n#######")
 
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
         face_image = find_face_mxnet_resized(self.face_detector, frame, show_result=True)
@@ -385,8 +381,11 @@ class TrackingSystem(QtWidgets.QWidget):
             # notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
-            # self.capture.stop()
-            self.capture.release()  # cleanup the webcam capture
+            # disable stop button but don't enable start button (not implemented to restart tracking!)
+            self.stop_button.setEnabled(False)
+
+            # cleanup the webcam capture
+            self.capture.release()
             cv2.destroyAllWindows()
 
             self.__logger.finish_logging()
@@ -395,7 +394,7 @@ class TrackingSystem(QtWidgets.QWidget):
             # the program itself
             # self.start_button.disconnect()
             # self.stop_button.disconnect()
-            keyboard.remove_all_hotkeys()
+            # keyboard.remove_all_hotkeys()
 
             if self.debug:
                 self.fps_measurer.stop()
@@ -437,7 +436,6 @@ class TrackingSystem(QtWidgets.QWidget):
     def debug_me(self):
         self.__tracking_active = True
         self.__set_tracking_status_ui()
-        # self.capture.start()  # start reading frames from webcam
         self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
         self.tracking_thread.start()
 
@@ -460,10 +458,9 @@ def find_attached_cameras():
 
 def main():
     app = QApplication(sys.argv)
-
     tracking_system = TrackingSystem()
     tracking_system.show()
-    tracking_system.listen_for_hotkey()
+    # tracking_system.listen_for_hotkey()
 
     # TODO only for debugging fps:
     """

@@ -1,6 +1,7 @@
 import configparser as cp
 import os
 import pathlib
+import shutil
 import sys
 import threading
 import time
@@ -14,10 +15,9 @@ import pandas as pd
 import pysftp
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal, QThreadPool
-from plyer import notification
-import shutil
-from py7zr import FILTER_BROTLI, SevenZipFile
 from paramiko.ssh_exception import SSHException
+from plyer import notification
+from py7zr import FILTER_BROTLI, SevenZipFile
 # from tracking.FpsMeasuring import timeit
 
 
@@ -41,9 +41,12 @@ def get_timestamp() -> float:
 
 # noinspection PyAttributeOutsideInit
 class Logger(QtWidgets.QWidget):
-    signal_update_progress = pyqtSignal(int, int)
 
-    image_queue = Queue()  # (maxsize=128)
+    signal_update_progress = pyqtSignal(int, int)  # used to communicate upload progress with gui on the main thread
+
+    # image_queue = FileQueue(maxsize=300)
+    # upload_queue = FileQueue(maxsize=300)
+    image_queue = Queue()
     upload_queue = Queue()
 
     def __init__(self, upload_callback, default_log_folder="tracking_data", default_log_file="tracking_log.csv"):
@@ -51,7 +54,7 @@ class Logger(QtWidgets.QWidget):
         self.all_images_count = 0
         self.num_transferred_images = 0
         self.num_transferred_folders = 0
-        self.batch_size = 1000  # the number of images per subfolder  # TODO 500 or 800 for faster gui updates?
+        self.batch_size = 100  # the number of images per subfolder  # TODO 500 or 800 for faster gui updates?
 
         self.__upload_callback = upload_callback
         self.__log_folder = default_log_folder
@@ -105,9 +108,6 @@ class Logger(QtWidgets.QWidget):
         sftp_username = username
         sftp_password = password
         sftp_port = port
-
-        TODO reading in credentials should be replaced later before building exe so we don't have to pass the file to
-         every user!
         """
         credentials_file = "sftp_credentials.properties"
         credentials_section = "dev.sftp"
@@ -158,7 +158,6 @@ class Logger(QtWidgets.QWidget):
         # we use the timestamp in ms at the init of the tracking system as the user id as we don't have access to the
         # participant_id from the unity application (this should be fine as it is highly unlikely that 2 people start
         # at the exact same millisecond)
-        # TODO wir könnten auch einfach ein kleines GUI am anfang einbauen, wo er die ID eingeben muss wie in Unity
         self.__user_id = get_timestamp()
 
         # create a directory for this user on the sftp server
@@ -215,7 +214,6 @@ class Logger(QtWidgets.QWidget):
 
     def add_image_to_queue(self, filename: str, image: np.ndarray, timestamp: float):
         self.image_queue.put((filename, image, timestamp))
-        # print(f"\nput new frame in image queue; new size: {self.image_queue.qsize()}\n")
 
     def start_saving_images_to_disk(self):
         self.tracking_active = True
@@ -234,7 +232,7 @@ class Logger(QtWidgets.QWidget):
                     image_path = f"{self.__get_curr_image_folder() / image_id}"
                     cv2.imwrite(image_path, image)
                     self.all_images_count += 1
-                    self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                    # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
 
                     # check if the current number of saved images is a multiple of the batch size
                     if (self.all_images_count % self.batch_size) == 0:
@@ -243,63 +241,49 @@ class Logger(QtWidgets.QWidget):
 
                         # and create a new folder for the next batch
                         self.folder_count += 1
-                        # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+                        self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
                         self.__get_curr_image_folder().mkdir()
 
-            # wait to prevent constantly asking the queue for new images which would have a huge impact on the fps;
-            # FIXME: this can actually cause huge memory problems if waiting too long as the queue will expand rapidly!
+            # wait to prevent constantly asking the queue for new images which would have a huge impact on the fps
+            # TODO: this can actually cause huge memory problems if waiting too long as the queue will expand rapidly!
             time.sleep(0.01)
 
     def start_async_upload(self):
         # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
         # main thread and not from a background thread, otherwise it would just randomly crash after some time!!)
         self.signal_update_progress.connect(self.__upload_callback)
-
+        self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
+        self.upload_thread.start()
+        """
         threadCount = QThreadPool.globalInstance().maxThreadCount()  # get the maximal thread count that we can use
         self.upload_lock = threading.Lock()
         # must not be a daemon thread here!
         for i in range(threadCount):
             self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
             self.upload_thread.start()
+        """
 
     def __start_ftp_transfer(self):
         while self.tracking_active:
             if self.upload_queue.qsize() > 0:
                 file_name = self.upload_queue.get()
-                """
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    executor.submit(self.__zip_and_upload, file_name).add_done_callback(self.__update_progress)
-                """
+
                 # zip the the folder with the given name
                 zip_file_name = self.__zip_folder(file_name)
-                self.upload_lock.acquire()
+                # self.upload_lock.acquire()
+
                 # upload this folder to the server
                 self.__upload_zipped_images(zip_file_name)
-                self.upload_lock.release()
+                # self.upload_lock.release()
 
                 # update progressbar in gui
                 self.num_transferred_folders += 1
                 self.num_transferred_images += self.batch_size
-                self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
-                # TODO use folder instead (and in the other function as well):
-                # self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+                # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
 
             time.sleep(0.01)  # wait for the same amount of time as the other queue
 
-    """
-    def __zip_and_upload(self, folder_name: str):
-        zip_file_name = self.__zip_folder(folder_name)
-        # upload this folder to the server
-        self.__upload_zipped_images(zip_file_name)
-
-    def __update_progress(self, future):
-        # print("result: ", future.done())
-        self.num_transferred_folders += 1
-        self.num_transferred_images += self.batch_size
-        self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
-    """
-
-    # @timeit
     def __zip_folder(self, folder_name: str):
         """
         Converts the given folder to a 7zip archive file to speed up the upload.
@@ -313,7 +297,6 @@ class Logger(QtWidgets.QWidget):
             archive.writeall(folder_path)
         return zip_file_name
 
-    # @timeit
     def __upload_zipped_images(self, file_name):
         try:
             self.sftp.put(localpath=f"{self.__images_zipped_path / file_name}",
@@ -344,7 +327,6 @@ class Logger(QtWidgets.QWidget):
             self.upload_queue.queue.clear()
 
         # remove local dir after uploading everything
-        # TODO enable again:
         # shutil.rmtree(self.__log_folder_path)
 
         # TODO remove game data folder as well if running as exe??

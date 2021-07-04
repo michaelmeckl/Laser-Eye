@@ -631,9 +631,9 @@ class ZipMain(QtWidgets.QWidget):
         if self.debug:
             self.fps_measurer.start()
 
-        images_dir = os.listdir("../zip_test_images/")
+        images_dir = os.listdir("zip_test_images/")
         for image in images_dir:
-            frame = cv2.imread(f"../zip_test_images/{image}")
+            frame = cv2.imread(f"zip_test_images/{image}")
             if frame is None or self.__stop:
                 break
 
