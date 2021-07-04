@@ -18,7 +18,6 @@ from PyQt5.QtCore import pyqtSignal, QThreadPool
 from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
-# from tracking.FpsMeasuring import timeit
 
 
 # whitespaces at the end are necessary!!
@@ -44,8 +43,6 @@ class Logger(QtWidgets.QWidget):
 
     signal_update_progress = pyqtSignal(int, int)  # used to communicate upload progress with gui on the main thread
 
-    # image_queue = FileQueue(maxsize=300)
-    # upload_queue = FileQueue(maxsize=300)
     image_queue = Queue()
     upload_queue = Queue()
 
@@ -54,7 +51,7 @@ class Logger(QtWidgets.QWidget):
         self.all_images_count = 0
         self.num_transferred_images = 0
         self.num_transferred_folders = 0
-        self.batch_size = 100  # the number of images per subfolder  # TODO 500 or 800 for faster gui updates?
+        self.batch_size = 250  # the number of images per subfolder
 
         self.__upload_callback = upload_callback
         self.__log_folder = default_log_folder
@@ -248,20 +245,33 @@ class Logger(QtWidgets.QWidget):
             # TODO: this can actually cause huge memory problems if waiting too long as the queue will expand rapidly!
             time.sleep(0.01)
 
+    """
+    one thread (100 batch size):
+        Time needed to upload 100 images: 9.868 seconds
+        Time needed to upload 500 images: 28.478 seconds
+        Time needed to upload 1200 images: 62.630 seconds
+    
+    with thread pool (100 batch size):
+        Time needed to upload 100 images: 10.751 seconds
+        Time needed to upload 500 images: 24.482 seconds
+        Time needed to upload 1200 images: 47.043 seconds
+    
+    (both with ~12 mbit upload speed)
+    """
     def start_async_upload(self):
         # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
         # main thread and not from a background thread, otherwise it would just randomly crash after some time!!)
         self.signal_update_progress.connect(self.__upload_callback)
-        self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
-        self.upload_thread.start()
-        """
+
         threadCount = QThreadPool.globalInstance().maxThreadCount()  # get the maximal thread count that we can use
+        # create a lock for the uploading process (only one thread at a time can actually transfer the data via sftp)
         self.upload_lock = threading.Lock()
-        # must not be a daemon thread here!
+        # self.upload_pool = []
         for i in range(threadCount):
-            self.upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
-            self.upload_thread.start()
-        """
+            # must not be a daemon thread here!
+            upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
+            upload_thread.start()
+            # self.upload_pool.append(upload_thread)
 
     def __start_ftp_transfer(self):
         while self.tracking_active:
@@ -270,11 +280,10 @@ class Logger(QtWidgets.QWidget):
 
                 # zip the the folder with the given name
                 zip_file_name = self.__zip_folder(file_name)
-                # self.upload_lock.acquire()
-
                 # upload this folder to the server
+                self.upload_lock.acquire()
                 self.__upload_zipped_images(zip_file_name)
-                # self.upload_lock.release()
+                self.upload_lock.release()
 
                 # update progressbar in gui
                 self.num_transferred_folders += 1
@@ -310,16 +319,19 @@ class Logger(QtWidgets.QWidget):
         self.upload_queue.put(str(self.folder_count))
 
     def stop_upload(self):
+        self.tracking_active = False
+
         if self.__is_exe:
             # if uploading the game data hasn't finished yet, wait for it first!
             while self.uploading_game_data:
                 time.sleep(0.1)  # wait for 100 ms, then try again
                 self.stop_upload()
 
-        self.tracking_active = False
+        # for thread in self.upload_pool:
+        #    thread.join()
+
         # close the connection to the sftp server
         self.sftp.close()
-
         # clear the image and upload queues in a thread safe way
         with self.image_queue.mutex:
             self.image_queue.queue.clear()
@@ -327,6 +339,7 @@ class Logger(QtWidgets.QWidget):
             self.upload_queue.queue.clear()
 
         # remove local dir after uploading everything
-        # shutil.rmtree(self.__log_folder_path)
-
+        shutil.rmtree(self.__log_folder_path)
         # TODO remove game data folder as well if running as exe??
+        # if self.__is_exe:
+        #    shutil.rmtree(self.__log_folder_path.parent / "Game_Data")

@@ -26,12 +26,11 @@ from tracking_utils import find_face_mxnet_resized
 
 class TrackingSystem(QtWidgets.QWidget):
 
-    def __init__(self, debug_active=True):  # TODO set to False for actual study
+    def __init__(self, debug_active=False):
         super(TrackingSystem, self).__init__()
         self.__tracking_active = False
         self.progress = None  # the upload progress
         self.debug = debug_active
-        self.__current_frame = None  # TODO remove
 
         # necessary for building the exe file with pyinstaller with the --one-file option as the path changes;
         # see https://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile for more
@@ -154,7 +153,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.selected_camera = index
 
     def __setup_button_layout(self):
-        button_common_style = "QPushButton {font: 16px; padding: 12px; min-width: 10em; border-radius: 8px;} " \
+        button_common_style = "QPushButton {font: 16px; padding: 12px; min-width: 10em; border-radius: 6px;} " \
                               ":disabled {background-color: lightGray; color: gray;}"
         self.start_button = QtWidgets.QPushButton(self)
         self.start_button.setText("Starte Tracking")
@@ -222,18 +221,14 @@ class TrackingSystem(QtWidgets.QWidget):
             minutes = math.floor(eta_seconds / 60)
             seconds = round(eta_seconds % 60)
             self.label_eta.setText(f"Verbleibende Zeit: {minutes} min, {seconds} Sekunden")
-        else:
-            self.label_eta.setText(f"Mehr Daten werden benötigt ...")
 
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
         self.progress = int((current / overall) * 100)
 
-        # TODO remove later:
-        if current in [30, 100, 500, 1200]:
-            needed_time = time.time() - self.__upload_start
-            print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
-
+        # if current in [30, 100, 500, 1000, 1200, 1500]:
+        #     needed_time = time.time() - self.__upload_start
+        #     print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
         self.progress_bar.setValue(self.progress)
 
     def __init_logger(self):
@@ -248,15 +243,14 @@ class TrackingSystem(QtWidgets.QWidget):
     def __activate_tracking(self):
         if not self.__tracking_active:
             self.__tracking_active = True
-            self.__set_tracking_status_ui()
 
+            self.__set_tracking_status_ui()
+            self.label_eta.setText(f"Mehr Daten werden benötigt ...")
             # disable camera selection after tracking has started
             self.camera_selection.setEnabled(False)
             # toggle button active status
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
-
-            # TODO enable again:
             # notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
 
             # start tracking on a background thread
@@ -295,7 +289,6 @@ class TrackingSystem(QtWidgets.QWidget):
             processed_frame = self.__process_frame(frame)
             if processed_frame is None:
                 continue
-            self.__current_frame = processed_frame
 
             if self.debug:
                 self.fps_measurer.update()
@@ -309,7 +302,7 @@ class TrackingSystem(QtWidgets.QWidget):
                     break
 
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
-        face_image = find_face_mxnet_resized(self.face_detector, frame, show_result=True)
+        face_image = find_face_mxnet_resized(self.face_detector, frame, show_result=True if self.debug else False)
         # face_image = to_gray(face_image)
 
         if face_image is not None:
@@ -319,7 +312,6 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__logger.add_image_to_queue("capture", face_image, log_timestamp)
         return frame
 
-    # TODO in der einverständniserklärung unbedingt mit angeben, dass das auch geloggt wird!
     def __log_static_data(self):
         # get the dimensions of the webcam
         video_width, video_height = self.get_stream_dimensions()
@@ -363,21 +355,12 @@ class TrackingSystem(QtWidgets.QWidget):
     def get_stream_dimensions(self):
         return self.capture.get(3), self.capture.get(4)
 
-    def get_current_frame(self) -> np.ndarray:
-        return self.__current_frame
-
-    def __stop_study(self):
-        self.__stop_tracking()
-        # upload the log folders from the unity game when tracking has finished
-        self.__logger.upload_game_data()
-
     def __stop_tracking(self):
         """
         Stop and cleanup active webcam captures and destroy open windows if any.
-        Also stop the logging.
+        Also stop the logging by setting a boolean flag to False.
         """
         if self.__tracking_active:
-            # TODO enable again:
             # notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
@@ -389,11 +372,8 @@ class TrackingSystem(QtWidgets.QWidget):
             cv2.destroyAllWindows()
 
             self.__logger.finish_logging()
-
             # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
             # the program itself
-            # self.start_button.disconnect()
-            # self.stop_button.disconnect()
             # keyboard.remove_all_hotkeys()
 
             if self.debug:
@@ -402,7 +382,20 @@ class TrackingSystem(QtWidgets.QWidget):
                 print(f"[INFO] approx. FPS on background thread: {self.fps_measurer.fps():.2f}")
                 print("Frames on main thread:", self.fps_measurer._numFrames)
 
+    def __stop_study(self):
+        """
+        Called when the user clicks on the stop button or presses the stop hotkey to stop recording new frames and
+        also upload the game data if started as exe.
+        """
+        self.__stop_tracking()
+        # upload the log folders from the unity game when tracking has finished
+        self.__logger.upload_game_data()
+
     def finish_tracking_system(self):
+        """
+        Called when the user clicks on the close symbol in the top right of the window and closes the system completely.
+        """
+        self.tracking_status.setText("Anwendung wird beendet. Bitte warten...")
         self.__stop_tracking()
         self.__logger.stop_upload()
 
@@ -432,13 +425,6 @@ class TrackingSystem(QtWidgets.QWidget):
             else:
                 event.ignore()
 
-    # TODO delete later:
-    def debug_me(self):
-        self.__tracking_active = True
-        self.__set_tracking_status_ui()
-        self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
-        self.tracking_thread.start()
-
 
 def find_attached_cameras():
     # Taken from https://stackoverflow.com/questions/8044539/listing-available-devices-in-python-opencv
@@ -462,9 +448,9 @@ def main():
     tracking_system.show()
     # tracking_system.listen_for_hotkey()
 
-    # TODO only for debugging fps:
+    # for debugging fps:
     """
-    tracking_system.debug_me()
+    tracking_system.__activate_tracking()
     c = 0
     start_time = datetime.now()
     while True:
