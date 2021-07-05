@@ -51,6 +51,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
         self.__load_face_detection_model()
         self.__setup_gui()
+        self.__init_logger()
 
         # available_indexes = find_attached_cameras()
         available_indexes = [0]  # FIXME for faster debugging only
@@ -58,7 +59,7 @@ class TrackingSystem(QtWidgets.QWidget):
             # set the available camera available_indexes in the gui dropdown (and convert them to strings before)
             self.camera_selection.addItems(map(str, available_indexes))
 
-            self.__init_logger()
+            self.logger.init_server_connection()
             if self.__debug:
                 self.fps_measurer = FpsMeasurer()
         else:
@@ -66,6 +67,7 @@ class TrackingSystem(QtWidgets.QWidget):
             self.error_label.setText("Leider wurde keine verfügbare Kamera gefunden! Bitte stellen Sie sicher, dass "
                                      "eine Kamera an den Computer angeschlossen (oder eingebaut ist), und "
                                      "starten Sie dann das Programm erneut!")
+            self.logger.log_error("Keine verfügbare Kamera gefunden!")
 
     def __load_face_detection_model(self):
         # necessary for building the exe file with pyinstaller with the --one-file option as the path changes;
@@ -366,7 +368,7 @@ class TrackingSystem(QtWidgets.QWidget):
             TrackingData.RAM_AVAILABLE_GB.name: ram_info["available"] / 1000000000,
             TrackingData.RAM_FREE_GB.name: ram_info["free"] / 1000000000,
         })
-        self.logger.log_csv_data(data=self.__tracked_data)
+        self.logger.log_system_info(data=self.__tracked_data)
 
     def __get_stream_fps(self):
         return self.capture.get(cv2.CAP_PROP_FPS)

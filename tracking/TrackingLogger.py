@@ -18,6 +18,7 @@ from PyQt5.QtCore import pyqtSignal, QThreadPool
 from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
+from tracking.retry import retry
 
 
 # whitespaces at the end are necessary!!
@@ -60,7 +61,6 @@ class Logger(QtWidgets.QWidget):
         self.__init_paths()
         self.__init_log()
         self.__set_server_credentials()
-        self.__init_server_connection()
 
     def __init_paths(self):
         # get path depending on whether this is started as an exe or normally
@@ -76,6 +76,8 @@ class Logger(QtWidgets.QWidget):
         self.__log_file_path = self.__log_folder_path / self.__log_file  # tracking/tracking_data/file.csv
         self.__images_path = self.__log_folder_path / "images"  # tracking/tracking_data/images/
         self.__images_zipped_path = self.__log_folder_path / "images_zipped"  # tracking/tracking_data/images_zipped/
+        self.__error_log_path = self.__log_folder_path.parent / "error_log.txt"  # ./error_log.txt
+
         if self.__is_exe:
             # If we are starting this as exe, we also have a folder with the unity logs that need to be uploaded as well
             # The python exe needs to be in the same folder as the game is!
@@ -142,17 +144,16 @@ class Logger(QtWidgets.QWidget):
             print(f"[Error] Credentials file ({credentials_file}) is not defined!")
             return None
 
-    def __init_server_connection(self):
+    def init_server_connection(self):
         try:
             self.sftp = pysftp.Connection(host=self.__hostname, username=self.__username,
                                           password=self.__password, port=self.__port, cnopts=self.__cnopts)
         except SSHException as e:
-            sys.stderr.write(f"Couldn't connect to server! Make sure you have an internet connection and the server "
-                             f"is running, then start the program again!\nError: {e}")
             notification.notify(title="Verbindungsfehler",
                                 message="Die Verbindung zum Server konnte nicht hergestellt werden! Bitte stellen Sie "
                                         "sicher, dass sie während des Trackings eine stabile Internetverbindung haben!",
                                 timeout=5)
+            self.log_error(f"Die initale Verbindung zum Server konnte nicht hergestellt werden! Fehler: {e}")
             sys.exit(1)
 
         # we use the timestamp in ms at the init of the tracking system as the user id as we don't have access to the
@@ -169,18 +170,25 @@ class Logger(QtWidgets.QWidget):
             self.__user_dir = f"{self.__user_dir}_1"  # append '_1' to the directory name
             self.sftp.makedirs(f"{self.__user_dir}/images")
 
-    def log_csv_data(self, data: dict[TrackingData, Any]):
+    def log_error(self, error_msg: str):
+        with open(self.__error_log_path, "a") as error_log:  # the file is automatically created if it does not exist
+            error_log.write(error_msg + "\n")
+
+    def log_system_info(self, data: dict[TrackingData, Any]):
         """
-        Save the given tracking data (mostly system info) as csv file and upload it to server.
+        Save the given tracking data as csv file and upload it to server.
         """
-        # ** unpacks the given dictionary as key-value pairs
+        # `**data` unpacks the given dictionary as key-value pairs
         tracking_df = pd.DataFrame({'date': datetime.now(), **data}, index=[0])
         tracking_df.to_csv(self.__log_file_path, sep=";", index=False)
-
         try:
-            self.sftp.put(localpath=f"{self.__log_file_path}", remotepath=f"{self.__user_dir}/{self.__log_file}")
+            self.__upload_system_info()
         except Exception as e:
-            sys.stderr.write(f"Exception during csv upload occurred: {e}")
+            self.log_error(f"Fehler beim Hochladen der Systeminformationen: {e}")
+
+    @retry(Exception, total_tries=4, initial_wait=0.5, backoff_factor=1)
+    def __upload_system_info(self):
+        self.sftp.put(localpath=f"{self.__log_file_path}", remotepath=f"{self.__user_dir}/{self.__log_file}")
 
     def log_too_early_quit(self):
         """
@@ -210,15 +218,19 @@ class Logger(QtWidgets.QWidget):
             archive.writeall(self.__unity_log_folder)
 
         try:
-            # we need a new pysftp connection to not get in conflict with the existing image upload on the other thread!
-            with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
-                                   port=self.__port, cnopts=self.__cnopts) as sftp_connection:
-                # on remote server we always have a POSIX-like path system so there is no need for pathlib in remotepath
-                sftp_connection.put(localpath=f"{zipped_location}", remotepath=f"{self.__user_dir}/{file_name}")
+            self.__upload_game_study_data(zipped_location, file_name)
         except Exception as e:
-            sys.stderr.write(f"Exception during game data upload occurred: {e}")
+            self.log_error(f"Fehler beim Hochladen der Spiele-Logs: {e}")
 
         self.__uploading_game_data = False
+
+    @retry(Exception, total_tries=5, initial_wait=0.5, backoff_factor=1)
+    def __upload_game_study_data(self, zipped_location, file_name):
+        # we need a new pysftp connection to not get in conflict with the existing image upload on the other thread!
+        with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
+                               port=self.__port, cnopts=self.__cnopts) as sftp_connection:
+            # on remote server we always have a POSIX-like path system so there is no need for pathlib in remotepath
+            sftp_connection.put(localpath=f"{zipped_location}", remotepath=f"{self.__user_dir}/{file_name}")
 
     def add_image_to_queue(self, filename: str, image: np.ndarray, timestamp: float):
         self.image_queue.put((filename, image, timestamp))
@@ -293,7 +305,11 @@ class Logger(QtWidgets.QWidget):
                 zip_file_name = self.__zip_folder(file_name)
                 # upload this folder to the server
                 self.upload_lock.acquire()
-                self.__upload_zipped_images(zip_file_name)
+                try:
+                    self.__upload_zipped_images(zip_file_name)
+                except Exception as e:
+                    self.log_error(f"Fehler beim Hochladen der Bilder: {e} (Dateiname: {zip_file_name})")
+
                 self.upload_lock.release()
 
                 # update progressbar in gui
@@ -317,12 +333,10 @@ class Logger(QtWidgets.QWidget):
             archive.writeall(folder_path)
         return zip_file_name
 
+    @retry(Exception, total_tries=3, initial_wait=0.5, backoff_factor=2)
     def __upload_zipped_images(self, file_name):
-        try:
-            self.sftp.put(localpath=f"{self.__images_zipped_path / file_name}",
-                          remotepath=f"{self.__user_dir}/images/{file_name}")
-        except Exception as e:
-            sys.stderr.write(f"Exception during image upload occurred: {e}")
+        self.sftp.put(localpath=f"{self.__images_zipped_path / file_name}",
+                      remotepath=f"{self.__user_dir}/images/{file_name}")
 
     def finish_logging(self):
         # when tracking is stopped the last batch of images will never reach the
