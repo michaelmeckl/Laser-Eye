@@ -1,5 +1,22 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
+"""
+Creating an exe file:
+
+1. Comment out the config parsing in the logger and add server credentials directly in the code.
+
+For creating exe with auto-py-to-exe: select --onefile and window based
+add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights
+add-data C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet
+add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service
+add hidden-imports: pandas, pysftp, plyer.platforms.win.notification and requests
+# for plyer import see
+https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a-executable-using-pyinstaller
+
+2. Pyinstaller command for the above:
+(add --debug "all" to the command below if things go wrong...)
+pyinstaller --noconfirm --onefile --windowed --add-data "C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests" "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
+"""
 
 import math
 import platform
@@ -29,39 +46,42 @@ class TrackingSystem(QtWidgets.QWidget):
     def __init__(self, debug_active=False):
         super(TrackingSystem, self).__init__()
         self.__tracking_active = False
-        self.progress = None  # the upload progress
-        self.debug = debug_active
+        self.__progress = None  # the upload progress
+        self.__debug = debug_active
 
-        # necessary for building the exe file with pyinstaller with the --one-file option as the path changes;
-        # see https://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile for more
-        if getattr(sys, 'frozen', False):
-            # change the path if we are executing the exe file; the lint warning here can be ignored ;)
-            folder = Path(sys._MEIPASS)
-            data_path = folder/'weights/16and32'
-        else:
-            folder = Path(__file__).parent
-            data_path = folder/'../weights/16and32'
-
-        self.face_detector = MxnetDetectionModel(data_path, 0, .6, gpu=-1)
-
+        self.__load_face_detection_model()
         self.__setup_gui()
 
-        available_indexes = find_attached_cameras()
+        # available_indexes = find_attached_cameras()
+        available_indexes = [0]  # FIXME for faster debugging only
         if len(available_indexes) > 0:
             # set the available camera available_indexes in the gui dropdown (and convert them to strings before)
             self.camera_selection.addItems(map(str, available_indexes))
 
             self.__init_logger()
-            if self.debug:
+            if self.__debug:
                 self.fps_measurer = FpsMeasurer()
         else:
             # there seems to be no available camera!
             self.error_label.setText("Leider wurde keine verfügbare Kamera gefunden! Bitte stellen Sie sicher, dass "
-                                     "eine Kamera an den Computer angeschlossen (oder direkt eingebaut ist), und "
+                                     "eine Kamera an den Computer angeschlossen (oder eingebaut ist), und "
                                      "starten Sie dann das Programm erneut!")
 
+    def __load_face_detection_model(self):
+        # necessary for building the exe file with pyinstaller with the --one-file option as the path changes;
+        # see https://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile for more
+        if getattr(sys, 'frozen', False):
+            # change the path if we are executing the exe file; the lint warning here can be ignored
+            folder = Path(sys._MEIPASS)
+            data_path = folder / 'weights/16and32'
+        else:
+            folder = Path(__file__).parent
+            data_path = folder / '../weights/16and32'
+
+        self.face_detector = MxnetDetectionModel(data_path, 0, .6, gpu=-1)
+
     def __setup_gui(self):
-        self.layout = QtWidgets.QVBoxLayout()
+        self.layout = QtWidgets.QVBoxLayout()  # set base layout (vertically aligned box)
 
         # show status of tracking
         self.tracking_status = QtWidgets.QLabel(self)
@@ -69,76 +89,74 @@ class TrackingSystem(QtWidgets.QWidget):
         self.tracking_status.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.tracking_status)
 
-        # show some instructions
-        self.label = QtWidgets.QLabel(self)
-        self.label.setText(
+        # show some usage notes
+        usage_label = QtWidgets.QLabel(self)
+        usage_label.setText(
             "Verwendung:\n\nMit den Buttons unten kann das Tracking gestartet und wieder "
             "gestoppt werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, bis der "
             "Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken unterhalb). "
             "Abhängig von der Internetgeschwindigkeit und Leistung des Rechners kann dies einige Zeit in "
             "Anspruch nehmen! Während dieser Zeit muss der Rechner eingeschaltet bleiben!"
         )
-        self.label.setContentsMargins(10, 10, 10, 10)
-        self.label.setWordWrap(True)
-        self.label.setStyleSheet("QLabel {font-size: 9pt;}")
-        self.layout.addWidget(self.label)
+        usage_label.setContentsMargins(10, 10, 10, 10)
+        usage_label.setWordWrap(True)
+        usage_label.setStyleSheet("QLabel {font-size: 9pt;}")
+        self.layout.addWidget(usage_label)
 
-        # show a progress bar for the upload
-        self.__setup_progress_bar()
+        self.__setup_progress_bar()  # show a progress bar for the upload
+        self.__show_instructions()
+        self.__setup_camera_selection()
+        self.__setup_button_layout()  # add buttons to start and stop tracking
+        self.__set_tracking_status_ui()
 
-        self.label_general = QtWidgets.QLabel(self)
-        self.label_general.setText("Hinweise:")
-        self.label_general.setStyleSheet("QLabel {font-size: 10pt; margin-top: 40px;}")
-        self.layout.addWidget(self.label_general)
+        self.layout.setContentsMargins(10, 10, 10, 10)
+        self.setLayout(self.layout)
+        self.setGeometry(100, 50, 1200, 900)  # set initial size of gui window (top left and bottom right positions)
+        self.setWindowTitle("Tracking System")
 
-        self.general_instructions = QtWidgets.QTextEdit(self)
-        self.general_instructions.setStyleSheet("QTextEdit {font-size: 9pt; background-color : rgba(0, 0, 0, 0%); "
-                                                "border: 0; margin-top: 20px}")
-        self.general_instructions.setReadOnly(True)  # don't let user edit this text field
-        self.general_instructions.setHtml(
+    def __show_instructions(self):
+        label_general = QtWidgets.QLabel(self)
+        label_general.setText("Hinweise:")
+        label_general.setStyleSheet("QLabel {font-size: 10pt; margin-top: 40px;}")
+        self.layout.addWidget(label_general)
+
+        general_instructions = QtWidgets.QTextEdit(self)
+        general_instructions.setStyleSheet("QTextEdit {font-size: 9pt; background-color : rgba(0, 0, 0, 0%); "
+                                           "border: 0; margin-top: 20px}")
+        general_instructions.setReadOnly(True)  # don't let user edit this text field
+        general_instructions.setHtml(
             "<ul>"
             "<li>Bitte versuchen Sie während das Tracking aktiv ist, <b>möglichst ruhig zu sitzen</b> und den Kopf "
             "nicht zu viel oder zu schnell zu bewegen (normale Kopfbewegungen sind selbstverständlich in Ordnung).</li>"
             "<li>Bitte tragen Sie während des Trackings <b>keine Brille</b>, da die dabei auftretenden Reflexionen "
             "ein Problem bei der Verarbeitung der Daten darstellen!</li>"
             "<li>Versuchen Sie <b>nicht zu weit weg von der Kamera</b> zu sein. Der Abstand zwischen Kamera und "
-            "Gesicht sollte nicht mehr als 60-70 cm betragen.</li>"
-            "<li>Die Kamera sollte beim Tracking möglichst gerade und frontal zum Gesicht positioniert sein, sodass "
-            "das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
+            "Gesicht sollte nicht mehr als maximal 60-70 cm betragen.</li>"
+            "<li>Die <b>Kamera</b> sollte beim Tracking möglichst <b>gerade und frontal zum Gesicht positioniert</b> "
+            "sein, sodass das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
             "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen!</li>"
             "<li>Die Buttons zum Starten und Stoppen funktionieren nur einmal! Nach Stoppen des "
             "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten!</li>"
             "</ul>"
         )
-        self.layout.addWidget(self.general_instructions)
-
-        self.__setup_camera_selection()
-        # add buttons to start and stop tracking
-        self.__setup_button_layout()
-
-        self.__set_tracking_status_ui()
-
-        self.layout.setContentsMargins(10, 10, 10, 10)
-        self.setLayout(self.layout)
-        self.setGeometry(100, 50, 1200, 900)
-        self.setWindowTitle("Tracking System")
+        self.layout.addWidget(general_instructions)
 
     def __setup_camera_selection(self):
         """
         Show a dropdown menu to choose between all available cameras for tracking.
         """
-        self.selected_camera = 0  # use the in-built camera (index 0) per default
+        self.__selected_camera = 0  # use the in-built camera (index 0) per default
 
-        self.camera_select_label = QtWidgets.QLabel(self)
-        self.camera_select_label.setStyleSheet("QLabel {font-size: 9pt;")
-        self.camera_select_label.setText("Kamera-Auswahl für Tracking (0 sollte in der Regel die Richtige sein):")
+        camera_select_label = QtWidgets.QLabel(self)
+        camera_select_label.setStyleSheet("QLabel {font-size: 9pt;")
+        camera_select_label.setText("Kamera-Auswahl für Tracking (0 sollte i.d.R. die Richtige sein):")
         self.camera_selection = QtWidgets.QComboBox(self)
         self.camera_selection.setStyleSheet("QComboBox {min-width: 1em; border: 1px solid gray; border-radius: 2px; "
                                             "padding: 1px 18px 1px 3px;}")
         self.camera_selection.currentIndexChanged.connect(self.__selected_cam_changed)
 
         dropdown_layout = QtWidgets.QHBoxLayout()
-        dropdown_layout.addWidget(self.camera_select_label)
+        dropdown_layout.addWidget(camera_select_label)
         dropdown_layout.addWidget(self.camera_selection, alignment=Qt.AlignLeft)
         dropdown_layout.setContentsMargins(0, 0, 0, 15)
         dropdown_layout.setAlignment(Qt.AlignCenter)
@@ -150,7 +168,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.layout.addWidget(self.error_label)
 
     def __selected_cam_changed(self, index):
-        self.selected_camera = index
+        self.__selected_camera = index
 
     def __setup_button_layout(self):
         button_common_style = "QPushButton {font: 16px; padding: 12px; min-width: 10em; border-radius: 6px;} " \
@@ -224,15 +242,15 @@ class TrackingSystem(QtWidgets.QWidget):
 
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
-        self.progress = int((current / overall) * 100)
+        self.__progress = int((current / overall) * 100)
 
         # if current in [30, 100, 500, 1000, 1200, 1500]:
         #     needed_time = time.time() - self.__upload_start
         #     print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
-        self.progress_bar.setValue(self.progress)
+        self.progress_bar.setValue(self.__progress)
 
     def __init_logger(self):
-        self.__logger = TrackingLogger(self.__on_upload_progress)
+        self.logger = TrackingLogger(self.__on_upload_progress)
         self.__tracked_data = {key.name: None for key in TrackingData}
 
     # The following could be used instead of the buttons to automatically start and stop tracking via hotkeys:
@@ -251,6 +269,7 @@ class TrackingSystem(QtWidgets.QWidget):
             # toggle button active status
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
+            # TODO ?
             # notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
 
             # start tracking on a background thread
@@ -265,15 +284,15 @@ class TrackingSystem(QtWidgets.QWidget):
         This function runs on a background thread so the fps of the video games the user is playing aren't reduced.
         """
         # setup webcam capture
-        self.capture = cv2.VideoCapture(self.selected_camera)
+        self.capture = cv2.VideoCapture(self.__selected_camera)
         # and start the logging and the uploading on other background threads (so the reading from the webcam isn't
         # blocked by the processing there)
-        self.__log_static_data()
-        self.__logger.start_saving_images_to_disk()  # start saving webcam frames to disk
-        self.__logger.start_async_upload()  # start uploading data to sftp server
+        self.__log_system_data()
+        self.logger.start_saving_images_to_disk()  # start saving webcam frames to disk
+        self.logger.start_async_upload()  # start uploading data to sftp server
 
         self.__upload_start = time.time()
-        if self.debug:
+        if self.__debug:
             self.fps_measurer.start()
 
         while self.__tracking_active:
@@ -290,7 +309,7 @@ class TrackingSystem(QtWidgets.QWidget):
             if processed_frame is None:
                 continue
 
-            if self.debug:
+            if self.__debug:
                 self.fps_measurer.update()
                 cv2.putText(processed_frame, f"current FPS: {self.fps_measurer.get_current_fps():.3f}",
                             (10, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -302,19 +321,19 @@ class TrackingSystem(QtWidgets.QWidget):
                     break
 
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
-        face_image = find_face_mxnet_resized(self.face_detector, frame, show_result=True if self.debug else False)
+        face_image = find_face_mxnet_resized(self.face_detector, frame, show_result=True if self.__debug else False)
         # face_image = to_gray(face_image)
 
         if face_image is not None:
             # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
             # can't be matched later!
             log_timestamp = get_timestamp()
-            self.__logger.add_image_to_queue("capture", face_image, log_timestamp)
+            self.logger.add_image_to_queue("capture", face_image, log_timestamp)
         return frame
 
-    def __log_static_data(self):
+    def __log_system_data(self):
         # get the dimensions of the webcam
-        video_width, video_height = self.get_stream_dimensions()
+        video_width, video_height = self.__get_stream_dimensions()
         # get the dimensions of the primary monitor.
         screenWidth, screenHeight = pyautogui.size()
 
@@ -332,7 +351,7 @@ class TrackingSystem(QtWidgets.QWidget):
             TrackingData.SCREEN_HEIGHT.name: screenHeight,
             TrackingData.CAPTURE_WIDTH.name: video_width,
             TrackingData.CAPTURE_HEIGHT.name: video_height,
-            TrackingData.CAPTURE_FPS.name: self.get_stream_fps(),
+            TrackingData.CAPTURE_FPS.name: self.__get_stream_fps(),
             TrackingData.CORE_COUNT.name: psutil.cpu_count(logical=True),
             TrackingData.CORE_COUNT_PHYSICAL.name: psutil.cpu_count(logical=False),
             TrackingData.CORE_COUNT_AVAILABLE.name: len(psutil.Process().cpu_affinity()),  # number of usable cpus by
@@ -347,12 +366,12 @@ class TrackingSystem(QtWidgets.QWidget):
             TrackingData.RAM_AVAILABLE_GB.name: ram_info["available"] / 1000000000,
             TrackingData.RAM_FREE_GB.name: ram_info["free"] / 1000000000,
         })
-        self.__logger.log_csv_data(data=self.__tracked_data)
+        self.logger.log_csv_data(data=self.__tracked_data)
 
-    def get_stream_fps(self):
+    def __get_stream_fps(self):
         return self.capture.get(cv2.CAP_PROP_FPS)
 
-    def get_stream_dimensions(self):
+    def __get_stream_dimensions(self):
         return self.capture.get(3), self.capture.get(4)
 
     def __stop_tracking(self):
@@ -361,6 +380,7 @@ class TrackingSystem(QtWidgets.QWidget):
         Also stop the logging by setting a boolean flag to False.
         """
         if self.__tracking_active:
+            # TODO ?
             # notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
@@ -371,12 +391,12 @@ class TrackingSystem(QtWidgets.QWidget):
             self.capture.release()
             cv2.destroyAllWindows()
 
-            self.__logger.finish_logging()
+            self.logger.finish_logging()
             # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
             # the program itself
             # keyboard.remove_all_hotkeys()
 
-            if self.debug:
+            if self.__debug:
                 self.fps_measurer.stop()
                 print(f"[INFO] elapsed time: {self.fps_measurer.elapsed():.2f} seconds")
                 print(f"[INFO] approx. FPS on background thread: {self.fps_measurer.fps():.2f}")
@@ -389,19 +409,22 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         self.__stop_tracking()
         # upload the log folders from the unity game when tracking has finished
-        self.__logger.upload_game_data()
+        self.logger.upload_game_data()
 
-    def finish_tracking_system(self):
+    def __finish_tracking_system(self):
         """
         Called when the user clicks on the close symbol in the top right of the window and closes the system completely.
         """
         self.tracking_status.setText("Anwendung wird beendet. Bitte warten...")
         self.__stop_tracking()
-        self.__logger.stop_upload()
+        self.logger.stop_upload()
 
     def closeEvent(self, event):
-        if self.progress == 100 or self.progress is None:
-            self.finish_tracking_system()
+        """
+        Overwrite `closeEvent()` to be able to react to presses on the 'x' in the top-right corner of the window.
+        """
+        if self.__progress == 100 or self.__progress is None:
+            self.__finish_tracking_system()
             event.accept()
         else:
             # show warning if the upload progress hasn't reach 100% yet to prevent users from accidentally
@@ -419,8 +442,8 @@ class TrackingSystem(QtWidgets.QWidget):
             message_box.exec_()  # show the message box
 
             if message_box.clickedButton() == yes_button:
-                self.__logger.log_too_early_quit()
-                self.finish_tracking_system()
+                self.logger.log_too_early_quit()
+                self.__finish_tracking_system()
                 event.accept()
             else:
                 event.ignore()
@@ -447,46 +470,8 @@ def main():
     tracking_system = TrackingSystem()
     tracking_system.show()
     # tracking_system.listen_for_hotkey()
-
-    # for debugging fps:
-    """
-    tracking_system.__activate_tracking()
-    c = 0
-    start_time = datetime.now()
-    while True:
-        curr_frame = tracking_system.get_current_frame()
-        if curr_frame is None:
-            continue
-        c += 1
-        elapsed_time = (datetime.now() - start_time).total_seconds()
-        fps = c / elapsed_time if elapsed_time != 0 else c
-        cv2.putText(curr_frame, f"mainthread FPS: {fps:.3f}",
-                    (350, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-        cv2.imshow("fps_main_thread", curr_frame)
-        if cv2.waitKey(1) & 0xFF == ord('f'):
-            break
-    """
     sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
     main()
-
-"""
-Creating an exe file:
-
-1. Comment out the config parsing in the logger and add server credentials directly in the code.
-
-For creating exe with auto-py-to-exe: select --onefile and window based
-add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights 
-add-data C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet 
-add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service
-add hidden-imports: pandas, pysftp, plyer.platforms.win.notification and requests
-# for plyer import see 
-https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a-executable-using-pyinstaller 
-
-2. Pyinstaller command for the above:
-(add --debug "all" to the command below if things go wrong...)
-pyinstaller --noconfirm --onefile --windowed --add-data "C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests" "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
-"""

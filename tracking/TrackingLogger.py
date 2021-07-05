@@ -48,15 +48,21 @@ class Logger(QtWidgets.QWidget):
 
     def __init__(self, upload_callback, default_log_folder="tracking_data", default_log_file="tracking_log.csv"):
         super(Logger, self).__init__()
-        self.all_images_count = 0
-        self.num_transferred_images = 0
-        self.num_transferred_folders = 0
-        self.batch_size = 250  # the number of images per subfolder
+        self.__all_images_count = 0
+        self.__num_transferred_images = 0
+        self.__num_transferred_folders = 0
+        self.__batch_size = 250  # the number of images per subfolder
 
         self.__upload_callback = upload_callback
         self.__log_folder = default_log_folder
         self.__log_file = default_log_file
 
+        self.__init_paths()
+        self.__init_log()
+        self.__set_server_credentials()
+        self.__init_server_connection()
+
+    def __init_paths(self):
         # get path depending on whether this is started as an exe or normally
         if getattr(sys, 'frozen', False):
             # the program was started as exe
@@ -73,11 +79,29 @@ class Logger(QtWidgets.QWidget):
         if self.__is_exe:
             # If we are starting this as exe, we also have a folder with the unity logs that need to be uploaded as well
             # The python exe needs to be in the same folder as the game is!
-            self.unity_log_folder = self.__log_folder_path.parent / "Game_Data" / "StudyLogs"
-            self.uploading_game_data = False
+            self.__unity_log_folder = self.__log_folder_path.parent / "Game_Data" / "StudyLogs"
+            self.__uploading_game_data = False
 
-        self.__init_log()
+    def __init_log(self):
+        """
+        Creates all log and images folders that are needed later.
+        """
+        if self.__log_folder_path.is_dir():
+            # remove old log folder if there is already one (probably some unwanted leftover)
+            shutil.rmtree(self.__log_folder_path)
 
+        self.__log_folder_path.mkdir()
+        self.__images_path.mkdir()
+        self.__images_zipped_path.mkdir()
+
+        self.__folder_count = 1
+        # create the first subfolder for the first image batch
+        self.__get_curr_image_folder().mkdir()
+
+    def __get_curr_image_folder(self):
+        return self.__images_path / str(self.__folder_count)
+
+    def __set_server_credentials(self):
         credentials = self.__get_credentials()
         if credentials is None:
             sys.stderr.write("Reading sftp server credentials didn't work! Terminating program...")
@@ -88,12 +112,10 @@ class Logger(QtWidgets.QWidget):
         self.__password = credentials["sftp_password"]
         self.__port = credentials.getint("sftp_port")
         # NOTE: setting hostkeys to None is highly discouraged as we lose any protection
-        # against man-in-the-middle attacks; however, it is the easiest solution and for now it should be fine
-        # TODO see https://stackoverflow.com/questions/38939454/verify-host-key-with-pysftp for correct solution
+        # against man-in-the-middle attacks; however, it is the easiest solution and for now it should be fine;
+        # see https://stackoverflow.com/questions/38939454/verify-host-key-with-pysftp for correct solution
         self.__cnopts = pysftp.CnOpts()
         self.__cnopts.hostkeys = None
-
-        self.__init_server_connection()
 
     def __get_credentials(self) -> Optional[cp.SectionProxy]:
         """
@@ -120,25 +142,6 @@ class Logger(QtWidgets.QWidget):
             print(f"[Error] Credentials file ({credentials_file}) is not defined!")
             return None
 
-    def __init_log(self):
-        """
-        Creates all log and images folders that are needed later.
-        """
-        if self.__log_folder_path.is_dir():
-            # remove old log folder if there is already one (probably some unwanted leftover)
-            shutil.rmtree(self.__log_folder_path)
-
-        self.__log_folder_path.mkdir()
-        self.__images_path.mkdir()
-        self.__images_zipped_path.mkdir()
-
-        self.folder_count = 1
-        # create the first subfolder for the first image batch
-        self.__get_curr_image_folder().mkdir()
-
-    def __get_curr_image_folder(self):
-        return self.__images_path / str(self.folder_count)
-
     def __init_server_connection(self):
         try:
             self.sftp = pysftp.Connection(host=self.__hostname, username=self.__username,
@@ -158,67 +161,75 @@ class Logger(QtWidgets.QWidget):
         self.__user_id = get_timestamp()
 
         # create a directory for this user on the sftp server
-        self.user_dir = f"/home/{self.__log_folder}__{self.__user_id}"
-        if not self.sftp.exists(self.user_dir):
-            self.sftp.makedirs(f"{self.user_dir}/images")  # this automatically creates the parent user dir as well
+        self.__user_dir = f"/home/{self.__log_folder}__{self.__user_id}"
+        if not self.sftp.exists(self.__user_dir):
+            self.sftp.makedirs(f"{self.__user_dir}/images")  # this automatically creates the parent user dir as well
         else:
-            print(f"User dir ({self.user_dir}) already exists for some reason! Creating a new one...")
-            self.user_dir = f"{self.user_dir}_1"  # append '_1' to the directory name
-            self.sftp.makedirs(f"{self.user_dir}/images")
+            print(f"User dir ({self.__user_dir}) already exists for some reason! Creating a new one...")
+            self.__user_dir = f"{self.__user_dir}_1"  # append '_1' to the directory name
+            self.sftp.makedirs(f"{self.__user_dir}/images")
 
     def log_csv_data(self, data: dict[TrackingData, Any]):
+        """
+        Save the given tracking data (mostly system info) as csv file and upload it to server.
+        """
         # ** unpacks the given dictionary as key-value pairs
         tracking_df = pd.DataFrame({'date': datetime.now(), **data}, index=[0])
         tracking_df.to_csv(self.__log_file_path, sep=";", index=False)
 
         try:
-            self.sftp.put(localpath=f"{self.__log_file_path}", remotepath=f"{self.user_dir}/{self.__log_file}")
+            self.sftp.put(localpath=f"{self.__log_file_path}", remotepath=f"{self.__user_dir}/{self.__log_file}")
         except Exception as e:
             sys.stderr.write(f"Exception during csv upload occurred: {e}")
 
     def log_too_early_quit(self):
-        # log when a user quit too early (i.e. if the image upload hasn't been finished yet)
+        """
+        Create a log on the server when a user quit too early (i.e. if the image upload hasn't been finished yet).
+        """
         try:
             with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
                                    port=self.__port, cnopts=self.__cnopts) as sftp_connection:
                 # open automatically creates the file on the server
-                sftp_connection.open(remote_file=f"{self.user_dir}/user_quit_too_early.txt", mode="w+")
+                sftp_connection.open(remote_file=f"{self.__user_dir}/user_quit_too_early.txt", mode="w+")
         except Exception as e:
             sys.stderr.write(f"Exception during quit too early upload occurred: {e}")
 
     def upload_game_data(self):
-        # only upload game data if this is actually running as an exe, otherwise we don't have game data!
+        """
+        If this was started as an exe file upload the folder with the game study logs to the server.
+        """
         if not self.__is_exe:
+            # only upload game data if this is actually running as an exe, otherwise we don't have game data!
             return
-        self.uploading_game_data = True
+        self.__uploading_game_data = True
 
         # zip the game data folder first
         file_name = "game_log.7z"
         zipped_location = self.__log_folder_path.parent / file_name
         with SevenZipFile(f"{zipped_location}", 'w') as archive:
-            archive.writeall(self.unity_log_folder)
+            archive.writeall(self.__unity_log_folder)
 
         try:
             # we need a new pysftp connection to not get in conflict with the existing image upload on the other thread!
             with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
                                    port=self.__port, cnopts=self.__cnopts) as sftp_connection:
                 # on remote server we always have a POSIX-like path system so there is no need for pathlib in remotepath
-                sftp_connection.put(localpath=f"{zipped_location}", remotepath=f"{self.user_dir}/{file_name}")
+                sftp_connection.put(localpath=f"{zipped_location}", remotepath=f"{self.__user_dir}/{file_name}")
         except Exception as e:
             sys.stderr.write(f"Exception during game data upload occurred: {e}")
 
-        self.uploading_game_data = False
+        self.__uploading_game_data = False
 
     def add_image_to_queue(self, filename: str, image: np.ndarray, timestamp: float):
         self.image_queue.put((filename, image, timestamp))
 
     def start_saving_images_to_disk(self):
-        self.tracking_active = True
+        self.__tracking_active = True
         self.image_save_thread = threading.Thread(target=self.__save_images, name="SaveToDisk", daemon=True)
         self.image_save_thread.start()
 
     def __save_images(self, img_format="png"):
-        while self.tracking_active:
+        while self.__tracking_active:
             if self.image_queue.qsize() > 0:
                 filename, image, timestamp = self.image_queue.get()
 
@@ -228,17 +239,17 @@ class Logger(QtWidgets.QWidget):
                     image_id = f"{filename}__{timestamp}.{img_format}"
                     image_path = f"{self.__get_curr_image_folder() / image_id}"
                     cv2.imwrite(image_path, image)
-                    self.all_images_count += 1
+                    self.__all_images_count += 1
                     # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
 
                     # check if the current number of saved images is a multiple of the batch size
-                    if (self.all_images_count % self.batch_size) == 0:
+                    if (self.__all_images_count % self.__batch_size) == 0:
                         # a batch of images is finished so we put this one in a queue to be zipped and uploaded
-                        self.upload_queue.put(str(self.folder_count))
+                        self.upload_queue.put(str(self.__folder_count))
 
                         # and create a new folder for the next batch
-                        self.folder_count += 1
-                        self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+                        self.__folder_count += 1
+                        self.signal_update_progress.emit(self.__num_transferred_folders, self.__folder_count)
                         self.__get_curr_image_folder().mkdir()
 
             # wait to prevent constantly asking the queue for new images which would have a huge impact on the fps
@@ -274,7 +285,7 @@ class Logger(QtWidgets.QWidget):
             # self.upload_pool.append(upload_thread)
 
     def __start_ftp_transfer(self):
-        while self.tracking_active:
+        while self.__tracking_active:
             if self.upload_queue.qsize() > 0:
                 file_name = self.upload_queue.get()
 
@@ -286,10 +297,10 @@ class Logger(QtWidgets.QWidget):
                 self.upload_lock.release()
 
                 # update progressbar in gui
-                self.num_transferred_folders += 1
-                self.num_transferred_images += self.batch_size
+                self.__num_transferred_folders += 1
+                self.__num_transferred_images += self.__batch_size
                 # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
-                self.signal_update_progress.emit(self.num_transferred_folders, self.folder_count)
+                self.signal_update_progress.emit(self.__num_transferred_folders, self.__folder_count)
 
             time.sleep(0.01)  # wait for the same amount of time as the other queue
 
@@ -309,21 +320,21 @@ class Logger(QtWidgets.QWidget):
     def __upload_zipped_images(self, file_name):
         try:
             self.sftp.put(localpath=f"{self.__images_zipped_path / file_name}",
-                          remotepath=f"{self.user_dir}/images/{file_name}")
+                          remotepath=f"{self.__user_dir}/images/{file_name}")
         except Exception as e:
             sys.stderr.write(f"Exception during image upload occurred: {e}")
 
     def finish_logging(self):
         # when tracking is stopped the last batch of images will never reach the
         # upload condition (as it won't be a full batch), so we set it manually
-        self.upload_queue.put(str(self.folder_count))
+        self.upload_queue.put(str(self.__folder_count))
 
     def stop_upload(self):
-        self.tracking_active = False
+        self.__tracking_active = False
 
         if self.__is_exe:
             # if uploading the game data hasn't finished yet, wait for it first!
-            while self.uploading_game_data:
+            while self.__uploading_game_data:
                 time.sleep(0.1)  # wait for 100 ms, then try again
                 self.stop_upload()
 
