@@ -19,6 +19,7 @@ from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
 from tracking.retry import retry
+import requests
 
 
 # whitespaces at the end are necessary!!
@@ -35,19 +36,17 @@ def get_timestamp() -> float:
     return time.time_ns() / 1000000
 
 
-# FIXME: handle internet connection errors by always saving the index of the last transferred image and retrying
-#  after 10 seconds from this point again!
-
-
 # noinspection PyAttributeOutsideInit
 class Logger(QtWidgets.QWidget):
 
     signal_update_progress = pyqtSignal(int, int)  # used to communicate upload progress with gui on the main thread
+    signal_connection_loss = pyqtSignal(bool)
 
     image_queue = Queue()
     upload_queue = Queue()
 
-    def __init__(self, upload_callback, default_log_folder="tracking_data", default_log_file="tracking_log.csv"):
+    def __init__(self, upload_callback, error_callback, default_log_folder="tracking_data",
+                 default_log_file="tracking_log.csv"):
         super(Logger, self).__init__()
         self.__all_images_count = 0
         self.__num_transferred_images = 0
@@ -55,8 +54,14 @@ class Logger(QtWidgets.QWidget):
         self.__batch_size = 250  # the number of images per subfolder
 
         self.__upload_callback = upload_callback
+        self.__error_callback = error_callback
         self.__log_folder = default_log_folder
         self.__log_file = default_log_file
+
+        # upload error handling
+        self.signal_connection_loss.connect(self.__on_connection_lost)
+        self.__pause_tracking = False
+        self.__failed_uploads = []
 
         self.__init_paths()
         self.__init_log()
@@ -185,9 +190,13 @@ class Logger(QtWidgets.QWidget):
             self.__upload_system_info()
         except Exception as e:
             self.log_error(f"Fehler beim Hochladen der Systeminformationen: {e}")
+            self.__failed_uploads.append(self.__log_file)
+            self.signal_connection_loss.emit(False)
 
-    @retry(Exception, total_tries=4, initial_wait=0.5, backoff_factor=1)
+    @retry(Exception, total_tries=4, initial_wait=0.5, backoff_factor=2)
     def __upload_system_info(self):
+        # This function needs to be wrapped in a try-catch-block as the retry decorator raises an exception after
+        # exhausting all retries without success.
         self.sftp.put(localpath=f"{self.__log_file_path}", remotepath=f"{self.__user_dir}/{self.__log_file}")
 
     def log_too_early_quit(self):
@@ -221,10 +230,12 @@ class Logger(QtWidgets.QWidget):
             self.__upload_game_study_data(zipped_location, file_name)
         except Exception as e:
             self.log_error(f"Fehler beim Hochladen der Spiele-Logs: {e}")
+            self.__failed_uploads.append(file_name)
+            self.signal_connection_loss.emit(False)
 
         self.__uploading_game_data = False
 
-    @retry(Exception, total_tries=5, initial_wait=0.5, backoff_factor=1)
+    @retry(Exception, total_tries=5, initial_wait=0.5, backoff_factor=2)
     def __upload_game_study_data(self, zipped_location, file_name):
         # we need a new pysftp connection to not get in conflict with the existing image upload on the other thread!
         with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
@@ -252,7 +263,7 @@ class Logger(QtWidgets.QWidget):
                     image_path = f"{self.__get_curr_image_folder() / image_id}"
                     cv2.imwrite(image_path, image)
                     self.__all_images_count += 1
-                    # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                    # self.signal_update_progress.emit(self.__num_transferred_images, self.__all_images_count)
 
                     # check if the current number of saved images is a multiple of the batch size
                     if (self.__all_images_count % self.__batch_size) == 0:
@@ -298,7 +309,7 @@ class Logger(QtWidgets.QWidget):
 
     def __start_ftp_transfer(self):
         while self.__tracking_active:
-            if self.upload_queue.qsize() > 0:
+            if self.upload_queue.qsize() > 0 and not self.__pause_tracking:
                 file_name = self.upload_queue.get()
 
                 # zip the the folder with the given name
@@ -309,13 +320,19 @@ class Logger(QtWidgets.QWidget):
                     self.__upload_zipped_images(zip_file_name)
                 except Exception as e:
                     self.log_error(f"Fehler beim Hochladen der Bilder: {e} (Dateiname: {zip_file_name})")
-
-                self.upload_lock.release()
+                    self.__failed_uploads.append(f"images_zipped/{zip_file_name}")
+                    # TODO or like this?
+                    # self.upload_queue.put(file_name)
+                    self.__pause_tracking = True
+                    self.signal_connection_loss.emit(True)
+                    continue  # the finally block will still be executed
+                finally:
+                    self.upload_lock.release()
 
                 # update progressbar in gui
                 self.__num_transferred_folders += 1
                 self.__num_transferred_images += self.__batch_size
-                # self.signal_update_progress.emit(self.num_transferred_images, self.all_images_count)
+                # self.signal_update_progress.emit(self.__num_transferred_images, self.__all_images_count)
                 self.signal_update_progress.emit(self.__num_transferred_folders, self.__folder_count)
 
             time.sleep(0.01)  # wait for the same amount of time as the other queue
@@ -333,10 +350,48 @@ class Logger(QtWidgets.QWidget):
             archive.writeall(folder_path)
         return zip_file_name
 
-    @retry(Exception, total_tries=3, initial_wait=0.5, backoff_factor=2)
     def __upload_zipped_images(self, file_name):
         self.sftp.put(localpath=f"{self.__images_zipped_path / file_name}",
                       remotepath=f"{self.__user_dir}/images/{file_name}")
+
+    def __on_connection_lost(self, pause: bool):
+        self.__error_callback()  # update ui in main thread
+        if self.__tracking_active and pause:
+            self.__check_connection_loss()  # repeatedly check for a connection
+
+    def __check_connection_loss(self):
+        while self.__pause_tracking:
+            backoff = 3
+            backoff_multiplier = 1
+            tries = 0
+            try:
+                status_code = requests.head('https://www.google.com/').status_code
+                # we have a connection again if the command above did not result in an exception
+                self.__pause_tracking = False
+                # connection needs to be created again as the old one was closed!
+                self.sftp = pysftp.Connection(host=self.__hostname, username=self.__username,
+                                              password=self.__password, port=self.__port, cnopts=self.__cnopts)
+                break
+            except Exception:
+                # increase wait time exponentially so Google doesn't block us for constantly pinging it (hopefully)
+                time.sleep(backoff * backoff_multiplier)
+                tries += 1
+                backoff_multiplier += 1
+                if (tries % 20) == 0:
+                    # reset backoff each 20 tries so we don't wait for ever
+                    backoff = 3
+                    backoff_multiplier = 1
+
+    def get_failed_uploads(self):
+        return self.__failed_uploads
+
+    def __upload_error_log(self):
+        try:
+            with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
+                                   port=self.__port, cnopts=self.__cnopts) as sftp_connection:
+                sftp_connection.put(localpath=f"{self.__error_log_path}", remotepath=f"{self.__user_dir}/error_log.txt")
+        except Exception as e:
+            sys.stderr.write(f"Exception during error log upload occurred: {e}")
 
     def finish_logging(self):
         # when tracking is stopped the last batch of images will never reach the
@@ -352,8 +407,8 @@ class Logger(QtWidgets.QWidget):
                 time.sleep(0.1)  # wait for 100 ms, then try again
                 self.stop_upload()
 
-        # for thread in self.upload_pool:
-        #    thread.join()
+        # upload error_log at the end
+        self.__upload_error_log()
 
         # close the connection to the sftp server
         self.sftp.close()
@@ -364,7 +419,4 @@ class Logger(QtWidgets.QWidget):
             self.upload_queue.queue.clear()
 
         # remove local dir after uploading everything
-        shutil.rmtree(self.__log_folder_path)
-        # TODO remove game data folder as well if running as exe??
-        # if self.__is_exe:
-        #    shutil.rmtree(self.__log_folder_path.parent / "Game_Data")
+        # shutil.rmtree(self.__log_folder_path)  # TODO don't delete because of possible upload errors?

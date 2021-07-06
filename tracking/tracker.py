@@ -136,6 +136,8 @@ class TrackingSystem(QtWidgets.QWidget):
             "Gesicht sollte nicht mehr als maximal 60-70 cm betragen.</li>"
             "<li>Die <b>Kamera</b> sollte beim Tracking möglichst <b>gerade und frontal zum Gesicht positioniert</b> "
             "sein, sodass das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
+            "<li>Bitte achten Sie auf <b>gute Lichtverhältnisse</b> während der Studie! Der von der Webcam "
+            "sichtbare Bereich sollte gut ausgeleuchtet sein!</li>"
             "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen!</li>"
             "<li>Die Buttons zum Starten und Stoppen funktionieren nur einmal! Nach Stoppen des "
             "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten!</li>"
@@ -245,14 +247,17 @@ class TrackingSystem(QtWidgets.QWidget):
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
         self.__progress = int((current / overall) * 100)
-
-        # if current in [30, 100, 500, 1000, 1200, 1500]:
-        #     needed_time = time.time() - self.__upload_start
-        #     print(f"Time needed to upload {current} images: {needed_time:.3f} seconds")
         self.progress_bar.setValue(self.__progress)
 
+    def __on_error(self):
+        failed_uploads = self.logger.get_failed_uploads()
+        failed_list_string = "\n".join([f"- {failed_upload}" for failed_upload in failed_uploads])
+        self.error_label.setText("Bei der Verbindung ist ein Fehler aufgetreten! Folgende Dateien konnten deshalb "
+                                 "nicht übertragen werden und müssen nach Ende der Studie selbst an die Versuchsleiter"
+                                 " übermittelt werden:\n" + failed_list_string)
+
     def __init_logger(self):
-        self.logger = TrackingLogger(self.__on_upload_progress)
+        self.logger = TrackingLogger(self.__on_upload_progress, self.__on_error)
         self.__tracked_data = {key.name: None for key in TrackingData}
 
     # The following could be used instead of the buttons to automatically start and stop tracking via hotkeys:
