@@ -133,7 +133,7 @@ class TrackingSystem(QtWidgets.QWidget):
             "<li>Bitte tragen Sie während des Trackings <b>keine Brille</b>, da die dabei auftretenden Reflexionen "
             "ein Problem bei der Verarbeitung der Daten darstellen!</li>"
             "<li>Versuchen Sie <b>nicht zu weit weg von der Kamera</b> zu sein. Der Abstand zwischen Kamera und "
-            "Gesicht sollte nicht mehr als maximal 60-70 cm betragen.</li>"
+            "Gesicht sollte nicht mehr als maximal 50-60 cm betragen.</li>"
             "<li>Die <b>Kamera</b> sollte beim Tracking möglichst <b>gerade und frontal zum Gesicht positioniert</b> "
             "sein, sodass das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
             "<li>Bitte achten Sie auf <b>gute Lichtverhältnisse</b> während der Studie! Der von der Webcam "
@@ -247,14 +247,23 @@ class TrackingSystem(QtWidgets.QWidget):
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
         self.__progress = int((current / overall) * 100)
+
+        # TODO remove later:
+        if current in [1, 3, 5, 10, 20]:
+            needed_time = time.time() - self.__upload_start
+            print(f"Time needed to upload {current} folders: {needed_time:.3f} seconds")
+
         self.progress_bar.setValue(self.__progress)
 
     def __on_error(self):
         failed_uploads = self.logger.get_failed_uploads()
-        failed_list_string = "\n".join([f"- {failed_upload}" for failed_upload in failed_uploads])
-        self.error_label.setText("Bei der Verbindung ist ein Fehler aufgetreten! Folgende Dateien konnten deshalb "
-                                 "nicht übertragen werden und müssen nach Ende der Studie selbst an die Versuchsleiter"
-                                 " übermittelt werden:\n" + failed_list_string)
+        if len(failed_uploads) == 0:
+            self.error_label.setText("")  # reset error text if everything has been fixed automatically
+        else:
+            failed_list_string = "\n".join([f"- {failed_upload}" for failed_upload in failed_uploads])
+            self.error_label.setText("Bei der Verbindung ist ein Fehler aufgetreten! Folgende Dateien konnten deshalb "
+                                     "nicht übertragen werden und müssen nach Ende der Studie selbst an die "
+                                     "Versuchsleiter übermittelt werden:\n" + failed_list_string)
 
     def __init_logger(self):
         self.logger = TrackingLogger(self.__on_upload_progress, self.__on_error)
@@ -276,7 +285,7 @@ class TrackingSystem(QtWidgets.QWidget):
             # toggle button active status
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
-            # TODO ?
+
             # notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
 
             # start tracking on a background thread
@@ -350,7 +359,7 @@ class TrackingSystem(QtWidgets.QWidget):
         try:
             gpu_name = [x.name for x in get_gpus()]
         except Exception:
-            gpu_name = ["no gpu"]
+            gpu_name = ["no gpu found"]
 
         # noinspection PyProtectedMember
         self.__tracked_data.update({
@@ -368,7 +377,8 @@ class TrackingSystem(QtWidgets.QWidget):
             TrackingData.SYSTEM.name: system_info["system"],
             TrackingData.SYSTEM_VERSION.name: system_info["release"],
             TrackingData.MODEL_NAME.name: system_info["node"],
-            TrackingData.PROCESSOR.name: system_info["machine"],
+            TrackingData.MACHINE.name: system_info["machine"],
+            TrackingData.PROCESSOR.name: platform.processor(),
             TrackingData.RAM_OVERALL_GB.name: ram_info["total"] / 1000000000,  # convert from Bytes to GB
             TrackingData.RAM_AVAILABLE_GB.name: ram_info["available"] / 1000000000,
             TrackingData.RAM_FREE_GB.name: ram_info["free"] / 1000000000,
@@ -387,7 +397,6 @@ class TrackingSystem(QtWidgets.QWidget):
         Also stop the logging by setting a boolean flag to False.
         """
         if self.__tracking_active:
-            # TODO ?
             # notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()

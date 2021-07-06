@@ -13,20 +13,20 @@ import cv2
 import numpy as np
 import pandas as pd
 import pysftp
+import schedule
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal, QThreadPool
 from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
 from tracking.retry import retry
-import requests
 
 
 # whitespaces at the end are necessary!!
 TrackingData = Enum("TrackingData", "SCREEN_WIDTH SCREEN_HEIGHT CAPTURE_WIDTH CAPTURE_HEIGHT CAPTURE_FPS "
                                     "CORE_COUNT CORE_COUNT_PHYSICAL CORE_COUNT_AVAILABLE CPU_FREQUENCY_MHZ GPU_INFO "
-                                    "SYSTEM SYSTEM_VERSION MODEL_NAME PROCESSOR RAM_OVERALL_GB RAM_AVAILABLE_GB "
-                                    "RAM_FREE_GB")
+                                    "SYSTEM SYSTEM_VERSION MODEL_NAME MACHINE PROCESSOR RAM_OVERALL_GB "
+                                    "RAM_AVAILABLE_GB RAM_FREE_GB")
 
 
 def get_timestamp() -> float:
@@ -34,6 +34,32 @@ def get_timestamp() -> float:
     Returns the current (unix) timestamp in milliseconds.
     """
     return time.time_ns() / 1000000
+
+
+def run_continuously(interval=1):
+    """Continuously run, while executing pending jobs at each
+    elapsed time interval.
+    @return cease_continuous_run: threading. Event which can
+    be set to cease continuous run. Please note that it is
+    *intended behavior that run_continuously() does not run
+    missed jobs*. For example, if you've registered a job that
+    should run every minute and you set a continuous run
+    interval of one hour then your job won't be run 60 times
+    at each interval but only once.
+    Function taken from https://schedule.readthedocs.io/en/stable/background-execution.html
+    """
+    cease_continuous_run = threading.Event()
+
+    class ScheduleThread(threading.Thread):
+        @classmethod
+        def run(cls):
+            while not cease_continuous_run.is_set():
+                schedule.run_pending()
+                time.sleep(interval)
+
+    continuous_thread = ScheduleThread()
+    continuous_thread.start()
+    return cease_continuous_run
 
 
 # noinspection PyAttributeOutsideInit
@@ -60,8 +86,10 @@ class Logger(QtWidgets.QWidget):
 
         # upload error handling
         self.signal_connection_loss.connect(self.__on_connection_lost)
+        self.__scheduler_tag = "tracking_logger"
+        self.__loss_signal_sent = False
         self.__pause_tracking = False
-        self.__failed_uploads = []
+        self.__failed_uploads = set()
 
         self.__init_paths()
         self.__init_log()
@@ -190,10 +218,10 @@ class Logger(QtWidgets.QWidget):
             self.__upload_system_info()
         except Exception as e:
             self.log_error(f"Fehler beim Hochladen der Systeminformationen: {e}")
-            self.__failed_uploads.append(self.__log_file)
+            self.__failed_uploads.add(self.__log_file)
             self.signal_connection_loss.emit(False)
 
-    @retry(Exception, total_tries=4, initial_wait=0.5, backoff_factor=2)
+    @retry(Exception, total_tries=3, initial_wait=0.5, backoff_factor=2)
     def __upload_system_info(self):
         # This function needs to be wrapped in a try-catch-block as the retry decorator raises an exception after
         # exhausting all retries without success.
@@ -230,12 +258,12 @@ class Logger(QtWidgets.QWidget):
             self.__upload_game_study_data(zipped_location, file_name)
         except Exception as e:
             self.log_error(f"Fehler beim Hochladen der Spiele-Logs: {e}")
-            self.__failed_uploads.append(file_name)
+            self.__failed_uploads.add(file_name)
             self.signal_connection_loss.emit(False)
 
         self.__uploading_game_data = False
 
-    @retry(Exception, total_tries=5, initial_wait=0.5, backoff_factor=2)
+    @retry(Exception, total_tries=3, initial_wait=0.5, backoff_factor=2)
     def __upload_game_study_data(self, zipped_location, file_name):
         # we need a new pysftp connection to not get in conflict with the existing image upload on the other thread!
         with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
@@ -314,26 +342,36 @@ class Logger(QtWidgets.QWidget):
 
                 # zip the the folder with the given name
                 zip_file_name = self.__zip_folder(file_name)
+
                 # upload this folder to the server
                 self.upload_lock.acquire()
                 try:
                     self.__upload_zipped_images(zip_file_name)
+                    if f"images_zipped/{zip_file_name}" in self.__failed_uploads:
+                        self.__failed_uploads.discard(f"images_zipped/{zip_file_name}")
+                        self.signal_connection_loss.emit(False)  # notify ui that we fixed one of the failed uploads
+
+                    # update progressbar in gui
+                    self.__num_transferred_folders += 1
+                    self.__num_transferred_images += self.__batch_size
+                    # self.signal_update_progress.emit(self.__num_transferred_images, self.__all_images_count)
+                    self.signal_update_progress.emit(self.__num_transferred_folders, self.__folder_count)
+
                 except Exception as e:
+                    if not self.__tracking_active:
+                        break
+
                     self.log_error(f"Fehler beim Hochladen der Bilder: {e} (Dateiname: {zip_file_name})")
-                    self.__failed_uploads.append(f"images_zipped/{zip_file_name}")
-                    # TODO or like this?
-                    # self.upload_queue.put(file_name)
+                    self.__failed_uploads.add(f"images_zipped/{zip_file_name}")
+                    self.upload_queue.put(file_name)  # append to end of queue so we'll try to upload it again later
                     self.__pause_tracking = True
-                    self.signal_connection_loss.emit(True)
+                    if not self.__loss_signal_sent:
+                        self.signal_connection_loss.emit(True)
+                    self.__loss_signal_sent = True  # set flag so the signal will only be sent once
+
                     continue  # the finally block will still be executed
                 finally:
                     self.upload_lock.release()
-
-                # update progressbar in gui
-                self.__num_transferred_folders += 1
-                self.__num_transferred_images += self.__batch_size
-                # self.signal_update_progress.emit(self.__num_transferred_images, self.__all_images_count)
-                self.signal_update_progress.emit(self.__num_transferred_folders, self.__folder_count)
 
             time.sleep(0.01)  # wait for the same amount of time as the other queue
 
@@ -354,38 +392,44 @@ class Logger(QtWidgets.QWidget):
         self.sftp.put(localpath=f"{self.__images_zipped_path / file_name}",
                       remotepath=f"{self.__user_dir}/images/{file_name}")
 
-    def __on_connection_lost(self, pause: bool):
+    def __on_connection_lost(self, check: bool):
         self.__error_callback()  # update ui in main thread
-        if self.__tracking_active and pause:
-            self.__check_connection_loss()  # repeatedly check for a connection
+        if check:
+            schedule_interval = 10  # schedule repeatedly checking for a connection all 10 seconds
+            schedule.every(schedule_interval).seconds.do(self.__check_connection).tag(self.__scheduler_tag)
+            self.__job = run_continuously()
 
-    def __check_connection_loss(self):
-        while self.__pause_tracking:
-            backoff = 3
-            backoff_multiplier = 1
-            tries = 0
-            try:
-                status_code = requests.head('https://www.google.com/').status_code
-                # we have a connection again if the command above did not result in an exception
-                self.__pause_tracking = False
-                # connection needs to be created again as the old one was closed!
-                self.sftp = pysftp.Connection(host=self.__hostname, username=self.__username,
-                                              password=self.__password, port=self.__port, cnopts=self.__cnopts)
-                break
-            except Exception:
-                # increase wait time exponentially so Google doesn't block us for constantly pinging it (hopefully)
-                time.sleep(backoff * backoff_multiplier)
-                tries += 1
-                backoff_multiplier += 1
-                if (tries % 20) == 0:
-                    # reset backoff each 20 tries so we don't wait for ever
-                    backoff = 3
-                    backoff_multiplier = 1
+    def __check_connection(self):
+        try:
+            # try to connect to own sftp server
+            connection = pysftp.Connection(host=self.__hostname, username=self.__username,
+                                           password=self.__password, port=self.__port, cnopts=self.__cnopts)
+
+            # we have a connection again if the command above did not result in an exception
+            self.__pause_tracking = False
+            # connection needs to be overwritten as the old one was closed!
+            self.sftp = connection
+            self.__loss_signal_sent = False  # reset flag in case there is another connection loss later
+
+            self.__stop_connection_check()
+        except Exception:
+            return
+
+    def __stop_connection_check(self):
+        # cancel current scheduling job
+        active_jobs = schedule.get_jobs(self.__scheduler_tag)
+        if len(active_jobs) > 0:
+            schedule.cancel_job(active_jobs[0])
+        # Stop the background thread on the next schedule interval
+        self.__job.set()
 
     def get_failed_uploads(self):
         return self.__failed_uploads
 
     def __upload_error_log(self):
+        if not self.__error_log_path.exists():
+            return
+
         try:
             with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
                                    port=self.__port, cnopts=self.__cnopts) as sftp_connection:
@@ -410,6 +454,7 @@ class Logger(QtWidgets.QWidget):
         # upload error_log at the end
         self.__upload_error_log()
 
+        self.__stop_connection_check()
         # close the connection to the sftp server
         self.sftp.close()
         # clear the image and upload queues in a thread safe way
@@ -419,4 +464,4 @@ class Logger(QtWidgets.QWidget):
             self.upload_queue.queue.clear()
 
         # remove local dir after uploading everything
-        # shutil.rmtree(self.__log_folder_path)  # TODO don't delete because of possible upload errors?
+        # shutil.rmtree(self.__log_folder_path)  # don't delete because of possible upload errors!
