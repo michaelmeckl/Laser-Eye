@@ -49,11 +49,16 @@ class TrackingSystem(QtWidgets.QWidget):
         self.__tracking_active = False
         self.__progress = None  # the upload progress
         self.__debug = debug_active
+        self.__selected_camera = 0  # use the in-built camera (index 0) per default
 
         self.__load_face_detection_model()
         self.__setup_gui()
         self.__init_logger()
 
+        self.logger.init_server_connection()
+        if self.__debug:
+            self.fps_measurer = FpsMeasurer()
+        """
         available_indexes = find_attached_cameras()
         if len(available_indexes) > 0:
             # set the available camera available_indexes in the gui dropdown (and convert them to strings before)
@@ -68,6 +73,7 @@ class TrackingSystem(QtWidgets.QWidget):
                                      "eine Kamera an den Computer angeschlossen (oder eingebaut ist), und "
                                      "starten Sie dann das Programm erneut!")
             self.logger.log_error("Keine verfügbare Kamera gefunden!")
+        """
 
     def __load_face_detection_model(self):
         # necessary for building the exe file with pyinstaller with the --one-file option as the path changes;
@@ -107,7 +113,13 @@ class TrackingSystem(QtWidgets.QWidget):
 
         self.__setup_progress_bar()  # show a progress bar for the upload
         self.__show_instructions()
-        self.__setup_camera_selection()
+        # self.__setup_camera_selection()
+
+        self.error_label = QtWidgets.QLabel(self)
+        self.error_label.setAlignment(Qt.AlignCenter)
+        self.error_label.setStyleSheet("QLabel {color: rgba(255, 0, 0);}")
+        self.layout.addWidget(self.error_label)
+
         self.__setup_button_layout()  # add buttons to start and stop tracking
         self.__set_tracking_status_ui()
 
@@ -152,8 +164,6 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         Show a dropdown menu to choose between all available cameras for tracking.
         """
-        self.__selected_camera = 0  # use the in-built camera (index 0) per default
-
         camera_select_label = QtWidgets.QLabel(self)
         camera_select_label.setStyleSheet("QLabel {font-size: 9pt;")
         camera_select_label.setText("Kamera-Auswahl für Tracking (0 sollte i.d.R. die Richtige sein):")
@@ -168,11 +178,6 @@ class TrackingSystem(QtWidgets.QWidget):
         dropdown_layout.setContentsMargins(0, 0, 0, 15)
         dropdown_layout.setAlignment(Qt.AlignCenter)
         self.layout.addLayout(dropdown_layout)
-
-        self.error_label = QtWidgets.QLabel(self)
-        self.error_label.setAlignment(Qt.AlignCenter)
-        self.error_label.setStyleSheet("QLabel {color: rgba(255, 0, 0);}")
-        self.layout.addWidget(self.error_label)
 
     def __selected_cam_changed(self, index):
         self.__selected_camera = index
@@ -279,7 +284,7 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__set_tracking_status_ui()
             self.label_eta.setText(f"Mehr Daten werden benötigt ...")
             # disable camera selection after tracking has started
-            self.camera_selection.setEnabled(False)
+            # self.camera_selection.setEnabled(False)
             # toggle button active status
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
