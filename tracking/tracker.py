@@ -113,7 +113,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
         self.layout.setContentsMargins(10, 10, 10, 10)
         self.setLayout(self.layout)
-        self.setGeometry(100, 50, 1200, 900)  # set initial size of gui window (top left and bottom right positions)
+        self.setGeometry(100, 50, 1200, 950)  # set initial size of gui window (top left and bottom right positions)
         self.setWindowTitle("Tracking System")
 
     def __show_instructions(self):
@@ -141,6 +141,9 @@ class TrackingSystem(QtWidgets.QWidget):
             "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen!</li>"
             "<li>Die Buttons zum Starten und Stoppen funktionieren nur einmal! Nach Stoppen des "
             "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten!</li>"
+            "<li>Bei Beenden dieser Anwendung werden <b>automatisch</b> alle für die Studie nicht mehr benötigten "
+            "<b>Dateien in diesem Ordner gelöscht</b>! Bitte verschieben Sie diese Datei deshalb in keinen anderen "
+            "Ordner!</li>"
             "</ul>"
         )
         self.layout.addWidget(general_instructions)
