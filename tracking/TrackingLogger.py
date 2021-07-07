@@ -19,7 +19,7 @@ from PyQt5.QtCore import pyqtSignal, QThreadPool
 from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
-from tracking.retry import retry
+# from tracking.retry import retry
 
 
 # whitespaces at the end are necessary!!
@@ -221,7 +221,7 @@ class Logger(QtWidgets.QWidget):
             self.__failed_uploads.add(self.__log_file)
             self.signal_connection_loss.emit(False)
 
-    @retry(Exception, total_tries=3, initial_wait=0.5, backoff_factor=2)
+    # @retry(Exception, total_tries=3, initial_wait=0.5, backoff_factor=2)
     def __upload_system_info(self):
         # This function needs to be wrapped in a try-catch-block as the retry decorator raises an exception after
         # exhausting all retries without success.
@@ -243,7 +243,7 @@ class Logger(QtWidgets.QWidget):
         """
         If this was started as an exe file upload the folder with the game study logs to the server.
         """
-        if not self.__is_exe:
+        if not self.__is_exe or not self.__unity_log_folder.exists():
             # only upload game data if this is actually running as an exe, otherwise we don't have game data!
             return
         self.__uploading_game_data = True
@@ -263,7 +263,7 @@ class Logger(QtWidgets.QWidget):
 
         self.__uploading_game_data = False
 
-    @retry(Exception, total_tries=3, initial_wait=0.5, backoff_factor=2)
+    # @retry(Exception, total_tries=3, initial_wait=0.5, backoff_factor=2)
     def __upload_game_study_data(self, zipped_location, file_name):
         # we need a new pysftp connection to not get in conflict with the existing image upload on the other thread!
         with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
@@ -464,5 +464,28 @@ class Logger(QtWidgets.QWidget):
         with self.upload_queue.mutex:
             self.upload_queue.queue.clear()
 
-        # remove local dir after uploading everything
-        # shutil.rmtree(self.__log_folder_path)  # don't delete because of possible upload errors!
+        # cleanup as much as possible
+        if self.__is_exe:
+            self.__cleanup()
+
+    def __cleanup(self):
+        if len(self.__failed_uploads) == 0:
+            # Remove the whole local dir after uploading everything if there were no errors.
+            # This actually removes itself (i.e. this program) too!
+            shutil.rmtree(self.__log_folder_path.parent, ignore_errors=True)
+        else:
+            # if some things weren't uploaded correctly we cannot remove everything!
+            parent_folder = self.__log_folder_path.parent
+            # move the unity folder to the top so we can easily delete everything else there
+            shutil.move(self.__unity_log_folder, parent_folder)
+
+            # recursively delete everything that doesn't contain useful log information
+            for item in parent_folder.iterdir():
+                if item not in [parent_folder / "StudyLogs", parent_folder / "game_log.7z",
+                                parent_folder / "error_log.txt", self.__log_folder_path]:
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    elif item.is_file():
+                        item.unlink()
+
+            shutil.rmtree(self.__images_path, ignore_errors=True)  # remove unzipped images as they aren't needed
