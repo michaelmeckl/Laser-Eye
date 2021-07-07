@@ -31,7 +31,8 @@ import pyautogui
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton
-from gpuinfo.windows import get_gpus  # pip install gpu-info
+from gpuinfo.windows import get_gpus as get_amd  # pip install gpu-info
+from gpuinfo.nvidia import get_gpus as get_nvidia
 from plyer import notification
 from FpsMeasuring import FpsMeasurer
 from TrackingLogger import Logger as TrackingLogger
@@ -336,7 +337,6 @@ class TrackingSystem(QtWidgets.QWidget):
 
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
         face_image = find_face_mxnet_resized(self.face_detector, frame, show_result=True if self.__debug else False)
-        # face_image = to_gray(face_image)
 
         if face_image is not None:
             # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
@@ -354,10 +354,18 @@ class TrackingSystem(QtWidgets.QWidget):
         system_info = platform.uname()._asdict()
         ram_info = psutil.virtual_memory()._asdict()
         cpu_current_freq, _, cpu_max_freq = psutil.cpu_freq()  # in Mhz
+
+        # try to find gpus if any
+        found_gpus = []
         try:
-            gpu_name = [x.name for x in get_gpus()]
+            gpu_list = find_gpu()
+            if len(gpu_list) == 0:
+                # try to check for nvidia gpu instead
+                found_gpus = [x.name for x in get_nvidia()]
+            else:
+                found_gpus.extend(gpu_list)
         except Exception:
-            gpu_name = ["no gpu found"]
+            found_gpus = ["no gpu found"]
 
         # noinspection PyProtectedMember
         self.__tracked_data.update({
@@ -371,7 +379,7 @@ class TrackingSystem(QtWidgets.QWidget):
             TrackingData.CORE_COUNT_AVAILABLE.name: len(psutil.Process().cpu_affinity()),  # number of usable cpus by
             # this process
             TrackingData.CPU_FREQUENCY_MHZ.name: f"Max: {cpu_max_freq}, current: {cpu_current_freq}",
-            TrackingData.GPU_INFO.name: gpu_name,
+            TrackingData.GPU_INFO.name: found_gpus,
             TrackingData.SYSTEM.name: system_info["system"],
             TrackingData.SYSTEM_VERSION.name: system_info["release"],
             TrackingData.MODEL_NAME.name: system_info["node"],
@@ -443,9 +451,7 @@ class TrackingSystem(QtWidgets.QWidget):
             # closing the system
             message_box = QMessageBox(QMessageBox.Warning, "Tracking-System beenden?",
                                       "Bitte schließen Sie das Tracking-System erst, wenn der Fortschrittsbalken bei "
-                                      "100% angekommen ist! Bei frühzeitigem Abbruch des Uploads können keine "
-                                      "Versuchspersonenstunden vergeben werden! Möchten Sie das System wirklich "
-                                      "beenden?", parent=self)
+                                      "100% angekommen ist! Möchten Sie das System wirklich beenden?", parent=self)
             # create and set custom buttons for yes and no
             yes_button = QPushButton("Ja")
             message_box.addButton(yes_button, QMessageBox.YesRole)
@@ -459,6 +465,13 @@ class TrackingSystem(QtWidgets.QWidget):
                 event.accept()
             else:
                 event.ignore()
+
+
+def find_gpu():
+    try:
+        return [x.name for x in get_amd()]
+    except Exception:
+        return []
 
 
 def find_attached_cameras():
