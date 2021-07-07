@@ -331,7 +331,7 @@ class Logger(QtWidgets.QWidget):
         # self.upload_pool = []
         for i in range(threadCount):
             # must not be a daemon thread here!
-            upload_thread = threading.Thread(target=self.__start_ftp_transfer, name="UploadThread", daemon=False)
+            upload_thread = threading.Thread(target=self.__start_ftp_transfer, name=f"UploadThread-{i}", daemon=False)
             upload_thread.start()
             # self.upload_pool.append(upload_thread)
 
@@ -409,19 +409,20 @@ class Logger(QtWidgets.QWidget):
             self.__pause_tracking = False
             # connection needs to be overwritten as the old one was closed!
             self.sftp = connection
-            self.__loss_signal_sent = False  # reset flag in case there is another connection loss later
 
             self.__stop_connection_check()
         except Exception:
             return
 
     def __stop_connection_check(self):
-        # cancel current scheduling job
-        active_jobs = schedule.get_jobs(self.__scheduler_tag)
-        if len(active_jobs) > 0:
-            schedule.cancel_job(active_jobs[0])
-        # Stop the background thread on the next schedule interval
-        self.__job.set()
+        if self.__loss_signal_sent:
+            # cancel current scheduling job
+            active_jobs = schedule.get_jobs(self.__scheduler_tag)
+            if len(active_jobs) > 0:
+                schedule.cancel_job(active_jobs[0])
+            # Stop the background thread on the next schedule interval
+            self.__job.set()
+            self.__loss_signal_sent = False  # reset flag in case there is another connection loss later
 
     def get_failed_uploads(self):
         return self.__failed_uploads

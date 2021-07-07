@@ -195,6 +195,7 @@ class TrackingSystem(QtWidgets.QWidget):
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(self.start_button, alignment=Qt.AlignLeft)
         button_layout.addWidget(self.stop_button, alignment=Qt.AlignRight)
+        button_layout.setContentsMargins(20, 10, 20, 10)
         self.layout.addLayout(button_layout)
 
     def __setup_progress_bar(self):
@@ -336,6 +337,10 @@ class TrackingSystem(QtWidgets.QWidget):
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
+        # cleanup the webcam capture at the end
+        self.capture.release()
+        cv2.destroyAllWindows()
+
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
         face_image = find_face_mxnet_resized(self.face_detector, frame, show_result=True if self.__debug else False)
         # face_image = to_gray(face_image)
@@ -403,11 +408,8 @@ class TrackingSystem(QtWidgets.QWidget):
             # disable stop button but don't enable start button (not implemented to restart tracking!)
             self.stop_button.setEnabled(False)
 
-            # cleanup the webcam capture
-            self.capture.release()
-            cv2.destroyAllWindows()
-
             self.logger.finish_logging()
+
             # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
             # the program itself
             # keyboard.remove_all_hotkeys()
