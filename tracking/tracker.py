@@ -53,8 +53,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.__setup_gui()
         self.__init_logger()
 
-        # available_indexes = find_attached_cameras()
-        available_indexes = [0]  # FIXME for faster debugging only
+        available_indexes = find_attached_cameras()
         if len(available_indexes) > 0:
             # set the available camera available_indexes in the gui dropdown (and convert them to strings before)
             self.camera_selection.addItems(map(str, available_indexes))
@@ -248,12 +247,6 @@ class TrackingSystem(QtWidgets.QWidget):
         self.label_current.setText(str(current))
         self.label_all.setText(f"/ {overall}")
         self.__progress = int((current / overall) * 100)
-
-        # TODO remove later:
-        if current in [1, 3, 5, 10, 20]:
-            needed_time = time.time() - self.__upload_start
-            print(f"Time needed to upload {current} folders: {needed_time:.3f} seconds")
-
         self.progress_bar.setValue(self.__progress)
 
     def __on_error(self):
@@ -427,7 +420,8 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         self.__stop_tracking()
         # upload the log folders from the unity game when tracking has finished
-        self.logger.upload_game_data()
+        game_data_thread = threading.Thread(target=self.logger.upload_game_data, name="GameDataUpload", daemon=True)
+        game_data_thread.start()
 
     def __finish_tracking_system(self):
         """
