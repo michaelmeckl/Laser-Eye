@@ -15,7 +15,7 @@ import pandas as pd
 import pysftp
 import schedule
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import pyqtSignal, QThreadPool
+from PyQt5.QtCore import pyqtSignal, QThreadPool, QTimer, QEventLoop
 from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
@@ -444,6 +444,9 @@ class Logger(QtWidgets.QWidget):
         self.upload_queue.put(str(self.__folder_count))
 
     def stop_upload(self):
+        """
+        This function runs on the main thread.
+        """
         self.__tracking_active = False
 
         if self.__is_exe:
@@ -466,7 +469,20 @@ class Logger(QtWidgets.QWidget):
 
         # cleanup as much as possible
         if self.__is_exe:
-            self.__cleanup()
+            self.__is_cleaning = True
+            # clean on background thread so ui won't freeze
+            cleanup_thread = threading.Thread(target=self.__cleanup, name="CleanupThread", daemon=True)
+            cleanup_thread.start()
+
+            while self.__is_cleaning:
+                self.__pause_task(200)  # pause for 200 ms until we try again
+
+    def __pause_task(self, pause_duration: int):
+        # make the pyqt event loop wait for the given time without freezing everything (as with time.sleep),
+        # see https://stackoverflow.com/a/48039398
+        loop = QEventLoop()
+        QTimer.singleShot(pause_duration, loop.quit)
+        loop.exec_()
 
     def __cleanup(self):
         if len(self.__failed_uploads) == 0:
@@ -489,3 +505,5 @@ class Logger(QtWidgets.QWidget):
                         item.unlink()
 
             shutil.rmtree(self.__images_path, ignore_errors=True)  # remove unzipped images as they aren't needed
+
+        self.__is_cleaning = False
