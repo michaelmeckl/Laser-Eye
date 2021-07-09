@@ -104,7 +104,7 @@ class TrackingSystem(QtWidgets.QWidget):
             "gestoppt werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, bis der "
             "Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken unterhalb). "
             "Abhängig von der Internetgeschwindigkeit und Leistung des Rechners kann dies einige Zeit in "
-            "Anspruch nehmen! Während dieser Zeit muss der Rechner eingeschaltet bleiben!"
+            "Anspruch nehmen. Während dieser Zeit muss der Rechner eingeschaltet bleiben!"
         )
         usage_label.setContentsMargins(10, 10, 10, 10)
         usage_label.setWordWrap(True)
@@ -143,18 +143,18 @@ class TrackingSystem(QtWidgets.QWidget):
             "<li>Bitte versuchen Sie während das Tracking aktiv ist, <b>möglichst ruhig zu sitzen</b> und den Kopf "
             "nicht zu viel oder zu schnell zu bewegen (normale Kopfbewegungen sind selbstverständlich in Ordnung).</li>"
             "<li>Bitte tragen Sie während des Trackings <b>keine Brille</b>, da die dabei auftretenden Reflexionen "
-            "ein Problem bei der Verarbeitung der Daten darstellen!</li>"
+            "ein Problem bei der Verarbeitung der Daten darstellen.</li>"
             "<li>Versuchen Sie <b>nicht zu weit weg von der Kamera</b> zu sein. Der Abstand zwischen Kamera und "
             "Gesicht sollte nicht mehr als maximal 50-60 cm betragen.</li>"
             "<li>Die <b>Kamera</b> sollte beim Tracking möglichst <b>gerade und frontal zum Gesicht positioniert</b> "
             "sein, sodass das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
-            "<li>Bitte achten Sie auf <b>gute Lichtverhältnisse</b> während der Studie! Der von der Webcam "
-            "sichtbare Bereich sollte gut ausgeleuchtet sein!</li>"
-            "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen!</li>"
-            "<li>Die Buttons zum Starten und Stoppen funktionieren nur einmal! Nach Stoppen des "
-            "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten!</li>"
+            "<li>Bitte achten Sie auf <b>gute Lichtverhältnisse</b> während der Studie. Der von der Webcam "
+            "sichtbare Bereich sollte gut ausgeleuchtet sein.</li>"
+            "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen.</li>"
+            "<li>Die Buttons zum Starten und Stoppen funktionieren nur einmal. Nach Stoppen des "
+            "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten.</li>"
             "<li>Bei Beenden dieser Anwendung werden <b>automatisch</b> alle für die Studie nicht mehr benötigten "
-            "<b>Dateien in diesem Ordner gelöscht</b>! Bitte verschieben Sie diese Datei deshalb in keinen anderen "
+            "<b>Dateien in diesem Ordner gelöscht</b>. Bitte verschieben Sie diese Datei deshalb in keinen anderen "
             "Ordner!</li>"
             "</ul>"
         )
@@ -190,7 +190,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.start_button.setStyleSheet(f"{button_common_style}"
                                         ":enabled {background-color: rgb(87, 205, 0); color: black;}"
                                         ":pressed {background-color: rgb(47, 165, 0);}")
-        self.start_button.clicked.connect(self.__activate_tracking)  # connect start method to this button
+        self.start_button.clicked.connect(self.__show_start_info_box)  # connect start method to this button
 
         self.stop_button = QtWidgets.QPushButton(self)
         self.stop_button.setText("Tracking stoppen")
@@ -242,6 +242,46 @@ class TrackingSystem(QtWidgets.QWidget):
             self.tracking_status.setText("Tracking nicht aktiv")
             self.tracking_status.setStyleSheet("QLabel {color: red; font-size: 10pt;}")
 
+    def __show_start_info_box(self):
+        self.__preview_box_is_showing = True
+
+        # webcam preview needs to be shown in separate thread as otherwise the qt info box and the preview would block
+        # each other
+        self.preview_thread = threading.Thread(target=self.__show_webcam_preview, name="PreviewThread", daemon=True)
+        self.preview_thread.start()
+
+        preview_box = QMessageBox(QMessageBox.Information, "Webcam-Vorschau",
+                                  "Eine Vorschau Ihrer Webcam sollte sich jetzt in einem separaten Fenster öffnen. "
+                                  "Stellen Sie bitte sicher, dass Ihr Gesicht vollständig im Bild und gut sichtbar "
+                                  "ist. Sobald Sie zufrieden sind, drücken Sie bitte auf 'Weiter'", parent=self)
+        # create and set custom buttons
+        yes_button = QPushButton("Weiter")
+        preview_box.addButton(yes_button, QMessageBox.YesRole)
+        no_button = QPushButton("Abbrechen")
+        preview_box.addButton(no_button, QMessageBox.NoRole)
+        preview_box.exec_()
+
+        if preview_box.clickedButton() == yes_button:
+            self.__preview_box_is_showing = False
+            self.__activate_tracking()
+        else:
+            self.__preview_box_is_showing = False
+
+    def __show_webcam_preview(self):
+        # setup webcam capture
+        self.capture = cv2.VideoCapture(self.__selected_camera)
+        # show webcam capture to user
+        while self.__preview_box_is_showing:
+            return_val, frame = self.capture.read()
+            if not return_val:
+                self.logger.log_error("Couldn't get frame from webcam in preview!")
+                break
+            cv2.imshow("Webcam Vorschau", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        self.__cleanup_webcam_capture()
+
     def __on_upload_progress(self, current, overall):
         if overall == 0:
             return
@@ -274,7 +314,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
     # The following could be used instead of the buttons to automatically start and stop tracking via hotkeys:
     # def listen_for_hotkey(self, hotkey_start="ctrl+a", hotkey_stop="ctrl+q"):
-    #     keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
+    #     keyboard.add_hotkey(hotkey_start, self.__show_start_info_box, suppress=False, trigger_on_release=False)
     #     keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
 
     def __activate_tracking(self):
@@ -302,9 +342,8 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         This function runs on a background thread so the fps of the video games the user is playing aren't reduced.
         """
-        # setup webcam capture
         self.capture = cv2.VideoCapture(self.__selected_camera)
-        # and start the logging and the uploading on other background threads (so the reading from the webcam isn't
+        # Start the logging and the uploading on other background threads (so the reading from the webcam isn't
         # blocked by the processing there)
         self.__log_system_data()
         self.logger.start_saving_images_to_disk()  # start saving webcam frames to disk
@@ -318,7 +357,7 @@ class TrackingSystem(QtWidgets.QWidget):
             # read the next frame from the webcam
             return_val, frame = self.capture.read()
             if not return_val:
-                sys.stderr.write("Unknown error while trying to get current frame!")
+                self.logger.log_error("Couldn't get current frame while tracking!")
                 break
             if frame is None:
                 sys.stderr.write("Frame from webcam is None!")
@@ -340,8 +379,7 @@ class TrackingSystem(QtWidgets.QWidget):
                     break
 
         # cleanup the webcam capture at the end
-        self.capture.release()
-        cv2.destroyAllWindows()
+        self.__cleanup_webcam_capture()
 
     def __process_frame(self, frame: np.ndarray) -> np.ndarray:
         face_image = find_face_mxnet_resized(self.face_detector, frame, show_result=True if self.__debug else False)
@@ -352,6 +390,10 @@ class TrackingSystem(QtWidgets.QWidget):
             log_timestamp = get_timestamp()
             self.logger.add_image_to_queue("capture", face_image, log_timestamp)
         return frame
+
+    def __cleanup_webcam_capture(self):
+        self.capture.release()
+        cv2.destroyAllWindows()
 
     def __log_system_data(self):
         # get the dimensions of the webcam
