@@ -29,6 +29,7 @@ class FpsMeasurer:
         self._start = None
         self._end = None
         self._numFrames = 0
+        self._fps_values = []
 
     def start(self):
         # start the timer
@@ -56,7 +57,15 @@ class FpsMeasurer:
 
     def get_current_fps(self):
         elapsed_time = (datetime.datetime.now() - self._start).total_seconds()
-        return self._numFrames / elapsed_time if elapsed_time != 0 else self._numFrames
+        current_fps = self._numFrames / elapsed_time if elapsed_time != 0 else self._numFrames
+        self._fps_values.append(current_fps)
+        return current_fps
+
+    def get_fps_list(self):
+        return self._fps_values
+
+    def get_frames_count(self):
+        return self._numFrames
 
     def show_optimal_fps(self, max_fps):
         if max_fps == 0:

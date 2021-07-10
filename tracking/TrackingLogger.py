@@ -436,12 +436,41 @@ class Logger(QtWidgets.QWidget):
                                    port=self.__port, cnopts=self.__cnopts) as sftp_connection:
                 sftp_connection.put(localpath=f"{self.__error_log_path}", remotepath=f"{self.__user_dir}/error_log.txt")
         except Exception as e:
-            sys.stderr.write(f"Exception during error log upload occurred: {e}")
+            self.log_error(f"Fehler beim Hochladen des Error-Logs: {e}")
+            self.__failed_uploads.add("error_log.txt")
+            self.signal_connection_loss.emit(False)
 
-    def finish_logging(self):
+    def finish_logging(self, fps_values, elapsed_time, avg_fps, frame_count):
         # when tracking is stopped the last batch of images will never reach the
         # upload condition (as it won't be a full batch), so we set it manually
         self.upload_queue.put(str(self.__folder_count))
+
+        # only take every "avg_fps-nth" element to get the actual fps values per second (and not per frame)
+        subsampled_fps_vals = fps_values[::int(avg_fps)]
+        fps_info = f"Elapsed Time (in seconds): {elapsed_time}\n" \
+                   f"Average FPS: {avg_fps}\n" \
+                   f"Number of frames overall: {frame_count}\n" \
+                   f"FPS_Values: {subsampled_fps_vals}"
+        fps_upload_thread = threading.Thread(target=self.__upload_fps_log, args=(fps_info,), name="FpsUploadThread",
+                                             daemon=True)
+        fps_upload_thread.start()
+
+    def __upload_fps_log(self, fps_info):
+        log_file_name = "fps_info.txt"
+        try:
+            with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
+                                   port=self.__port, cnopts=self.__cnopts) as sftp_connection:
+                # open automatically creates the file on the server
+                with sftp_connection.open(remote_file=f"{self.__user_dir}/{log_file_name}", mode="w+") as fps_log:
+                    fps_log.write(fps_info)
+        except Exception as e:
+            self.log_error(f"Fehler beim Hochladen der FPS Informationen: {e}")
+            # create file locally if upload didn't work
+            with open(self.__log_folder_path / log_file_name, "w+") as fps_log:
+                fps_log.write(fps_info)
+
+            self.__failed_uploads.add(log_file_name)
+            self.signal_connection_loss.emit(False)
 
     def stop_upload(self):
         """

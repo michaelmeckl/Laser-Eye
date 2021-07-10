@@ -56,8 +56,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.__init_logger()
 
         self.logger.init_server_connection()
-        if self.__debug:
-            self.fps_measurer = FpsMeasurer()
+        self.fps_measurer = FpsMeasurer()
         """
         available_indexes = find_attached_cameras()
         if len(available_indexes) > 0:
@@ -65,8 +64,7 @@ class TrackingSystem(QtWidgets.QWidget):
             self.camera_selection.addItems(map(str, available_indexes))
 
             self.logger.init_server_connection()
-            if self.__debug:
-                self.fps_measurer = FpsMeasurer()
+            self.fps_measurer = FpsMeasurer()
         else:
             # there seems to be no available camera!
             self.error_label.setText("Leider wurde keine verfügbare Kamera gefunden! Bitte stellen Sie sicher, dass "
@@ -350,8 +348,7 @@ class TrackingSystem(QtWidgets.QWidget):
         self.logger.start_async_upload()  # start uploading data to sftp server
 
         self.__upload_start = time.time()
-        if self.__debug:
-            self.fps_measurer.start()
+        self.fps_measurer.start()
 
         while self.__tracking_active:
             # read the next frame from the webcam
@@ -367,9 +364,11 @@ class TrackingSystem(QtWidgets.QWidget):
             if processed_frame is None:
                 continue
 
+            # update the average frame rate
+            self.fps_measurer.update()
+            current_fps = self.fps_measurer.get_current_fps()
             if self.__debug:
-                self.fps_measurer.update()
-                cv2.putText(processed_frame, f"current FPS: {self.fps_measurer.get_current_fps():.3f}",
+                cv2.putText(processed_frame, f"current FPS: {current_fps:.3f}",
                             (10, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 cv2.imshow("current_frame", processed_frame)
                 # read until the video is finished or if no video was provided until the
@@ -459,17 +458,23 @@ class TrackingSystem(QtWidgets.QWidget):
             # disable stop button but don't enable start button (not implemented to restart tracking!)
             self.stop_button.setEnabled(False)
 
-            self.logger.finish_logging()
-
             # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
             # the program itself
             # keyboard.remove_all_hotkeys()
 
-            if self.__debug:
-                self.fps_measurer.stop()
-                print(f"[INFO] elapsed time: {self.fps_measurer.elapsed():.2f} seconds")
-                print(f"[INFO] approx. FPS on background thread: {self.fps_measurer.fps():.2f}")
-                print("Frames on main thread:", self.fps_measurer._numFrames)
+            # get fps info and log them
+            self.fps_measurer.stop()
+            fps_values = self.fps_measurer.get_fps_list()
+            elapsed_time = self.fps_measurer.elapsed()
+            avg_fps_overall = self.fps_measurer.fps()
+            frame_count = self.fps_measurer.get_frames_count()
+
+            self.logger.finish_logging(fps_values, elapsed_time, avg_fps_overall, frame_count)
+            """
+            print(f"[INFO] elapsed time: {elapsed_time:.2f} seconds")
+            print(f"[INFO] approx. FPS on background thread: {avg_fps_overall:.2f}")
+            print(f"[INFO] frame count on background thread: {frame_count}")
+            """
 
     def __stop_study(self):
         """
