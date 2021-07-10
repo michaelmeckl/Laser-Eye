@@ -395,7 +395,7 @@ class Logger(QtWidgets.QWidget):
     def __on_connection_lost(self, check: bool):
         self.__error_callback()  # update ui in main thread
         if check:
-            schedule_interval = 10  # schedule repeatedly checking for a connection all 10 seconds
+            schedule_interval = 5  # schedule repeatedly checking for a connection all 5 seconds
             schedule.every(schedule_interval).seconds.do(self.__check_connection).tag(self.__scheduler_tag)
             self.__job = run_continuously()
 

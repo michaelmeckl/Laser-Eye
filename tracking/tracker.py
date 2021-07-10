@@ -327,7 +327,7 @@ class TrackingSystem(QtWidgets.QWidget):
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
 
-            # notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
+            notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
 
             # start tracking on a background thread
             self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
@@ -452,7 +452,7 @@ class TrackingSystem(QtWidgets.QWidget):
         Also stop the logging by setting a boolean flag to False.
         """
         if self.__tracking_active:
-            # notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
+            notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
             # disable stop button but don't enable start button (not implemented to restart tracking!)
