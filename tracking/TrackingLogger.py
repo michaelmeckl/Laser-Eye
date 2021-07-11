@@ -77,7 +77,7 @@ class Logger(QtWidgets.QWidget):
         self.__all_images_count = 0
         self.__num_transferred_images = 0
         self.__num_transferred_folders = 0
-        self.__batch_size = 250  # the number of images per subfolder
+        self.__batch_size = 500  # the number of images per subfolder
 
         self.__upload_callback = upload_callback
         self.__error_callback = error_callback

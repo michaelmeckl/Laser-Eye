@@ -249,9 +249,10 @@ class TrackingSystem(QtWidgets.QWidget):
         self.preview_thread.start()
 
         preview_box = QMessageBox(QMessageBox.Information, "Webcam-Vorschau",
-                                  "Eine Vorschau Ihrer Webcam sollte sich jetzt in einem separaten Fenster öffnen. "
-                                  "Stellen Sie bitte sicher, dass Ihr Gesicht vollständig im Bild und gut sichtbar "
-                                  "ist. Sobald Sie zufrieden sind, drücken Sie bitte auf 'Weiter'", parent=self)
+                                  "Eine Vorschau Ihrer Webcam sollte sich in wenigen Sekunden in einem separaten "
+                                  "Fenster öffnen. Stellen Sie bitte sicher, dass Ihr Gesicht vollständig im Bild und "
+                                  "gut sichtbar ist. Sobald Sie zufrieden sind, drücken Sie bitte auf 'Weiter'",
+                                  parent=self)
         # create and set custom buttons
         yes_button = QPushButton("Weiter")
         preview_box.addButton(yes_button, QMessageBox.YesRole)
