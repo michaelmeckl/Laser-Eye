@@ -5,6 +5,8 @@ import argparse
 import os
 import pathlib
 import sys
+import shutil
+import time
 import cv2
 from datetime import datetime
 from py7zr import py7zr
@@ -27,6 +29,16 @@ from post_processing.eye_tracker import EyeTracker
 # 2. größere bilder runterskalieren bis alle gleich groß wie kleinstes (oder alternativ crop)
 # 3. jetzt erstmal unterschiedlich lassen und dann später beim CNN vorverarbeiten!
 #      -> vermtl. eh am besten weil später neue Bilder ja auch erstmal vorverarbeitet werden müssen!
+
+
+zip_folder = "./tracking_data_ml_test"
+image_folder = "./tracking_data_images"
+
+
+def unzip(participant_folder, file):
+    archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent / zip_folder / participant_folder / file, mode="r")
+    archive.extractall(pathlib.Path(image_folder) / participant_folder)
+    archive.close()
 
 
 def main(debug=False):
@@ -70,22 +82,37 @@ def main(debug=False):
                 cv2.destroyAllWindows()
                 break
     else:
-        image_folder = "./tracking_data/images"
         frame_width, frame_height = None, None
+        if not os.path.exists(image_folder):
+            os.mkdir(image_folder)
 
-        # TODO unzip .7z files first!
-        """
-        archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent / f"{filename}.7z", mode="r")
-        archive.extractall(path=pathlib.Path(__file__).parent.parent)
-        archive.close()
-        """
+        # unzip .7z files
+        [unzip(participant, zipped_file) for participant in os.listdir(zip_folder)
+         for zipped_file in os.listdir(os.path.join(zip_folder, participant))]
 
-        for sub_folder in os.listdir(image_folder):
-            for image in os.listdir(f"{image_folder}/{sub_folder}"):
-                first_image = cv2.imread(f"{image_folder}/{sub_folder}/{image}")
-                frame_width = first_image.shape[1]
-                frame_height = first_image.shape[0]
-                break  # we only want the first image
+        for participant_folder in os.listdir(image_folder):
+            extracted_images_path = os.path.join(image_folder, participant_folder, "tracking_data", "images")
+            result_images_dir = os.path.join(image_folder, participant_folder)
+
+            start_11 = time.time()
+            for sub_folder in os.listdir(extracted_images_path):
+                start = time.time()
+                for image in os.listdir(os.path.join(extracted_images_path, sub_folder)):
+                    if frame_width is None:
+                        # this is the first image
+                        first_image = cv2.imread(os.path.join(extracted_images_path, sub_folder, image))
+                        frame_width = first_image.shape[1]
+                        frame_height = first_image.shape[0]
+
+                    shutil.move(os.path.join(extracted_images_path, sub_folder, image),
+                                os.path.join(result_images_dir, image))
+
+                end = time.time()
+                print(f"Copying folder {sub_folder} took {(end - start):.2f} seconds.")
+
+            end_11 = time.time()
+            print(f"Copying participant folder {participant_folder} took {(end_11 - start_11):.2f} seconds.")
+            shutil.rmtree(os.path.join(image_folder, participant_folder, "tracking_data"))  # delete temporary folder
 
         if frame_width is None:
             print("first image doesn't seem to exist!")
@@ -95,8 +122,8 @@ def main(debug=False):
         eye_tracker = EyeTracker(frame_width, frame_height, enable_annotation, show_video)
 
         for sub_folder in os.listdir(image_folder):
-            for image_file in os.listdir(f"{image_folder}/{sub_folder}"):
-                current_frame = cv2.imread(f"{image_folder}/{sub_folder}/{image_file}")
+            for image_file in os.listdir(os.path.join(image_folder, sub_folder)):
+                current_frame = cv2.imread(os.path.join(image_folder, sub_folder, image_file))
                 processed_frame = eye_tracker.process_current_frame(current_frame)
 
                 cv2.imshow("processed_frame", processed_frame)
@@ -121,3 +148,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main()
+
+    """
+    archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent.parent / f"1.7z", mode="r")
+    archive.extractall(path=pathlib.Path(__file__).parent.parent)
+    archive.close()
+    """
