@@ -29,7 +29,7 @@ class EyeTracker:
 
         self.__init_logger()
 
-        # self.saccade_detector = SaccadeFixationDetector()  # TODO
+        self.saccade_detector = SaccadeFixationDetector()
         self.blink_detector = BlinkDetector()
         self.face_detector = MxnetDetectionModel("../weights/16and32", 0, .6, gpu=gpu_ctx)
         self.face_alignment = CoordinateAlignmentModel('../weights/2d106det', 0, gpu=gpu_ctx)
@@ -47,10 +47,10 @@ class EyeTracker:
         Args:
             frame: video frame in the format [width, height, channels]
         """
-        # TODO
+        # TODO preprocess the frame first?
         # processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
 
-        face_region = find_face_mxnet_resized(self.face_detector, frame) if frame is not None else None
+        # face_region = find_face_mxnet_resized(self.face_detector, frame) if frame is not None else None
         self.__current_frame = frame
 
         bboxes = self.face_detector.detect(self.__current_frame)
@@ -112,20 +112,16 @@ class EyeTracker:
             ProcessingData.RIGHT_EYE_HEIGHT.name: self.__right_eye_height,
             ProcessingData.LEFT_PUPIL_POS.name: self.__pupils[0],
             ProcessingData.RIGHT_PUPIL_POS.name: self.__pupils[1],
-            ProcessingData.LEFT_PUPIL_DIAMETER.name: 0,  # TODO wie pupillen durchmesser bestimmen?
+            ProcessingData.LEFT_PUPIL_DIAMETER.name: 0,  # TODO
             ProcessingData.RIGHT_PUPIL_DIAMETER.name: 0,
         })
         # TODO count, avg and std of blinks, fixations, saccades (also duration and peak)
-        # TODO wann loggen, pro Frame macht keinen Sinn!
 
         # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
         # can't be matched later!
         log_timestamp = get_timestamp()
         self.__logger.log_frame_data(frame_id=log_timestamp, data=self.__tracked_data)
 
-        # TODO some images are not squared but one pixel larger in one dimension (fix later in postprocessing)
-
-        # TODO resize images to larger ones before saving?
         # new_eye_region = improve_image(eye_region_bbox)
         # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, log_timestamp)
 
