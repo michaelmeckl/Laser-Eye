@@ -9,9 +9,11 @@ import shutil
 import time
 import cv2
 from datetime import datetime
+import pysftp
+from paramiko.ssh_exception import SSHException
 from py7zr import py7zr
 from post_processing.eye_tracker import EyeTracker
-
+from tracking.TrackingLogger import get_server_credentials
 
 # we need:
 """
@@ -23,7 +25,6 @@ from post_processing.eye_tracker import EyeTracker
 - blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
 """
 
-
 # TODO Lösungsansätze für Problem mit unterschiedlichen Bilddimensionen pro Frame:
 # 1. kleinere bilder mit padding versehen bis alle gleich groß wie größtes
 # 2. größere bilder runterskalieren bis alle gleich groß wie kleinstes (oder alternativ crop)
@@ -31,8 +32,8 @@ from post_processing.eye_tracker import EyeTracker
 #      -> vermtl. eh am besten weil später neue Bilder ja auch erstmal vorverarbeitet werden müssen!
 
 
-zip_folder = "./tracking_data_ml_test"
-image_folder = "./tracking_data_images"
+download_folder = "./tracking_images_download"
+image_folder = "./extracted_images"
 
 
 def debug_postprocess(enable_annotation, show_video):
@@ -74,11 +75,50 @@ def debug_postprocess(enable_annotation, show_video):
 
 
 def download_images_from_server():
-    pass
+    credentials = get_server_credentials(pathlib.Path(__file__).parent.parent / "sftp_credentials.properties")
+    if credentials is None:
+        sys.stderr.write("Reading sftp server credentials didn't work! Terminating program...")
+        sys.exit(1)
+
+    hostname = credentials["sftp_hostname"]
+    username = credentials["sftp_username"]
+    password = credentials["sftp_password"]
+    port = credentials.getint("sftp_port")
+    # NOTE: setting hostkeys to None is highly discouraged as we lose any protection
+    # against man-in-the-middle attacks; however, it is the easiest solution and for now it should be fine;
+    # see https://stackoverflow.com/questions/38939454/verify-host-key-with-pysftp for correct solution
+    cnopts = pysftp.CnOpts()
+    cnopts.hostkeys = None
+
+    try:
+        sftp = pysftp.Connection(host=hostname, username=username, password=password, port=port, cnopts=cnopts)
+    except SSHException as e:
+        sys.stderr.write(f"Die Verbindung zum Server konnte nicht hergestellt werden! Bitte stellen Sie sicher, dass "
+                         f"sie während des Trackings eine stabile Internetverbindung haben! Fehler: {e}")
+        sys.exit(1)
+
+    # create the local folder to put the downloaded files into
+    if not os.path.exists(download_folder):
+        os.mkdir(download_folder)
+
+    # iterate over all folders on the server and download all zipped image files per participant
+    root_dir = "home"
+    for i, directory in enumerate(sftp.listdir(root_dir)):
+        # important to not use os.path.join as this would use the local machine's path separator which might not be
+        # the same as on the server!
+        images_path = f"{root_dir}/{directory}/images"
+        if sftp.isdir(images_path):
+            print(f"Downloading folder {i}:  {images_path}")
+            local_folder = os.path.join(download_folder, f"participant_{i}")
+            if not os.path.exists(local_folder):
+                os.mkdir(local_folder)
+            sftp.get_d(images_path, local_folder)
+        else:
+            sys.stderr.write(f"\nNo images subfolder found in {root_dir}/{directory}! Skipping this folder.")
 
 
 def unzip(participant_folder, file):
-    archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent / zip_folder / participant_folder / file, mode="r")
+    archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent / download_folder / participant_folder / file, mode="r")
     archive.extractall(pathlib.Path(image_folder) / participant_folder)
     archive.close()
 
@@ -89,8 +129,8 @@ def extract_zipped_images():
     """
 
     # unzip .7z files
-    [unzip(participant, zipped_file) for participant in os.listdir(zip_folder)
-     for zipped_file in os.listdir(os.path.join(zip_folder, participant))]
+    [unzip(participant, zipped_file) for participant in os.listdir(download_folder)
+     for zipped_file in os.listdir(os.path.join(download_folder, participant))]
 
     for participant_folder in os.listdir(image_folder):
         extracted_images_path = os.path.join(image_folder, participant_folder, "tracking_data", "images")
@@ -145,7 +185,8 @@ def main(debug: bool):
     else:
         frame_width, frame_height = None, None
 
-        download_images_from_server()  # download the image data from our sftp server
+        # TODO downloading takes for ever; enable at own risk :)
+        # download_images_from_server()  # download the image data from our sftp server
 
         if not os.path.exists(image_folder):
             os.mkdir(image_folder)

@@ -36,6 +36,32 @@ def get_timestamp() -> float:
     return time.time_ns() / 1000000
 
 
+def get_server_credentials(credentials_file_path="sftp_credentials.properties") -> Optional[cp.SectionProxy]:
+    """
+    Read in the credentials for our sftp server.
+    Taken from https://gist.github.com/krzysztof-slowinski/59efeef7f9d00b002eed7e0e6636b084
+    Credentials file looks like this:
+    [dev.sftp]
+    sftp_hostname = hostname
+    sftp_username = username
+    sftp_password = password
+    sftp_port = port
+    """
+    credentials_file = credentials_file_path
+    credentials_section = "dev.sftp"
+
+    if os.path.exists(credentials_file):
+        credentials = cp.RawConfigParser()
+        credentials.read(credentials_file)
+        if credentials_section not in credentials:
+            print('sftp credentials file is not properly structured!')
+            return None
+        return credentials[credentials_section]
+    else:
+        print(f"[Error] Credentials file ({credentials_file}) is not defined!")
+        return None
+
+
 def run_continuously(interval=1):
     """Continuously run, while executing pending jobs at each
     elapsed time interval.
@@ -137,7 +163,7 @@ class Logger(QtWidgets.QWidget):
         return self.__images_path / str(self.__folder_count)
 
     def __set_server_credentials(self):
-        credentials = self.__get_credentials()
+        credentials = get_server_credentials()
         if credentials is None:
             sys.stderr.write("Reading sftp server credentials didn't work! Terminating program...")
             sys.exit(1)
@@ -151,31 +177,6 @@ class Logger(QtWidgets.QWidget):
         # see https://stackoverflow.com/questions/38939454/verify-host-key-with-pysftp for correct solution
         self.__cnopts = pysftp.CnOpts()
         self.__cnopts.hostkeys = None
-
-    def __get_credentials(self) -> Optional[cp.SectionProxy]:
-        """
-        Read in the credentials for our sftp server.
-        Taken from https://gist.github.com/krzysztof-slowinski/59efeef7f9d00b002eed7e0e6636b084
-        Credentials file looks like this:
-        [dev.sftp]
-        sftp_hostname = hostname
-        sftp_username = username
-        sftp_password = password
-        sftp_port = port
-        """
-        credentials_file = "sftp_credentials.properties"
-        credentials_section = "dev.sftp"
-
-        if os.path.exists(credentials_file):
-            credentials = cp.RawConfigParser()
-            credentials.read(credentials_file)
-            if credentials_section not in credentials:
-                print('sftp credentials file is not properly structured!')
-                return None
-            return credentials[credentials_section]
-        else:
-            print(f"[Error] Credentials file ({credentials_file}) is not defined!")
-            return None
 
     def init_server_connection(self):
         try:
