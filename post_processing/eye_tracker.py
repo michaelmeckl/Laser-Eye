@@ -15,6 +15,17 @@ from post_processing_service.head_pose import HeadPoseEstimator
 from post_processing_service.iris_localization import IrisLocalizationModel
 
 
+# we need:
+"""
+- webcam images of eyes and pupils ✔
+- pupil positions  ✔
+- pupil sizes (diameter)
+- average pupilsize; peak pupil size
+- fixations and saccades (count, mean, std)   ❌ # TODO
+- blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
+"""
+
+
 # noinspection PyAttributeOutsideInit
 class EyeTracker:
 

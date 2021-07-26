@@ -114,6 +114,8 @@ weights/cab2d*
 videos/
 .idea/
 
+tracking_data_download/
+tracking_data_download_copy/
 tracking_data/
 *.exe
 *.7z

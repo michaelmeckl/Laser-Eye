@@ -15,25 +15,12 @@ from py7zr import py7zr
 from post_processing.eye_tracker import EyeTracker
 from tracking.TrackingLogger import get_server_credentials
 
-# we need:
-"""
-- webcam images of eyes and pupils ✔
-- pupil positions  ✔
-- pupil sizes (diameter)
-- average pupilsize; peak pupil size
-- fixations and saccades (count, mean, std)   ❌ # TODO
-- blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
-"""
 
 # TODO Lösungsansätze für Problem mit unterschiedlichen Bilddimensionen pro Frame:
 # 1. kleinere bilder mit padding versehen bis alle gleich groß wie größtes
 # 2. größere bilder runterskalieren bis alle gleich groß wie kleinstes (oder alternativ crop)
 # 3. jetzt erstmal unterschiedlich lassen und dann später beim CNN vorverarbeiten!
 #      -> vermtl. eh am besten weil später neue Bilder ja auch erstmal vorverarbeitet werden müssen!
-
-
-download_folder = "./tracking_images_download"
-image_folder = "./extracted_images"
 
 
 def debug_postprocess(enable_annotation, show_video):
@@ -74,7 +61,12 @@ def debug_postprocess(enable_annotation, show_video):
             break
 
 
-def download_images_from_server():
+download_folder = "./tracking_data_download"
+image_folder = "./extracted_images"
+logs_folder = "./extracted_logs"
+
+
+def download_data_from_server():
     credentials = get_server_credentials(pathlib.Path(__file__).parent.parent / "sftp_credentials.properties")
     if credentials is None:
         sys.stderr.write("Reading sftp server credentials didn't work! Terminating program...")
@@ -93,8 +85,7 @@ def download_images_from_server():
     try:
         sftp = pysftp.Connection(host=hostname, username=username, password=password, port=port, cnopts=cnopts)
     except SSHException as e:
-        sys.stderr.write(f"Die Verbindung zum Server konnte nicht hergestellt werden! Bitte stellen Sie sicher, dass "
-                         f"sie während des Trackings eine stabile Internetverbindung haben! Fehler: {e}")
+        sys.stderr.write(f"Die Verbindung zum Server konnte nicht hergestellt werden! Fehler: {e}")
         sys.exit(1)
 
     # create the local folder to put the downloaded files into
@@ -103,60 +94,117 @@ def download_images_from_server():
 
     # iterate over all folders on the server and download all zipped image files per participant
     root_dir = "home"
-    for i, directory in enumerate(sftp.listdir(root_dir)):
+    for i, directory in enumerate(sftp.listdir(root_dir), start=1):
         # important to not use os.path.join as this would use the local machine's path separator which might not be
         # the same as on the server!
-        images_path = f"{root_dir}/{directory}/images"
-        if sftp.isdir(images_path):
-            print(f"Downloading folder {i}:  {images_path}")
-            local_folder = os.path.join(download_folder, f"participant_{i}")
-            if not os.path.exists(local_folder):
-                os.mkdir(local_folder)
-            sftp.get_d(images_path, local_folder)
-        else:
-            sys.stderr.write(f"\nNo images subfolder found in {root_dir}/{directory}! Skipping this folder.")
+        dir_path = f"{root_dir}/{directory}"
+        images_path = f"{dir_path}/images"
+
+        # some checks
+        if not sftp.isdir(images_path):
+            sys.stderr.write(f"\nNo images subfolder found in {root_dir}/{directory}!\n")
+        if len(sftp.listdir(images_path)) == 0:
+            sys.stderr.write(f"\nImages subfolder found in {root_dir}/{directory} is empty!\n")
+
+        print(f"Downloading folder {i}:  {dir_path}")
+        local_folder = os.path.join(download_folder, f"participant_{i}")
+        local_images_folder = os.path.join(local_folder, "images")
+        if not os.path.exists(local_images_folder):
+            os.makedirs(local_images_folder)
+
+        # download images folder separately
+        sftp.get_d(images_path, os.path.join(local_images_folder), preserve_mtime=True)
+        # then download the other files in the folder
+        for file in sftp.listdir(dir_path):
+            if sftp.isfile(f"{dir_path}/{file}"):
+                sftp.get(f"{dir_path}/{file}", os.path.join(local_folder, file))
 
 
-def unzip(participant_folder, file):
-    archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent / download_folder / participant_folder / file, mode="r")
-    archive.extractall(pathlib.Path(image_folder) / participant_folder)
+def unzip(participant_folder, result_dir, file):
+    if result_dir == image_folder:
+        archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent / download_folder / participant_folder / "images" /
+                                     file, mode="r")
+    else:
+        archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent / download_folder / participant_folder /
+                                     "game_log.7z", mode="r")
+    archive.extractall(pathlib.Path(download_folder) / participant_folder / result_dir)
     archive.close()
 
 
-def extract_zipped_images():
+def extract_zipped_images(participant_folder):
     """
-    extract the zipped images to a new folder and flatten the hierarchy so all images are in each participant folder
+    extract the zipped images to a new folder and flatten the hierarchy so all images are directly in the images
+    subfolder in each participant folder
     """
 
-    # unzip .7z files
-    [unzip(participant, zipped_file) for participant in os.listdir(download_folder)
-     for zipped_file in os.listdir(os.path.join(download_folder, participant))]
+    print(f"\n####################\nUnzipping image data for participant {participant_folder} ...")
+    for zipped_file in os.listdir(os.path.join(download_folder, participant_folder, "images")):
+        unzip(participant_folder, image_folder, zipped_file)
+    print("\n####################\n")
 
-    for participant_folder in os.listdir(image_folder):
-        extracted_images_path = os.path.join(image_folder, participant_folder, "tracking_data", "images")
-        result_images_dir = os.path.join(image_folder, participant_folder)
+    extracted_images_path = os.path.join(download_folder, participant_folder, image_folder, "tracking_data", "images")
+    result_images_dir = os.path.join(download_folder, participant_folder, image_folder)
 
-        start_11 = time.time()
-        for sub_folder in os.listdir(extracted_images_path):
-            start = time.time()
-            for image in os.listdir(os.path.join(extracted_images_path, sub_folder)):
-                shutil.move(os.path.join(extracted_images_path, sub_folder, image),
-                            os.path.join(result_images_dir, image))
+    # flatten the hierarchy and remove obsolete folders
+    start_time = time.time()
+    for sub_folder in os.listdir(extracted_images_path):
+        start = time.time()
+        for image in os.listdir(os.path.join(extracted_images_path, sub_folder)):
+            shutil.move(os.path.join(extracted_images_path, sub_folder, image),
+                        os.path.join(result_images_dir, image))
 
-            end = time.time()
-            print(f"Copying folder {sub_folder} took {(end - start):.2f} seconds.")
+        end = time.time()
+        print(f"Copying folder {sub_folder} took {(end - start):.2f} seconds.")
 
-        end_11 = time.time()
-        print(f"Copying participant folder {participant_folder} took {(end_11 - start_11):.2f} seconds.")
-        shutil.rmtree(os.path.join(image_folder, participant_folder, "tracking_data"))  # delete temporary folder
+    end_time = time.time()
+    print(f"Copying participant folder {participant_folder} took {(end_time - start_time):.2f} seconds.")
+    # delete the now empty unzipped folder
+    shutil.rmtree(os.path.join(download_folder, participant_folder, image_folder, "tracking_data"))
+
+
+def extract_game_logs(participant_folder):
+    game_log_path = os.path.join(download_folder, participant_folder, "game_log.7z")
+    if not os.path.exists(game_log_path):
+        sys.stderr.write(f"\nGame Log zip file not found in {download_folder}/{participant_folder}!\n")
+        return
+
+    print(f"\n####################\nUnzipping game log for participant {participant_folder} ...")
+    # unzip file
+    unzip(participant_folder, logs_folder, game_log_path)
+    print("\n####################\n")
+
+    # and flatten the hierarchy
+    extracted_logs_path = os.path.join(download_folder, participant_folder, logs_folder, "Game_Data", "StudyLogs")
+    result_logs_dir = os.path.join(download_folder, participant_folder, logs_folder)
+    for element in os.listdir(extracted_logs_path):
+        element_path = os.path.join(extracted_logs_path, element)
+        if os.path.isfile(element_path):
+            shutil.move(element_path, os.path.join(result_logs_dir, element))
+        else:
+            new_dir_path = os.path.join(result_logs_dir, element)
+            if not os.path.exists(new_dir_path):
+                os.mkdir(new_dir_path)
+
+            for file in os.listdir(element_path):
+                shutil.move(os.path.join(element_path, file), os.path.join(new_dir_path, file))
+
+    shutil.rmtree(os.path.join(download_folder, participant_folder, logs_folder, "Game_Data"))
+
+
+def extract_data():
+    for participant in os.listdir(download_folder):
+        # extract the .7z files to the same folder
+        extract_zipped_images(participant)
+        extract_game_logs(participant)
 
 
 def process_images(eye_tracker):
     frame_count = 0
     start_time = time.time()
-    for sub_folder in os.listdir(image_folder):
-        for image_file in os.listdir(os.path.join(image_folder, sub_folder)):
-            current_frame = cv2.imread(os.path.join(image_folder, sub_folder, image_file))
+    for sub_folder in os.listdir(download_folder):
+        images_path = os.path.join(download_folder, sub_folder, image_folder)
+        for image_file in os.listdir(images_path):
+            current_frame = cv2.imread(os.path.join(images_path, image_file))
             processed_frame = eye_tracker.process_current_frame(current_frame)
 
             frame_count += 1
@@ -186,17 +234,15 @@ def main(debug: bool):
         frame_width, frame_height = None, None
 
         # TODO downloading takes for ever; enable at own risk :)
-        # download_images_from_server()  # download the image data from our sftp server
-
-        if not os.path.exists(image_folder):
-            os.mkdir(image_folder)
-        extract_zipped_images()
+        # download_data_from_server()  # download the participant data from our sftp server
+        extract_data()
+        print("\n####################\nFinished extracting data\n####################\n")
 
         # get size of first image; TODO dirty way for now, improve later
-        for sub_folder in os.listdir(image_folder):
-            for image in os.listdir(os.path.join(image_folder, sub_folder)):
+        for sub_folder in os.listdir(download_folder):
+            for image in os.listdir(os.path.join(download_folder, sub_folder, image_folder)):
                 # this is the first image
-                first_image = cv2.imread(os.path.join(image_folder, sub_folder, image))
+                first_image = cv2.imread(os.path.join(download_folder, sub_folder, image_folder, image))
                 frame_width = first_image.shape[1]
                 frame_height = first_image.shape[0]
                 break  # we only want the first image, so we stop immediately
@@ -224,7 +270,7 @@ if __name__ == "__main__":
     main(debug=False)
 
     """
-    archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent.parent / f"1.7z", mode="r")
+    archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent.parent / "game_log.7z", mode="r")
     archive.extractall(path=pathlib.Path(__file__).parent.parent)
     archive.close()
     """
