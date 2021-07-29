@@ -1,3 +1,4 @@
+import pathlib
 import cv2
 import numpy as np
 import pyautogui as pyautogui
@@ -41,10 +42,12 @@ class EyeTracker:
 
         self.saccade_detector = SaccadeFixationDetector()
         self.blink_detector = BlinkDetector()
-        self.face_detector = MxnetDetectionModel("../weights/16and32", 0, .6, gpu=gpu_ctx)
-        self.face_alignment = CoordinateAlignmentModel('../weights/2d106det', 0, gpu=gpu_ctx)
-        self.iris_locator = IrisLocalizationModel("../../weights/iris_landmark.tflite")
-        self.head_pose_estimator = HeadPoseEstimator("../../weights/object_points.npy", width, height)
+
+        weights_path = pathlib.Path(__file__).parent.parent.parent / "weights"
+        self.face_detector = MxnetDetectionModel(f"{weights_path / '16and32'}", 0, .6, gpu=gpu_ctx)
+        self.face_alignment = CoordinateAlignmentModel(f"{weights_path / '2d106det'}", 0, gpu=gpu_ctx)
+        self.iris_locator = IrisLocalizationModel(f"{weights_path / 'iris_landmark.tflite'}")
+        self.head_pose_estimator = HeadPoseEstimator(f"{weights_path / 'object_points.npy'}", width, height)
 
     def __init_logger(self):
         self.__logger = ProcessingLogger()

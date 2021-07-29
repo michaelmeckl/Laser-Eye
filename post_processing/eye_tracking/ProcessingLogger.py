@@ -48,7 +48,9 @@ class ProcessingLogger:
     def __init__(self, log_folder="processing_data", default_log_file="processing_log.csv"):
         self.__log_folder = log_folder
         self.__log_file = default_log_file
-        self.__log_file_path = pathlib.Path(self.__log_folder + "/" + self.__log_file)
+
+        self.__folder_path = pathlib.Path(__file__).parent / self.__log_folder
+        self.__log_file_path = self.__folder_path / self.__log_file
 
         self.__log_tag = "processing_logger"
         self.__log_data = self.__init_log()
@@ -58,9 +60,8 @@ class ProcessingLogger:
 
     def __init_log(self):
         # create log folder if it doesn't exist yet
-        folder_path = pathlib.Path(self.__log_folder)
-        if not folder_path.is_dir():
-            folder_path.mkdir()
+        if not self.__folder_path.is_dir():
+            self.__folder_path.mkdir()
 
         # if the log file already exists and is not empty, read the current log data else create an empty dataframe
         if self.__log_file_path.is_file() and self.__log_file_path.stat().st_size > 0:
@@ -114,10 +115,10 @@ class ProcessingLogger:
         self.__image_data.clear()
 
     def __save_image(self, dirname: str, filename: str, image: np.ndarray, timestamp: float):
-        path = pathlib.Path(self.__log_folder + "/" + dirname)
+        path = self.__folder_path / dirname
         if not path.is_dir():
             path.mkdir()
 
         # check if empty first as it crashes if given an empty array (e.g. if face / eyes not fully visible)
         if image.size:
-            cv2.imwrite(f'{path}/{filename}__{timestamp}.png', image)
+            cv2.imwrite(f'{path / filename}__{timestamp}.png', image)

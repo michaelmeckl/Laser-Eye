@@ -20,6 +20,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # TODO delete later:
     """
     archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent.parent / "game_log.7z", mode="r")
     archive.extractall(path=pathlib.Path(__file__).parent.parent)

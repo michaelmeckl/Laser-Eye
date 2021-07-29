@@ -89,8 +89,5 @@ def download_data_from_server(folder_names=list[str]):
 
 if __name__ == "__main__":
     # ! change this to empty list to download all participants !
-    # TODO test
-    specified_participants = ["tracking_data__1626357678587.4106", "tracking_data__1627413359233.9531",
-                              "tracking_data__1627462279896.541"]
-    # specified_participants = []
+    specified_participants = ["tracking_data__1627402551434.5142", "tracking_data__1627411166841.7903"]
     download_data_from_server(specified_participants)  # download the participant data from our sftp server

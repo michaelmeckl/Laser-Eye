@@ -83,15 +83,28 @@ def extract_game_logs(participant_folder):
 
 def extract_data(participant_list=list[str]):
     for participant in os.listdir(download_folder):
+        # if specific participants are given, skip the others
         if len(participant_list) > 0 and participant not in participant_list:
             print(f"\nSkipping folder {participant} as it is not in the specified participant list.\n")
             continue
 
-        # extract the .7z files to the same folder
+        # check if there is already an extracted folder for this participant
+        if "extracted_images" in os.listdir(os.path.join(download_folder, participant)):
+            print(f"Participant '{participant}' already contains an extracted_images subfolder!")
+            answer = input("Do you want to overwrite it? [y/n]\n")
+            if str.lower(answer) == "y" or str.lower(answer) == "yes":
+                print(f"\nOverwriting {participant}...\n")
+            else:
+                print(f"\nSkipping participant '{participant}'.\n")
+                continue
+
+        # extract the .7z files
         extract_zipped_images(participant)
         extract_game_logs(participant)
 
 
 if __name__ == "__main__":
-    extract_data(participant_list=[])  # empty list means we extract all participants
+    # empty list means we want to extract all participants
+    extract_data(participant_list=["participant_6", "participant_7", "participant_8", "participant_9",
+                                   "participant_10"])
     print("\n####################\nFinished extracting data\n####################\n")
