@@ -42,7 +42,7 @@ def merge_csv_logs(game_log_folder):
     return all_game_logs
 
 
-def assert_task_duration(start_time, end_time, error_variance=5):
+def assert_task_duration(start_time, end_time, error_variance=10):
     """
     Make sure the time difference between the start and end event type for each difficulty and game is 100 seconds (+
     some small measurement error).
@@ -145,6 +145,18 @@ def find_image_event_indexes(df, all_images, sorted_img_dict):
 
 
 def split_image_folder(result_dict, participant_folder):
+    """
+    Param `result_dict` contains a list for each of the 3 load levels which contains all images from this participant
+    that were recorded during a game with the corresponding difficulty:
+    ```
+    {
+        'hard': [capture__1223445.34.png, capture__122673445.89.png, ...],
+        'medium': [...],
+        'easy': [...],
+    }
+    ```
+    """
+
     print("Number images 'hard':", len(result_dict['hard']))
     print("Number images 'medium':", len(result_dict['medium']))
     print("Number images 'easy':", len(result_dict['easy']))
@@ -172,8 +184,13 @@ def split_image_folder(result_dict, participant_folder):
     # shutil.rmtree(os.path.join(data_folder, participant_folder, "extracted_images"))
 
 
-def assign_load():
+def assign_load(participant_list=list[str]):
     for participant in os.listdir(data_folder):
+        # if specific participants are given, skip the others
+        if len(participant_list) > 0 and participant not in participant_list:
+            print(f"\nSkipping folder {participant} as it is not in the specified participant list.\n")
+            continue
+
         print(f"\n####################\nAssigning labels for participant {participant}\n####################\n")
         images_folder = os.path.join(data_folder, participant, "extracted_images")
         game_log_folder = os.path.join(data_folder, participant, "extracted_logs", "CSV")
@@ -215,4 +232,4 @@ def assign_load():
 
 
 if __name__ == "__main__":
-    assign_load()
+    assign_load(participant_list=["participant_6", "participant_7", "participant_8", "participant_9"])
