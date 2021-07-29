@@ -3,13 +3,12 @@ import numpy as np
 import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
-from post_processing.ProcessingLogger import ProcessingLogger, ProcessingData
-from post_processing.image_utils import preprocess_frame, extract_image_region
+from post_processing.eye_tracking.ProcessingLogger import ProcessingLogger, ProcessingData
+from post_processing.eye_tracking.image_utils import extract_image_region
 from post_processing_service.blink_detector import BlinkDetector
 from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
 from post_processing_service.face_alignment import CoordinateAlignmentModel
 from tracking.TrackingLogger import get_timestamp
-from tracking.tracking_utils import find_face_mxnet_resized
 from tracking_service.face_detector import MxnetDetectionModel
 from post_processing_service.head_pose import HeadPoseEstimator
 from post_processing_service.iris_localization import IrisLocalizationModel
@@ -44,8 +43,8 @@ class EyeTracker:
         self.blink_detector = BlinkDetector()
         self.face_detector = MxnetDetectionModel("../weights/16and32", 0, .6, gpu=gpu_ctx)
         self.face_alignment = CoordinateAlignmentModel('../weights/2d106det', 0, gpu=gpu_ctx)
-        self.iris_locator = IrisLocalizationModel("../weights/iris_landmark.tflite")
-        self.head_pose_estimator = HeadPoseEstimator("../weights/object_points.npy", width, height)
+        self.iris_locator = IrisLocalizationModel("../../weights/iris_landmark.tflite")
+        self.head_pose_estimator = HeadPoseEstimator("../../weights/object_points.npy", width, height)
 
     def __init_logger(self):
         self.__logger = ProcessingLogger()

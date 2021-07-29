@@ -3,7 +3,7 @@
 
 import sys
 import cv2
-from post_processing.image_utils import eye_aspect_ratio
+from post_processing.eye_tracking.image_utils import eye_aspect_ratio
 
 
 # TODO blink frequency and average blink duration und amplitude auch noch (mean unterschied zw. größten und

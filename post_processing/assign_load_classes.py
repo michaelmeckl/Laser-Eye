@@ -8,9 +8,10 @@ import sys
 import pandas as pd
 from collections import defaultdict
 from bisect import bisect_left
+from post_processing.post_processing_constants import download_folder
 
 
-data_folder = "./tracking_data_download"
+data_folder = download_folder
 start_events = ["started", "Game_Start"]
 end_events = ["ended", "Game_End"]
 
@@ -171,7 +172,7 @@ def split_image_folder(result_dict, participant_folder):
     # shutil.rmtree(os.path.join(data_folder, participant_folder, "extracted_images"))
 
 
-def main():
+def assign_load():
     for participant in os.listdir(data_folder):
         print(f"\n####################\nAssigning labels for participant {participant}\n####################\n")
         images_folder = os.path.join(data_folder, participant, "extracted_images")
@@ -214,4 +215,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    assign_load()
