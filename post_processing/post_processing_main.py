@@ -202,6 +202,7 @@ def process_images(eye_tracker):
     frame_count = 0
     start_time = time.time()
     for sub_folder in os.listdir(download_folder):
+        # TODO or directly use the labeled images subfolder instead of image_folder here?
         images_path = os.path.join(download_folder, sub_folder, image_folder)
         for image_file in os.listdir(images_path):
             current_frame = cv2.imread(os.path.join(images_path, image_file))
