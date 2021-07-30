@@ -175,7 +175,10 @@ def preprocess_train_test_data(data, is_test_data=False):
             path_to_image = os.path.join(category_path, img)
 
             try:
-                grayscale_img = cv2.imread(path_to_image, cv2.IMREAD_GRAYSCALE)
+                # grayscale_img = cv2.imread(path_to_image, cv2.IMREAD_GRAYSCALE)
+                # use this instead: (reason: https://stackoverflow.com/questions/37203970/opencv-grayscale-mode-vs-gray-color-conversion#comment103382641_37208336)
+                color_img = cv2.imread(path_to_image)
+                grayscale_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
                 cv2.imshow("grayscale", grayscale_img)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break

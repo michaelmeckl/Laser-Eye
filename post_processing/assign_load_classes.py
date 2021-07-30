@@ -5,11 +5,11 @@ import os
 import csv
 import shutil
 import sys
+import cv2
 import pandas as pd
 from collections import defaultdict
 from bisect import bisect_left
-from post_processing.post_processing_constants import download_folder
-
+from post_processing.post_processing_constants import download_folder, blur_threshold
 
 data_folder = download_folder
 start_events = ["started", "Game_Start"]
@@ -144,6 +144,13 @@ def find_image_event_indexes(df, all_images, sorted_img_dict):
     return result_dict
 
 
+def check_image_blur(image_path) -> float:
+    # Function taken from https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
+    image = cv2.imread(image_path)
+    gray_scale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return cv2.Laplacian(gray_scale, cv2.CV_64F).var()
+
+
 def split_image_folder(result_dict, participant_folder):
     """
     Param `result_dict` contains a list for each of the 3 load levels which contains all images from this participant
@@ -175,6 +182,12 @@ def split_image_folder(result_dict, participant_folder):
 
             for image_name in image_list:
                 original_image_path = os.path.join(data_folder, participant_folder, "extracted_images", image_name)
+                """
+                # skip images that are too blurred
+                focus_measure = check_image_blur(original_image_path)
+                if focus_measure <= blur_threshold:
+                    continue
+                """
                 new_image_path = os.path.join(difficulty_folder, image_name)
                 shutil.copy2(original_image_path, new_image_path)
                 # shutil.move(original_image_path, new_image_path)  # way faster than copy but changes the dir structure
@@ -232,4 +245,4 @@ def assign_load(participant_list=list[str]):
 
 
 if __name__ == "__main__":
-    assign_load(participant_list=["participant_6", "participant_7", "participant_8", "participant_9"])
+    assign_load(participant_list=["participant_4"])
