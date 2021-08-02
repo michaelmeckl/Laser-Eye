@@ -53,6 +53,7 @@ def debug_postprocess(enable_annotation, video_file_path):
 
         # press q to quit this loop
         if cv2.waitKey(1) & 0xFF == ord('q'):
+            eye_tracker.stop_tracking()
             cv2.destroyAllWindows()
             break
 
@@ -78,7 +79,7 @@ def process_images(eye_tracker):
 
                 frame_count += 1
                 cv2.imshow("processed_frame", processed_frame)
-                # press q to quit earlier
+                # press q to skip to next participant / load level
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
@@ -88,6 +89,7 @@ def process_images(eye_tracker):
     # print(f"[INFO]: FPS: {duration / frame_count:.3f}")
 
     # cleanup
+    eye_tracker.stop_tracking()
     cv2.destroyAllWindows()
     sys.exit(0)
 
@@ -96,21 +98,6 @@ def start_extracting_features(debug=False, enable_annotation=False, video_file_p
     if debug:
         debug_postprocess(enable_annotation, video_file_path)
     else:
-        """
-        frame_width, frame_height = None, None
-        # get size of first frame
-        for sub_folder in os.listdir(download_folder):
-            for image in os.listdir(os.path.join(download_folder, sub_folder, image_folder)):
-                # this is the first image
-                first_image = cv2.imread(os.path.join(download_folder, sub_folder, image_folder, image))
-                frame_width = first_image.shape[1]
-                frame_height = first_image.shape[0]
-                break  # we only want the first image, so we stop immediately
-
-        if frame_width is None:
-            print("first image doesn't seem to exist!")
-            return
-        """
         eye_tracker = EyeTracker(enable_annotation, debug_active=False)
         process_images(eye_tracker)
 
