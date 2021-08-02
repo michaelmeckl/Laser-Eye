@@ -64,7 +64,7 @@ def gray_blurred(img, blur_l, gray=False, blur="Median", Lab=False):
         return cv2.GaussianBlur(img, blur_l, 0)
 
 
-def detect_pupil(cropped_l_e_img, cropped_r_e_img=None):
+def detect_pupils(cropped_l_e_img, cropped_r_e_img=None):
     all_images_arr = []
 
     if cropped_r_e_img is None:

@@ -56,7 +56,7 @@ class ProcessingLogger:
         self.__log_data = self.__init_log()
         self.__processed_data = []
         self.__image_data = []
-        self.__start_scheduling()  # TODO scheduling still necessary when only post processing?
+        self.__start_scheduling()
 
     def __init_log(self):
         # create log folder if it doesn't exist yet

@@ -64,14 +64,16 @@ class BlinkDetector:
             self.last_ratio = ear
             return
 
-        cv2.putText(self.__current_frame, f"Blinks: {BlinkDetector.TOTAL_BLINKS}", (10, 30),
+        frame_copy = self.__current_frame.copy()
+        cv2.putText(frame_copy, f"Blinks: {BlinkDetector.TOTAL_BLINKS}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        cv2.putText(self.__current_frame, f"Onset: {self.onset}", (10, 60),
+        cv2.putText(frame_copy, f"Onset: {self.onset}", (10, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        cv2.putText(self.__current_frame, f"EAR: {ear:.2f}", (300, 30),
+        cv2.putText(frame_copy, f"EAR: {ear:.2f}", (300, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        cv2.putText(self.__current_frame, f"LAST EAR: {self.last_ratio:.2f}", (300, 60),
+        cv2.putText(frame_copy, f"LAST EAR: {self.last_ratio:.2f}", (300, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        cv2.imshow("blink detector", frame_copy)
 
         # if difference between last and current ear is larger than a treshold, blink onset
         # if current ear is far smaller than the last one, the eye closed up
@@ -116,10 +118,12 @@ class BlinkDetector:
         # -> if the user blinks with one eye only this might not be detected
         ear = (leftEAR + rightEAR) / 2.0
 
-        cv2.putText(self.__current_frame, "Blinks: {}".format(BlinkDetector.TOTAL_BLINKS), (10, 30),
+        frame_copy = self.__current_frame.copy()
+        cv2.putText(frame_copy, "Blinks: {}".format(BlinkDetector.TOTAL_BLINKS), (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        cv2.putText(self.__current_frame, "EAR: {:.2f}".format(ear), (300, 30),
+        cv2.putText(frame_copy, "EAR: {:.2f}".format(ear), (300, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        cv2.imshow("blink detector", frame_copy)
 
         # check to see if the eye aspect ratio is below the blink
         # threshold, and if so, increment the blink frame counter
@@ -144,12 +148,14 @@ class BlinkDetector:
         right_eye_ratio = self.__right_eye_width / self.__right_eye_height
         blinking_ratio = (left_eye_ratio + right_eye_ratio) / 2
 
-        cv2.putText(self.__current_frame, "Blinks: {}".format(BlinkDetector.TOTAL_BLINKS), (5, 30),
+        frame_copy = self.__current_frame.copy()
+        cv2.putText(frame_copy, "Blinks: {}".format(BlinkDetector.TOTAL_BLINKS), (5, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        cv2.putText(self.__current_frame, "New Blinks: {}".format(BlinkDetector.TOTAL_BLINKS_NEW), (5, 60),
+        cv2.putText(frame_copy, "New Blinks: {}".format(BlinkDetector.TOTAL_BLINKS_NEW), (5, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        cv2.putText(self.__current_frame, "Ratio: {:.2f}".format(blinking_ratio), (300, 30),
+        cv2.putText(frame_copy, "Ratio: {:.2f}".format(blinking_ratio), (300, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        cv2.imshow("blink detector", frame_copy)
 
         if left_eye_ratio > blinking_treshold and right_eye_ratio > blinking_treshold:
             BlinkDetector.BLINK_COUNTER_NEW += 1

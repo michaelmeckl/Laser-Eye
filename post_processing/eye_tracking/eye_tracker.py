@@ -5,7 +5,7 @@ import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from post_processing.eye_tracking.ProcessingLogger import ProcessingLogger, ProcessingData
-from post_processing.eye_tracking.image_utils import extract_image_region, find_pupil, improve_image, detect_pupil
+from post_processing.eye_tracking.image_utils import improve_image, detect_pupils
 from post_processing_service.blink_detector import BlinkDetector
 from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
 from post_processing_service.face_alignment import CoordinateAlignmentModel
@@ -89,7 +89,7 @@ class EyeTracker:
             self.blink_detector.set_current_values(self.__current_frame, self.__left_eye, self.__right_eye,
                                                    (self.__left_eye_width, self.__left_eye_height),
                                                    (self.__right_eye_width, self.__right_eye_height))
-            # self.blink_detector.detect_blinks()
+            self.blink_detector.detect_blinks()
 
             # extract different parts of the eye region and save them as pngs
             eye_region_bbox = self.__extract_eye_region()
@@ -99,11 +99,11 @@ class EyeTracker:
             # new_eye_region = improve_image(eye_region_bbox)
             # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
 
-            # find_pupil(left_eye_bbox, pupil_thresh=35, save=False)
-            detect_pupil(cropped_l_e_img=left_eye_bbox, cropped_r_e_img=right_eye_bbox)
+            detect_pupils(cropped_l_e_img=left_eye_bbox, cropped_r_e_img=right_eye_bbox)
 
         return self.__current_frame
 
+    """
     def show_face_region(self, bboxes):
         for face in bboxes:
             face_region = extract_image_region(self.__current_frame, face[0], face[1], face[2], face[3])
@@ -111,6 +111,7 @@ class EyeTracker:
                           color=(0, 0, 255))
             cv2.imshow("extracted", face_region)
             break  # break to take only the first face (in most cases there should be only one anyway)
+    """
 
     def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox):
         # fill dict with all relevant data so we don't have to pass all params manually
@@ -218,10 +219,6 @@ class EyeTracker:
         min_x_rect = int(round(min_x)) - padding
         max_x_rect = int(round(max_x)) + padding
 
-        if self.__annotation_enabled:
-            # visualize the squared eye region
-            self.__highlight_eye_region(region_center, min_x, max_x, min_y, max_y)
-
         eye_ROI = self.__current_frame[min_y_rect: max_y_rect, min_x_rect: max_x_rect]
         return eye_ROI
 
@@ -242,6 +239,7 @@ class EyeTracker:
         right_eye_y_min = int(round(right_eye_center[1] - self.__right_eye_width / 2)) - padding
         right_eye_y_max = int(round(right_eye_center[1] + self.__right_eye_width / 2)) + padding
 
+        """
         if self.__annotation_enabled:
             frame_copy = self.__current_frame.copy()
             # draw rectangles around both eyes
@@ -250,7 +248,7 @@ class EyeTracker:
             cv2.rectangle(frame_copy, (right_eye_x_min, right_eye_y_min),
                           (right_eye_x_max, right_eye_y_max), (255, 0, 0))
             cv2.imshow("extracted eyes", frame_copy)
-
+        """
         left_eye_box = self.__current_frame[left_eye_y_min: left_eye_y_max, left_eye_x_min: left_eye_x_max]
         right_eye_box = self.__current_frame[right_eye_y_min: right_eye_y_max, right_eye_x_min: right_eye_x_max]
         return left_eye_box, right_eye_box
@@ -260,23 +258,6 @@ class EyeTracker:
         for mark in self.__landmarks.reshape(-1, 2).astype(int):
             cv2.circle(frame_copy, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
         cv2.imshow("face landmarks", frame_copy)
-
-    def __highlight_eye_region(self, region_center, min_x, max_x, min_y, max_y):
-        frame_copy = self.__current_frame.copy()
-        # draw circle at eye region center (the middle point between both eyes)
-        cv2.circle(frame_copy, (int(region_center[0]), int(region_center[1])),
-                   5, color=(0, 255, 0))
-        # draw a rectangle around the whole eye region
-        cv2.rectangle(frame_copy, (min_x.astype(int), min_y.astype(int)),
-                      (max_x.astype(int), max_y.astype(int)), (0, 255, 255), 3)
-
-        # draw a square around the eye region
-        center_y = int(region_center[1])
-        eye_region_width = max_x - min_x
-        min_y_rect = center_y - int(eye_region_width / 2)
-        max_y_rect = center_y + int(eye_region_width / 2)
-        cv2.rectangle(frame_copy, (int(min_x), min_y_rect), (int(max_x), max_y_rect), (0, 222, 222), 2)
-        cv2.imshow("highlighted eye_region", frame_copy)
 
     def __track_gaze(self):
         # landmarks[[35, 89]] and landmarks[[39, 93]] are the start and end marks
@@ -384,11 +365,8 @@ class EyeTracker:
 
         return theta, pha, delta.T
 
-    def __draw_gaze(self, offset, blink_thd=0.22, arrow_color=(0, 125, 255), copy=True):
-        src = self.__current_frame
-        if copy:
-            src = src.copy()  # make a copy of the current frame
-
+    def __draw_gaze(self, offset, blink_thd=0.22, arrow_color=(0, 125, 255)):
+        src = self.__current_frame.copy()
         # show gaze direction as arrows
         if self.__left_eye_height / self.__left_eye_width > blink_thd:
             cv2.arrowedLine(src, tuple(self.__pupils[0].astype(int)),
@@ -399,4 +377,4 @@ class EyeTracker:
             cv2.arrowedLine(src, tuple(self.__pupils[1].astype(int)),
                             tuple((offset + self.__pupils[1]).astype(int)),
                             arrow_color, 2)
-        return src
+        cv2.imshow("gaze", src)
