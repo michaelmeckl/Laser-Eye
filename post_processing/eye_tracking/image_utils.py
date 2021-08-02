@@ -419,16 +419,6 @@ def preprocess_frame(frame: ndarray, kernel_size=5, keep_dim=True) -> ndarray:
     return blurred_image
 
 
-def extract_image_region(image, x_start, y_start, x_end, y_end):
-    # make sure the bounding box coordinates are located in the image's bounding box; else take the outermost values
-    startX = max(0, x_start)
-    startY = max(0, y_start)
-    endX = min(x_end, image.shape[1])
-    endY = min(y_end, image.shape[0])
-    # round to integer so we can extract a region from the original image
-    return image[int(round(startY)): int(round(endY)), int(round(startX)): int(round(endX))]
-
-
 def convert_to_bytes(image):
     data = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     return bytes(data)

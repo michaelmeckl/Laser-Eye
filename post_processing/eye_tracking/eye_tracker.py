@@ -11,6 +11,7 @@ from post_processing_service.saccade_fixation_detector import SaccadeFixationDet
 from post_processing_service.face_alignment import CoordinateAlignmentModel
 from tracking.TrackingLogger import get_timestamp
 from tracking_service.face_detector import MxnetDetectionModel
+from tracking.tracking_utils import extract_image_region
 from post_processing_service.head_pose import HeadPoseEstimator
 from post_processing_service.iris_localization import IrisLocalizationModel
 
@@ -213,13 +214,11 @@ class EyeTracker:
         if self.__debug:
             print(f"Eye region center is at {region_center}")
 
-        padding = 20
-        min_y_rect = int(round(min_y)) - padding
-        max_y_rect = int(round(max_y)) + padding
-        min_x_rect = int(round(min_x)) - padding
-        max_x_rect = int(round(max_x)) + padding
-
-        eye_ROI = self.__current_frame[min_y_rect: max_y_rect, min_x_rect: max_x_rect]
+        min_y_rect = int(round(min_y))
+        max_y_rect = int(round(max_y))
+        min_x_rect = int(round(min_x))
+        max_x_rect = int(round(max_x))
+        eye_ROI = extract_image_region(self.__current_frame, min_x_rect, min_y_rect, max_x_rect, max_y_rect, padding=20)
         return eye_ROI
 
     def __extract_eyes(self):
@@ -228,16 +227,15 @@ class EyeTracker:
         """
         left_eye_center, right_eye_center = self.__eye_centers[0], self.__eye_centers[1]
 
-        padding = 15
-        left_eye_x_min = int(round(left_eye_center[0] - self.__left_eye_width / 2)) - padding
-        left_eye_x_max = int(round(left_eye_center[0] + self.__left_eye_width / 2)) + padding
-        left_eye_y_min = int(round(left_eye_center[1] - self.__left_eye_width / 2)) - padding
-        left_eye_y_max = int(round(left_eye_center[1] + self.__left_eye_width / 2)) + padding
+        left_eye_x_min = int(round(left_eye_center[0] - self.__left_eye_width / 2))
+        left_eye_x_max = int(round(left_eye_center[0] + self.__left_eye_width / 2))
+        left_eye_y_min = int(round(left_eye_center[1] - self.__left_eye_width / 2))
+        left_eye_y_max = int(round(left_eye_center[1] + self.__left_eye_width / 2))
 
-        right_eye_x_min = int(round(right_eye_center[0] - self.__right_eye_width / 2)) - padding
-        right_eye_x_max = int(round(right_eye_center[0] + self.__right_eye_width / 2)) + padding
-        right_eye_y_min = int(round(right_eye_center[1] - self.__right_eye_width / 2)) - padding
-        right_eye_y_max = int(round(right_eye_center[1] + self.__right_eye_width / 2)) + padding
+        right_eye_x_min = int(round(right_eye_center[0] - self.__right_eye_width / 2))
+        right_eye_x_max = int(round(right_eye_center[0] + self.__right_eye_width / 2))
+        right_eye_y_min = int(round(right_eye_center[1] - self.__right_eye_width / 2))
+        right_eye_y_max = int(round(right_eye_center[1] + self.__right_eye_width / 2))
 
         """
         if self.__annotation_enabled:
@@ -249,8 +247,14 @@ class EyeTracker:
                           (right_eye_x_max, right_eye_y_max), (255, 0, 0))
             cv2.imshow("extracted eyes", frame_copy)
         """
-        left_eye_box = self.__current_frame[left_eye_y_min: left_eye_y_max, left_eye_x_min: left_eye_x_max]
-        right_eye_box = self.__current_frame[right_eye_y_min: right_eye_y_max, right_eye_x_min: right_eye_x_max]
+
+        # extract region and add some padding so we get a little bit more; also make sure the extracted region +
+        # padding still lies in the image bounding box
+        padding = 15
+        left_eye_box = extract_image_region(self.__current_frame, left_eye_x_min, left_eye_y_min, left_eye_x_max,
+                                            left_eye_y_max, padding=padding)
+        right_eye_box = extract_image_region(self.__current_frame, right_eye_x_min, right_eye_y_min, right_eye_x_max,
+                                             right_eye_y_max, padding=padding)
         return left_eye_box, right_eye_box
 
     def __draw_face_landmarks(self):
