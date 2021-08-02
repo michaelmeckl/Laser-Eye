@@ -5,7 +5,7 @@ import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from post_processing.eye_tracking.ProcessingLogger import ProcessingLogger, ProcessingData
-from post_processing.eye_tracking.image_utils import extract_image_region
+from post_processing.eye_tracking.image_utils import extract_image_region, find_pupil, improve_image, detect_pupil
 from post_processing_service.blink_detector import BlinkDetector
 from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
 from post_processing_service.face_alignment import CoordinateAlignmentModel
@@ -19,9 +19,9 @@ from post_processing_service.iris_localization import IrisLocalizationModel
 """
 - webcam images of eyes and pupils ✔
 - pupil positions  ✔
-- pupil sizes (diameter)
-- average pupilsize; peak pupil size
-- fixations and saccades (count, mean, std)   ❌ # TODO
+- pupil sizes (diameter)  ❌ TODO
+- average pupilsize; peak pupil size  ❌ TODO
+- fixations and saccades (count, mean, std)   ❌ TODO
 - blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
 """
 
@@ -29,11 +29,9 @@ from post_processing_service.iris_localization import IrisLocalizationModel
 # noinspection PyAttributeOutsideInit
 class EyeTracker:
 
-    def __init__(self, width: int, height: int, enable_annotation=False, show_video=True,
-                 debug_active=False, gpu_ctx=-1):
+    def __init__(self, enable_annotation=False, debug_active=False, gpu_ctx=-1):
         self.__debug = debug_active
         self.__annotation_enabled = enable_annotation
-        self.__show_video = show_video
 
         self.__screenWidth, self.__screenHeight = pyautogui.size()
         self.gaze_left, self.gaze_right = None, None
@@ -47,13 +45,17 @@ class EyeTracker:
         self.face_detector = MxnetDetectionModel(f"{weights_path / '16and32'}", 0, .6, gpu=gpu_ctx)
         self.face_alignment = CoordinateAlignmentModel(f"{weights_path / '2d106det'}", 0, gpu=gpu_ctx)
         self.iris_locator = IrisLocalizationModel(f"{weights_path / 'iris_landmark.tflite'}")
-        self.head_pose_estimator = HeadPoseEstimator(f"{weights_path / 'object_points.npy'}", width, height)
+        self.head_pose_estimator = HeadPoseEstimator(f"{weights_path / 'object_points.npy'}")
 
     def __init_logger(self):
         self.__logger = ProcessingLogger()
         # use the name of the enum as dict key as otherwise it would always generate a new key the next time
         # and would therefore always append new columns to our pandas dataframe!
         self.__tracked_data = {key.name: None for key in ProcessingData}
+
+    def set_camera_matrix(self, frame_width, frame_height):
+        # print(f"frame width: {frame_width}, frame height: {frame_height}")
+        self.head_pose_estimator.set_camera_matrix(frame_width, frame_height)
 
     def process_current_frame(self, frame: np.ndarray):
         """
@@ -62,19 +64,20 @@ class EyeTracker:
         """
         # TODO preprocess the frame first?
         # processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
-
-        # face_region = find_face_mxnet_resized(self.face_detector, frame) if frame is not None else None
         self.__current_frame = frame
 
         bboxes = self.face_detector.detect(self.__current_frame)
-        # self.show_face_region(bboxes)
         for landmarks in self.face_alignment.get_landmarks(self.__current_frame, bboxes, calibrate=True):
             self.__landmarks = landmarks
+
             # calculate head pose
+            self.set_camera_matrix(frame_width=frame.shape[1], frame_height=frame.shape[0])
             _, euler_angle = self.head_pose_estimator.get_head_pose(landmarks)
             self.__pitch, self.__yaw, self.__roll = euler_angle[:, 0]
 
+            # calculate eye size, iris and pupil positions
             self.__get_eye_features()
+
             self.__track_gaze()
             # self.__calculate_gaze_point()
 
@@ -86,19 +89,18 @@ class EyeTracker:
             self.blink_detector.set_current_values(self.__current_frame, self.__left_eye, self.__right_eye,
                                                    (self.__left_eye_width, self.__left_eye_height),
                                                    (self.__right_eye_width, self.__right_eye_height))
-            self.blink_detector.detect_blinks()
+            # self.blink_detector.detect_blinks()
 
             # extract different parts of the eye region and save them as pngs
             eye_region_bbox = self.__extract_eye_region()
             left_eye_bbox, right_eye_bbox = self.__extract_eyes()
-            left_pupil_bbox, right_pupil_bbox = self.__extract_pupils()
-            self.__log(eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox)
+            self.__log(eye_region_bbox, left_eye_bbox, right_eye_bbox)
 
-            # find_pupil(left_eye_bbox, save=True)
+            # new_eye_region = improve_image(eye_region_bbox)
+            # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
 
-        if self.__show_video:
-            # show current annotated frame
-            cv2.imshow('res', self.__current_frame)
+            # find_pupil(left_eye_bbox, pupil_thresh=35, save=False)
+            detect_pupil(cropped_l_e_img=left_eye_bbox, cropped_r_e_img=right_eye_bbox)
 
         return self.__current_frame
 
@@ -110,7 +112,7 @@ class EyeTracker:
             cv2.imshow("extracted", face_region)
             break  # break to take only the first face (in most cases there should be only one anyway)
 
-    def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_pupil_bbox, right_pupil_bbox):
+    def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox):
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
             ProcessingData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
@@ -135,14 +137,9 @@ class EyeTracker:
         log_timestamp = get_timestamp()
         self.__logger.log_frame_data(frame_id=log_timestamp, data=self.__tracked_data)
 
-        # new_eye_region = improve_image(eye_region_bbox)
-        # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, log_timestamp)
-
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
         self.__logger.log_image("eyes", "left_eye", left_eye_bbox, log_timestamp)
         self.__logger.log_image("eyes", "right_eye", right_eye_bbox, log_timestamp)
-        self.__logger.log_image("pupils", "pupil_left", left_pupil_bbox, log_timestamp)
-        self.__logger.log_image("pupils", "pupil_right", right_pupil_bbox, log_timestamp)
 
     def stop_tracking(self):
         self.__logger.stop_scheduling()
@@ -168,12 +165,12 @@ class EyeTracker:
 
         self.__iris_left = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[1], self.__eye_centers[0])
         pupil_left, self.__iris_left_radius = self.iris_locator.draw_pupil(
-            self.__iris_left, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
-        )
+            self.__iris_left, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1)
+
         self.__iris_right = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[0], self.__eye_centers[1])
         pupil_right, self.__iris_right_radius = self.iris_locator.draw_pupil(
-            self.__iris_right, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1
-        )
+            self.__iris_right, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1)
+
         self.__pupils = np.array([pupil_left, pupil_right])
 
         if self.__debug:
@@ -211,18 +208,17 @@ class EyeTracker:
         if self.__debug:
             print(f"Eye region center is at {region_center}")
 
-        # calculate a squared bbox around the eye region as we need square images later for our CNN;
-        # we consider only the region width as the eyes I know are usually far wider than large
-        center_y = int(region_center[1])
-        eye_region_width = max_x - min_x
-        min_y_rect = int(round(center_y - eye_region_width / 2))
-        max_y_rect = int(round(center_y + eye_region_width / 2))
+        padding = 20
+        min_y_rect = int(round(min_y)) - padding
+        max_y_rect = int(round(max_y)) + padding
+        min_x_rect = int(round(min_x)) - padding
+        max_x_rect = int(round(max_x)) + padding
 
         if self.__annotation_enabled:
             # visualize the squared eye region
-            self.__highlight_eye_region(self.__current_frame, region_center, min_x, max_x, min_y, max_y)
+            self.__highlight_eye_region(region_center, min_x, max_x, min_y, max_y)
 
-        eye_ROI = self.__current_frame[min_y_rect: max_y_rect, int(round(min_x)): int(round(max_x))]
+        eye_ROI = self.__current_frame[min_y_rect: max_y_rect, min_x_rect: max_x_rect]
         return eye_ROI
 
     def __extract_eyes(self):
@@ -231,67 +227,43 @@ class EyeTracker:
         """
         left_eye_center, right_eye_center = self.__eye_centers[0], self.__eye_centers[1]
 
-        left_eye_x_min = int(round(left_eye_center[0] - self.__left_eye_width / 2))
-        left_eye_x_max = int(round(left_eye_center[0] + self.__left_eye_width / 2))
-        left_eye_y_min = int(round(left_eye_center[1] - self.__left_eye_width / 2))
-        left_eye_y_max = int(round(left_eye_center[1] + self.__left_eye_width / 2))
+        padding = 15
+        left_eye_x_min = int(round(left_eye_center[0] - self.__left_eye_width / 2)) - padding
+        left_eye_x_max = int(round(left_eye_center[0] + self.__left_eye_width / 2)) + padding
+        left_eye_y_min = int(round(left_eye_center[1] - self.__left_eye_width / 2)) - padding
+        left_eye_y_max = int(round(left_eye_center[1] + self.__left_eye_width / 2)) + padding
 
-        right_eye_x_min = int(round(right_eye_center[0] - self.__right_eye_width / 2))
-        right_eye_x_max = int(round(right_eye_center[0] + self.__right_eye_width / 2))
-        right_eye_y_min = int(round(right_eye_center[1] - self.__right_eye_width / 2))
-        right_eye_y_max = int(round(right_eye_center[1] + self.__right_eye_width / 2))
+        right_eye_x_min = int(round(right_eye_center[0] - self.__right_eye_width / 2)) - padding
+        right_eye_x_max = int(round(right_eye_center[0] + self.__right_eye_width / 2)) + padding
+        right_eye_y_min = int(round(right_eye_center[1] - self.__right_eye_width / 2)) - padding
+        right_eye_y_max = int(round(right_eye_center[1] + self.__right_eye_width / 2)) + padding
 
         if self.__annotation_enabled:
+            frame_copy = self.__current_frame.copy()
             # draw rectangles around both eyes
-            cv2.rectangle(self.__current_frame, (left_eye_x_min, left_eye_y_min),
+            cv2.rectangle(frame_copy, (left_eye_x_min, left_eye_y_min),
                           (left_eye_x_max, left_eye_y_max), (0, 0, 255))
-            cv2.rectangle(self.__current_frame, (right_eye_x_min, right_eye_y_min),
+            cv2.rectangle(frame_copy, (right_eye_x_min, right_eye_y_min),
                           (right_eye_x_max, right_eye_y_max), (255, 0, 0))
+            cv2.imshow("extracted eyes", frame_copy)
 
         left_eye_box = self.__current_frame[left_eye_y_min: left_eye_y_max, left_eye_x_min: left_eye_x_max]
         right_eye_box = self.__current_frame[right_eye_y_min: right_eye_y_max, right_eye_x_min: right_eye_x_max]
         return left_eye_box, right_eye_box
 
-    def __extract_pupils(self):
-        """
-        Get both pupils as separate (square-sized) images.
-        """
-        left_pupil, right_pupil = self.__pupils[0], self.__pupils[1]
-
-        # calculate bboxes for both pupils separately
-        left_pupil_left_x = int(left_pupil[0] - self.__iris_left_radius)
-        left_pupil_right_x = int(left_pupil[0] + self.__iris_left_radius)
-        left_pupil_min_y = int(left_pupil[1] - self.__iris_left_radius)
-        left_pupil_max_y = int(left_pupil[1] + self.__iris_left_radius)
-
-        right_pupil_left_x = int(right_pupil[0] - self.__iris_left_radius)
-        right_pupil_right_x = int(right_pupil[0] + self.__iris_left_radius)
-        right_pupil_min_y = int(right_pupil[1] - self.__iris_left_radius)
-        right_pupil_max_y = int(right_pupil[1] + self.__iris_left_radius)
-
-        if self.__annotation_enabled:
-            # draw rectangles around both pupils
-            cv2.rectangle(self.__current_frame, (left_pupil_left_x, left_pupil_min_y),
-                          (left_pupil_right_x, left_pupil_max_y), (0, 120, 222), 2)
-            cv2.rectangle(self.__current_frame, (right_pupil_left_x, right_pupil_min_y),
-                          (right_pupil_right_x, right_pupil_max_y), (0, 120, 222), 2)
-
-        left_pupil_bbox = self.__current_frame[left_pupil_min_y: left_pupil_max_y,
-                                               left_pupil_left_x: left_pupil_right_x]
-        right_pupil_bbox = self.__current_frame[right_pupil_min_y: right_pupil_max_y,
-                                                right_pupil_left_x: right_pupil_right_x]
-        return left_pupil_bbox, right_pupil_bbox
-
     def __draw_face_landmarks(self):
+        frame_copy = self.__current_frame.copy()  # make a copy so we don't edit the original frame
         for mark in self.__landmarks.reshape(-1, 2).astype(int):
-            cv2.circle(self.__current_frame, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
+            cv2.circle(frame_copy, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
+        cv2.imshow("face landmarks", frame_copy)
 
-    def __highlight_eye_region(self, frame, region_center, min_x, max_x, min_y, max_y):
+    def __highlight_eye_region(self, region_center, min_x, max_x, min_y, max_y):
+        frame_copy = self.__current_frame.copy()
         # draw circle at eye region center (the middle point between both eyes)
-        cv2.circle(frame, (int(region_center[0]), int(region_center[1])),
+        cv2.circle(frame_copy, (int(region_center[0]), int(region_center[1])),
                    5, color=(0, 255, 0))
         # draw a rectangle around the whole eye region
-        cv2.rectangle(frame, (min_x.astype(int), min_y.astype(int)),
+        cv2.rectangle(frame_copy, (min_x.astype(int), min_y.astype(int)),
                       (max_x.astype(int), max_y.astype(int)), (0, 255, 255), 3)
 
         # draw a square around the eye region
@@ -299,7 +271,8 @@ class EyeTracker:
         eye_region_width = max_x - min_x
         min_y_rect = center_y - int(eye_region_width / 2)
         max_y_rect = center_y + int(eye_region_width / 2)
-        cv2.rectangle(frame, (int(min_x), min_y_rect), (int(max_x), max_y_rect), (0, 222, 222), 2)
+        cv2.rectangle(frame_copy, (int(min_x), min_y_rect), (int(max_x), max_y_rect), (0, 222, 222), 2)
+        cv2.imshow("highlighted eye_region", frame_copy)
 
     def __track_gaze(self):
         # landmarks[[35, 89]] and landmarks[[39, 93]] are the start and end marks
@@ -400,12 +373,14 @@ class EyeTracker:
 
         if self.__annotation_enabled:
             # highlight pupil centers
-            cv2.circle(frame, tuple(pupils[0].astype(int)), 2, (0, 255, 255), -1)
-            cv2.circle(frame, tuple(pupils[1].astype(int)), 2, (0, 255, 255), -1)
+            frame_copy = frame.copy()
+            cv2.circle(frame_copy, tuple(pupils[0].astype(int)), 1, (0, 255, 255), -1)
+            cv2.circle(frame_copy, tuple(pupils[1].astype(int)), 1, (0, 255, 255), -1)
+            cv2.imshow("pupil centers", frame_copy)
 
         return theta, pha, delta.T
 
-    def __draw_gaze(self, offset, blink_thd=0.22, arrow_color=(0, 125, 255), copy=False):
+    def __draw_gaze(self, offset, blink_thd=0.22, arrow_color=(0, 125, 255), copy=True):
         src = self.__current_frame
         if copy:
             src = src.copy()  # make a copy of the current frame

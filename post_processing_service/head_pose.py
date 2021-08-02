@@ -5,15 +5,17 @@ import sys
 
 class HeadPoseEstimator:
 
-    def __init__(self, filepath, W, H) -> None:
+    def __init__(self, filepath) -> None:
         _predefined = np.load(filepath, allow_pickle=True)
         self.object_pts, self.r_vec, self.t_vec = _predefined
-        self.cam_matrix = np.array([[W, 0, W / 2.0],
-                                    [0, W, H / 2.0],
-                                    [0, 0, 1]])
 
         self.origin_width = 144.76935
         self.origin_height = 139.839
+
+    def set_camera_matrix(self, W, H):
+        self.cam_matrix = np.array([[W, 0, W / 2.0],
+                                    [0, W, H / 2.0],
+                                    [0, 0, 1]])
 
     def get_head_pose(self, shape):
         if len(shape) == 68:

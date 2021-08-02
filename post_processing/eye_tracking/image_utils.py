@@ -16,8 +16,9 @@ def improve_image(image):
     Different operations to improve the quality of the resized image.
     fastNlMeansDenoising works best but takes for ever (1 or 2 seconds); gauß blur and erode/dilate work quite well too
     """
-    resized_image = resize_image(image, size=800)
-    cv2.imshow("im_resized", resized_image)
+    # resized_image = resize_image(image, size=500)
+    # cv2.imshow("im_resized", resized_image)
+    resized_image = image.copy()
 
     # denoised = cv2.fastNlMeansDenoising(resized_image, None, 10, 7, 21)
     # cv2.fastNlMeansDenoisingMulti()  # for image sequence
@@ -26,10 +27,6 @@ def improve_image(image):
     kernel_size = 5
     blurred_image = cv2.GaussianBlur(resized_image, (kernel_size, kernel_size), 0)
     cv2.imshow("im_blurred_5", blurred_image)
-
-    kernel_size = 3
-    blurred_image2 = cv2.GaussianBlur(resized_image, (kernel_size, kernel_size), 0)
-    cv2.imshow("im_blurred_3", blurred_image2)
 
     new_frame = cv2.bilateralFilter(resized_image, 10, 15, 15)
     cv2.imshow("im_bil", new_frame)
@@ -43,10 +40,98 @@ def improve_image(image):
     new_frame = cv2.dilate(thresh, None, iterations=4)
     cv2.imshow("im_erode_dilate", new_frame)
     """
-    # return new_frame
+    return new_frame
 
 
-def __connected_component_threshold(image):
+def historgramEqualization(img, clahe=False):
+    if clahe:
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        equ_img = clahe.apply(img)
+    else:
+        equ_img = cv2.equalizeHist(img)
+    return equ_img
+
+
+def gray_blurred(img, blur_l, gray=False, blur="Median", Lab=False):
+    if gray:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if Lab:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)[:, :, 1]
+
+    if blur == "Median":
+        return cv2.medianBlur(img, blur_l)
+    elif blur == "gaussian":
+        return cv2.GaussianBlur(img, blur_l, 0)
+
+
+def detect_pupil(cropped_l_e_img, cropped_r_e_img=None):
+    all_images_arr = []
+
+    if cropped_r_e_img is None:
+        all_images_arr.append(cropped_l_e_img)
+        img = gray_blurred(cropped_l_e_img, 19, gray=True)
+        all_images_arr.append(img)
+        blurred_img = historgramEqualization(img, clahe=False)
+        all_images_arr.append(blurred_img)
+        # Left Eye
+        _, threshold_l = cv2.threshold(blurred_img, 5, 255, cv2.THRESH_BINARY_INV)
+        all_images_arr.append(threshold_l)
+        contours, _ = cv2.findContours(threshold_l, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
+        cnt = contours[0]
+        center_l, radius_l = cv2.minEnclosingCircle(cnt)
+
+        if center_l and radius_l:
+            cv2.circle(cropped_l_e_img, tuple(np.array([center_l[0], center_l[1]]).astype(int)),
+                       int(round(radius_l)), (255, 34, 34))
+
+        return (center_l, radius_l), all_images_arr
+
+    else:
+        cropped_l_e_img = cv2.cvtColor(cropped_l_e_img, cv2.COLOR_BGR2GRAY)
+        cropped_r_e_img = cv2.cvtColor(cropped_r_e_img, cv2.COLOR_BGR2GRAY)
+        blurred_img_l_g = gray_blurred(cropped_l_e_img, 19, gray=False)
+        blurred_img_r_g = gray_blurred(cropped_r_e_img, 19, gray=False)
+
+        blurred_img_l = historgramEqualization(blurred_img_l_g, clahe=False)
+        blurred_img_r = historgramEqualization(blurred_img_r_g, clahe=False)
+
+        # Left Eye
+        _, threshold_l = cv2.threshold(blurred_img_l, 5, 255, cv2.THRESH_BINARY_INV)
+        contours, _ = cv2.findContours(threshold_l, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
+        cnt = contours[0]
+        center_l, radius_l = cv2.minEnclosingCircle(cnt)
+
+        # Right Eye
+        _, threshold_r = cv2.threshold(blurred_img_r, 5, 255, cv2.THRESH_BINARY_INV)
+        contours, _ = cv2.findContours(threshold_r, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
+        cnt = contours[0]
+        center_r, radius_r = cv2.minEnclosingCircle(cnt)
+
+        if center_l and radius_l:
+            cv2.circle(cropped_l_e_img, tuple(np.array([center_l[0], center_l[1]]).astype(int)),
+                       int(round(radius_l)), (255, 34, 34))
+            cv2.imshow('left eye', cropped_l_e_img)
+        if center_r and radius_r:
+            cv2.circle(cropped_r_e_img, tuple(np.array([center_r[0], center_r[1]]).astype(int)),
+                       int(round(radius_r)), (255, 34, 34))
+            cv2.imshow('right eye', cropped_r_e_img)
+
+        all_images_arr.append(cropped_l_e_img)
+        all_images_arr.append(blurred_img_l_g)
+        all_images_arr.append(blurred_img_l)
+        all_images_arr.append(threshold_l)
+
+        all_images_arr.append(cropped_r_e_img)
+        all_images_arr.append(blurred_img_r_g)
+        all_images_arr.append(blurred_img_r)
+        all_images_arr.append(threshold_r)
+        return ((center_l, radius_l), (center_r, radius_r)), all_images_arr
+
+
+def connected_component_threshold(image):
     """
     Taken from this stackoverflow answer: https://stackoverflow.com/a/52006700
     """
@@ -100,13 +185,15 @@ def find_pupil(frame, pupil_thresh=30, save=False):
     output = cv2.bitwise_and(image, image, mask=thresh)
 
     img_contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    # cv2.drawContours(image, img_contours, -1, (0, 0, 255), thickness=1)
+    if img_contours:
+        cv2.drawContours(image, img_contours, -1, (0, 0, 255), thickness=1)
 
     for (i, c) in enumerate(img_contours):
         (x, y, w, h) = cv2.boundingRect(c)
         cv2.rectangle(image, (x, y), (x + w, y + h), (255, 34, 34))
         # ((cX, cY), radius) = cv2.minEnclosingCircle(c)
         # cv2.circle(image, (int(cX), int(cY)), int(radius), (0, 0, 255), 1)
+        break  # only the first
 
     # show the images
     cv2.imshow("images", np.hstack([image, output]))
@@ -118,6 +205,7 @@ def increase_image_contrast(image):
     kernel = np.ones((3, 3), np.uint8)
     new_frame = cv2.bilateralFilter(image, 10, 15, 15)
     new_frame = cv2.erode(new_frame, kernel, iterations=3)
+    cv2.imshow("increased contrast", image)
     return new_frame
 
 
@@ -136,11 +224,12 @@ def circler(im):
 
     print(f"Contours:\n{contours}")
 
-    # ratio, kernel_size = 3, 3
-    # low_threshold = 50
-    # detected_edges = cv2.Canny(thres, low_threshold, low_threshold * ratio, kernel_size)
-    #
-    # apply_hough_circles(thres)
+    ratio, kernel_size = 3, 3
+    low_threshold = 50
+    detected_edges = cv2.Canny(thres, low_threshold, low_threshold * ratio, kernel_size)
+
+    result = apply_hough_circles(thres)
+    cv2.imshow('hough circles', result)
 
     # try to extract contours of iris and pupil assuming no other contours have been detected
     # TODO this assumption would only work if given an image with only the eye and round pupils
@@ -165,7 +254,7 @@ def circler(im):
         if 0.2 < ratio < 0.8:
             return ratio, radius_i, center_i, radius_p, center_p
 
-    # cv2.imshow('edges', detected_edges)
+    cv2.imshow('edges', detected_edges)
     cv2.imshow('thres', thres)
     cv2.imshow('img', im)
 
@@ -184,7 +273,7 @@ def detect_iris(eye_frame):
     canny_output = cv2.Canny(iris_frame, 70, 70 * 2)
 
     contours, hierarchy = cv2.findContours(canny_output, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-    # contours = sorted(contours, key=cv2.contourArea)
+    contours = sorted(contours, key=cv2.contourArea)
 
     drawing = np.zeros((canny_output.shape[0], canny_output.shape[1], 3), dtype=np.uint8)
     for i in range(len(contours)):
@@ -220,7 +309,7 @@ def apply_edge_detection(frame):
     return detected_edges
 
 
-def apply_automatic_canny(frame, show_edges=False):
+def apply_automatic_canny(frame, show_edges=True):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     edgeMap = imutils.auto_canny(gray)
     if show_edges:

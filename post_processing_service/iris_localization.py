@@ -84,14 +84,18 @@ class IrisLocalizationModel:
         radius = int(max(radius))
 
         if annotations_on:
-            cv2.circle(frame, tuple(pupil), radius, color, thickness, cv2.LINE_AA)
+            frame_copy = frame.copy()
+            cv2.circle(frame_copy, tuple(pupil), radius, color, thickness, cv2.LINE_AA)
+            cv2.imshow("pupils", frame_copy)
 
         return pupil, radius
 
     @staticmethod
     def draw_eye_markers(landmarks, frame, close=True, color=(0, 255, 255), thickness=2):
         landmarks = landmarks.astype(np.int32)
-        cv2.polylines(frame, landmarks, close, color, thickness, cv2.LINE_AA)
+        frame_copy = frame.copy()
+        cv2.polylines(frame_copy, landmarks, close, color, thickness, cv2.LINE_AA)
+        cv2.imshow("eye markers", frame_copy)
 
 
 if __name__ == "__main__":
