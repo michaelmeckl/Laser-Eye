@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
+import pathlib
+import py7zr
 from post_processing.download_data import download_data_from_server
 from post_processing.process_downloaded_data import extract_data
 from post_processing.assign_load_classes import assign_load

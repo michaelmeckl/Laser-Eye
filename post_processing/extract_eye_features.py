@@ -8,7 +8,7 @@ import time
 import cv2
 from datetime import datetime
 from post_processing.eye_tracking.eye_tracker import EyeTracker
-from post_processing.post_processing_constants import download_folder, labeled_images_folder
+from post_processing.post_processing_constants import download_folder, labeled_images_folder, image_folder
 
 
 # TODO Lösungsansätze für Problem mit unterschiedlichen Bilddimensionen pro Frame:
@@ -58,7 +58,7 @@ def debug_postprocess(enable_annotation, video_file_path):
             break
 
 
-def process_images(eye_tracker):
+def process_images(eye_tracker, use_all_images=True):
     # for easier debugging; select the participants that should be processed; pass empty list to process all
     participants = ["participant_3"]
 
@@ -69,12 +69,11 @@ def process_images(eye_tracker):
         if len(participants) > 0 and sub_folder not in participants:
             continue
 
-        images_path = os.path.join(download_folder, sub_folder, labeled_images_folder)
-        for load_folder in os.listdir(images_path):
-            print(f"Processing images for participant {sub_folder}; current difficulty: {load_folder}")
-
-            for image_file in os.listdir(os.path.join(images_path, load_folder)):
-                current_frame = cv2.imread(os.path.join(images_path, load_folder, image_file))
+        if use_all_images:
+            # process all extracted images, even the ones that aren't useful for the machine learning model
+            images_path = os.path.join(download_folder, sub_folder, image_folder)
+            for image_file in os.listdir(images_path):
+                current_frame = cv2.imread(os.path.join(images_path, image_file))
                 processed_frame = eye_tracker.process_current_frame(current_frame)
 
                 frame_count += 1
@@ -82,6 +81,21 @@ def process_images(eye_tracker):
                 # press q to skip to next participant / load level
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
+        else:
+            # only process the labeled images, that can be associated with one of the load levels
+            images_path = os.path.join(download_folder, sub_folder, labeled_images_folder)
+            for load_folder in os.listdir(images_path):
+                print(f"Processing images for participant {sub_folder}; current difficulty: {load_folder}")
+
+                for image_file in os.listdir(os.path.join(images_path, load_folder)):
+                    current_frame = cv2.imread(os.path.join(images_path, load_folder, image_file))
+                    processed_frame = eye_tracker.process_current_frame(current_frame)
+
+                    frame_count += 1
+                    cv2.imshow("processed_frame", processed_frame)
+                    # press q to skip to next participant / load level
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
 
     duration = time.time() - start_time
     print(f"[INFO]: Frame Count: {frame_count}")
