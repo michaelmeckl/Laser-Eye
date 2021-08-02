@@ -84,8 +84,8 @@ class ProcessingLogger:
         Another benefit is that it moves the I/O operation (writing to file) happen less often and off the
         main thread.
         """
-        # schedule logging to csv file periodically every 20 seconds
-        schedule.every(20).seconds.do(self.__save_tracking_data).tag(self.__log_tag)
+        # schedule logging to csv file periodically every 5 seconds
+        schedule.every(5).seconds.do(self.__save_tracking_data).tag(self.__log_tag)
         # Start the background thread
         self.__logging_job = run_continuously()
 

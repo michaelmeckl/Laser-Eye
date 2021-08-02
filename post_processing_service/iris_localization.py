@@ -84,9 +84,7 @@ class IrisLocalizationModel:
         radius = int(max(radius))
 
         if annotations_on:
-            frame_copy = frame.copy()
-            cv2.circle(frame_copy, tuple(pupil), radius, color, thickness, cv2.LINE_AA)
-            cv2.imshow("pupils", frame_copy)
+            cv2.circle(frame, tuple(pupil), radius, color, thickness, cv2.LINE_AA)
 
         return pupil, radius
 

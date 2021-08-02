@@ -162,16 +162,20 @@ class EyeTracker:
 
     def __find_pupils(self):
         eye_lengths = (self.__landmarks[[39, 93]] - self.__landmarks[[35, 89]])[:, 0]
+        frame_copy = self.__current_frame.copy()
 
-        self.__iris_left = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[1], self.__eye_centers[0])
+        self.__iris_left = self.iris_locator.get_mesh(frame_copy, eye_lengths[1], self.__eye_centers[0])
         pupil_left, self.__iris_left_radius = self.iris_locator.draw_pupil(
-            self.__iris_left, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1)
+            self.__iris_left, frame_copy, annotations_on=self.__annotation_enabled, thickness=1)
 
-        self.__iris_right = self.iris_locator.get_mesh(self.__current_frame, eye_lengths[0], self.__eye_centers[1])
+        self.__iris_right = self.iris_locator.get_mesh(frame_copy, eye_lengths[0], self.__eye_centers[1])
         pupil_right, self.__iris_right_radius = self.iris_locator.draw_pupil(
-            self.__iris_right, self.__current_frame, annotations_on=self.__annotation_enabled, thickness=1)
+            self.__iris_right, frame_copy, annotations_on=self.__annotation_enabled, thickness=1)
 
         self.__pupils = np.array([pupil_left, pupil_right])
+
+        if self.__annotation_enabled:
+            cv2.imshow("pupils", frame_copy)
 
         if self.__debug:
             print(f"Pupil left: {pupil_left}")
