@@ -337,6 +337,10 @@ class EyeTracker:
 
         starts, ends, pupils, centers = poi
 
+        # swap pupils and eye centers back to their original format for the gaze direction calculation
+        pupils[[0, 1]] = pupils[[1, 0]]
+        centers[[0, 1]] = centers[[1, 0]]
+
         eye_length = norm(starts - ends, axis=1)
         ic_distance = norm(pupils - centers, axis=1)
         zc_distance = norm(pupils - starts, axis=1)
