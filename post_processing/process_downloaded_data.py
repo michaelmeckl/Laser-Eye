@@ -105,6 +105,5 @@ def extract_data(participant_list=list[str]):
 
 if __name__ == "__main__":
     # empty list means we want to extract all participants
-    extract_data(participant_list=["participant_6", "participant_7", "participant_8", "participant_9",
-                                   "participant_10"])
+    extract_data(participant_list=["participant_11", "participant_12", "participant_13"])
     print("\n####################\nFinished extracting data\n####################\n")

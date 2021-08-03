@@ -9,7 +9,7 @@ import cv2
 import pandas as pd
 from collections import defaultdict
 from bisect import bisect_left
-from post_processing.post_processing_constants import download_folder, blur_threshold
+from post_processing.post_processing_constants import download_folder, image_folder, logs_folder, blur_threshold
 
 data_folder = download_folder
 start_events = ["started", "Game_Start"]
@@ -167,10 +167,17 @@ def split_image_folder(result_dict, participant_folder):
     print("Number images 'hard':", len(result_dict['hard']))
     print("Number images 'medium':", len(result_dict['medium']))
     print("Number images 'easy':", len(result_dict['easy']))
-    # pd.DataFrame.from_dict(result_dict).to_csv(os.path.join(data_folder, participant_folder))
 
-    # TODO result_dict mit pd.to_csv in eine csv datei speichern und da für jeden participant + difficulty eine
-    #  row anlegen und ganzen pfad zum bild speichern ?
+    # create a pandas df with 2 columns where each row consists of the image path and the corresponding load level
+    label_df = pd.DataFrame(columns=["image_path", "load_level"])
+    for difficulty, image_list in result_dict.items():
+        label_df = label_df.append({"image_path": image_list, "load_level": difficulty}, ignore_index=True)
+
+    # right now, the first column contains only a list with all paths, so this column needs to be "exploded",
+    # see https://stackoverflow.com/questions/53218931/how-to-unnest-explode-a-column-in-a-pandas-dataframe
+    df_exploded = label_df.explode("image_path")
+    df_exploded.to_csv(os.path.join(data_folder, participant_folder, "labeled_images.csv"), index=False)
+
     labeled_images_folder = os.path.join(data_folder, participant_folder, "labeled_images")
     if not os.path.exists(labeled_images_folder):
         os.mkdir(labeled_images_folder)
@@ -181,7 +188,8 @@ def split_image_folder(result_dict, participant_folder):
             os.mkdir(difficulty_folder)
 
             for image_name in image_list:
-                original_image_path = os.path.join(data_folder, participant_folder, "extracted_images", image_name)
+                original_image_path = os.path.join(data_folder, participant_folder, image_folder, image_name)
+                # TODO enable blur check ?
                 """
                 # skip images that are too blurred
                 focus_measure = check_image_blur(original_image_path)
@@ -194,7 +202,7 @@ def split_image_folder(result_dict, participant_folder):
         else:
             print(f"Folder {difficulty_folder} already exists. Skipping...")
 
-    # shutil.rmtree(os.path.join(data_folder, participant_folder, "extracted_images"))
+    # shutil.rmtree(os.path.join(data_folder, participant_folder, image_folder))
 
 
 def assign_load(participant_list=list[str]):
@@ -205,8 +213,8 @@ def assign_load(participant_list=list[str]):
             continue
 
         print(f"\n####################\nAssigning labels for participant {participant}\n####################\n")
-        images_folder = os.path.join(data_folder, participant, "extracted_images")
-        game_log_folder = os.path.join(data_folder, participant, "extracted_logs", "CSV")
+        images_folder = os.path.join(data_folder, participant, image_folder)
+        game_log_folder = os.path.join(data_folder, participant, logs_folder, "CSV")
 
         # iterate over all logs for all games and concatenate them into one large pandas dataframe
         all_game_logs = merge_csv_logs(game_log_folder)
@@ -220,10 +228,9 @@ def assign_load(participant_list=list[str]):
         # remove unnecessary columns
         df_start_end = all_logs_sorted[all_logs_sorted['event_type'].isin(start_events + end_events)]
         df_start_end_small = df_start_end.drop(['state_id', 'seed', 'score', 'args'], axis=1)
-        # print(df_start_end_small.head(30))
 
         # some sanity checks and assertions to make sure the logs are correct
-        # perform_checks(df_start_end_small)  # TODO enable again later
+        perform_checks(df_start_end_small)
 
         # extract all image timestamps from the image names and save them with the image index position
         all_images = os.listdir(images_folder)
@@ -245,4 +252,4 @@ def assign_load(participant_list=list[str]):
 
 
 if __name__ == "__main__":
-    assign_load(participant_list=["participant_4"])
+    assign_load(participant_list=["participant_11", "participant_12", "participant_13"])
