@@ -8,6 +8,7 @@ import time
 import cv2
 from datetime import datetime
 from post_processing.eye_tracking.eye_tracker import EyeTracker
+from post_processing.eye_tracking.image_utils import show_image_window
 from post_processing.post_processing_constants import download_folder, labeled_images_folder, image_folder
 
 
@@ -92,7 +93,7 @@ def process_images(eye_tracker, use_all_images=False):
                     processed_frame = eye_tracker.process_current_frame(current_frame)
 
                     frame_count += 1
-                    cv2.imshow("processed_frame", processed_frame)
+                    show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
                     # press q to skip to next participant / load level
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         break

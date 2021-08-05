@@ -11,6 +11,21 @@ from skimage.morphology import opening
 from skimage.morphology import disk
 
 
+def show_image_window(src, window_name, x_pos, y_pos):
+    # shows a named opencv window with the given src content at the specified position on the screen
+    cv2.namedWindow(window_name)
+    cv2.moveWindow(window_name, x_pos, y_pos)
+    cv2.imshow(window_name, src)
+
+
+def apply_threshold(left_eye):
+    gray_left_eye = cv2.cvtColor(left_eye, cv2.COLOR_BGR2GRAY)
+
+    _, threshold_eye_left = cv2.threshold(gray_left_eye, 70, 255, cv2.THRESH_BINARY_INV)
+    # threshold_eye_left = cv2.resize(threshold_eye_left, None, fx=5, fy=5)
+    show_image_window(threshold_eye_left, window_name="Threshold left eye: ", x_pos=300, y_pos=200)
+
+
 def improve_image(image):
     """
     Different operations to improve the quality of the resized image.
@@ -113,11 +128,11 @@ def detect_pupils(cropped_l_e_img, cropped_r_e_img=None):
         if center_l and radius_l:
             cv2.circle(cropped_l_e_img, tuple(np.array([center_l[0], center_l[1]]).astype(int)),
                        int(round(radius_l)), (255, 34, 34))
-            cv2.imshow('left eye', cropped_l_e_img)
+            show_image_window(cropped_l_e_img, window_name="left eye", x_pos=20, y_pos=50)
         if center_r and radius_r:
             cv2.circle(cropped_r_e_img, tuple(np.array([center_r[0], center_r[1]]).astype(int)),
                        int(round(radius_r)), (255, 34, 34))
-            cv2.imshow('right eye', cropped_r_e_img)
+            show_image_window(cropped_r_e_img, window_name="right eye", x_pos=300, y_pos=50)
 
         all_images_arr.append(cropped_l_e_img)
         all_images_arr.append(blurred_img_l_g)

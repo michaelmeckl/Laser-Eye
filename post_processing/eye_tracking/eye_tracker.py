@@ -5,7 +5,7 @@ import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from post_processing.eye_tracking.ProcessingLogger import ProcessingLogger, ProcessingData
-from post_processing.eye_tracking.image_utils import improve_image, detect_pupils
+from post_processing.eye_tracking.image_utils import improve_image, detect_pupils, apply_threshold, show_image_window
 from post_processing_service.blink_detector import BlinkDetector
 from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
 from post_processing_service.face_alignment import CoordinateAlignmentModel
@@ -58,6 +58,9 @@ class EyeTracker:
         # print(f"frame width: {frame_width}, frame height: {frame_height}")
         self.head_pose_estimator.set_camera_matrix(frame_width, frame_height)
 
+    # TODO blink detection and logging in general currently does not work with more participants/load levels after
+    #  each other!  -> reset image and blink counters after each load level and also save participant and load level
+    #  to log file
     def process_current_frame(self, frame: np.ndarray):
         """
         Args:
@@ -101,6 +104,7 @@ class EyeTracker:
             # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
 
             detect_pupils(cropped_l_e_img=left_eye_bbox, cropped_r_e_img=right_eye_bbox)
+            apply_threshold(left_eye_bbox)
 
         return self.__current_frame
 
@@ -177,7 +181,7 @@ class EyeTracker:
         self.__pupils = np.array([pupil_left, pupil_right])
 
         if self.__annotation_enabled:
-            cv2.imshow("pupils", frame_copy)
+            show_image_window(frame_copy, window_name="pupils", x_pos=1000, y_pos=50)
 
         if self.__debug:
             print(f"Pupil left: {pupil_left}")
@@ -221,6 +225,7 @@ class EyeTracker:
         eye_ROI = extract_image_region(self.__current_frame, min_x_rect, min_y_rect, max_x_rect, max_y_rect, padding=20)
         return eye_ROI
 
+    # TODO extract only the eyes without eyebrows by creating a mask!
     def __extract_eyes(self):
         """
         Get both eyes separately as squared images.
@@ -261,7 +266,7 @@ class EyeTracker:
         frame_copy = self.__current_frame.copy()  # make a copy so we don't edit the original frame
         for mark in self.__landmarks.reshape(-1, 2).astype(int):
             cv2.circle(frame_copy, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
-        cv2.imshow("face landmarks", frame_copy)
+        show_image_window(frame_copy, window_name="face landmarks", x_pos=800, y_pos=350)
 
     def __track_gaze(self):
         # landmarks[[35, 89]] and landmarks[[39, 93]] are the start and end marks
@@ -369,20 +374,20 @@ class EyeTracker:
             frame_copy = frame.copy()
             cv2.circle(frame_copy, tuple(pupils[0].astype(int)), 1, (0, 255, 255), -1)
             cv2.circle(frame_copy, tuple(pupils[1].astype(int)), 1, (0, 255, 255), -1)
-            cv2.imshow("pupil centers", frame_copy)
+            show_image_window(frame_copy, window_name="pupil centers", x_pos=600, y_pos=50)
 
         return theta, pha, delta.T
 
     def __draw_gaze(self, offset, blink_thd=0.22, arrow_color=(0, 125, 255)):
-        src = self.__current_frame.copy()
         # show gaze direction as arrows
-        if self.__left_eye_height / self.__left_eye_width > blink_thd:
-            cv2.arrowedLine(src, tuple(self.__pupils[0].astype(int)),
-                            tuple((offset + self.__pupils[0]).astype(int)),
-                            arrow_color, 2)
+        src = self.__current_frame.copy()
 
-        if self.__right_eye_height / self.__right_eye_width > blink_thd:
-            cv2.arrowedLine(src, tuple(self.__pupils[1].astype(int)),
-                            tuple((offset + self.__pupils[1]).astype(int)),
-                            arrow_color, 2)
-        cv2.imshow("gaze", src)
+        # if self.__left_eye_height / self.__left_eye_width > blink_thd:
+        cv2.arrowedLine(src, tuple(self.__pupils[0].astype(int)),
+                        tuple((offset + self.__pupils[0]).astype(int)),
+                        arrow_color, 2)
+        # if self.__right_eye_height / self.__right_eye_width > blink_thd:
+        cv2.arrowedLine(src, tuple(self.__pupils[1].astype(int)),
+                        tuple((offset + self.__pupils[1]).astype(int)),
+                        arrow_color, 2)
+        show_image_window(src, window_name="gaze direction", x_pos=1000, y_pos=350)

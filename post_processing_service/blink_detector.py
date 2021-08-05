@@ -3,11 +3,13 @@
 
 import sys
 import cv2
-from post_processing.eye_tracking.image_utils import eye_aspect_ratio
+from post_processing.eye_tracking.image_utils import eye_aspect_ratio, show_image_window
 
 
 # TODO blink frequency and average blink duration und amplitude auch noch (mean unterschied zw. größten und
 #  kleinstem)
+
+# TODO use fps info to adjust threshold?
 
 # noinspection PyAttributeOutsideInit
 class BlinkDetector:
@@ -73,7 +75,7 @@ class BlinkDetector:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         cv2.putText(frame_copy, f"LAST EAR: {self.last_ratio:.2f}", (10, 180),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        cv2.imshow("blink detector", frame_copy)
+        show_image_window(frame_copy, window_name="blink detector", x_pos=600, y_pos=350)
 
         # if difference between last and current ear is larger than a treshold, blink onset
         # if current ear is far smaller than the last one, the eye closed up

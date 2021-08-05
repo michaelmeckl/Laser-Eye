@@ -1,6 +1,7 @@
 import cv2
 import tensorflow as tf
 import numpy as np
+from post_processing.eye_tracking.image_utils import show_image_window
 
 
 class IrisLocalizationModel:
@@ -93,7 +94,7 @@ class IrisLocalizationModel:
         landmarks = landmarks.astype(np.int32)
         frame_copy = frame.copy()
         cv2.polylines(frame_copy, landmarks, close, color, thickness, cv2.LINE_AA)
-        cv2.imshow("eye markers", frame_copy)
+        show_image_window(frame_copy, window_name="eye markers", x_pos=800, y_pos=50)
 
 
 if __name__ == "__main__":
