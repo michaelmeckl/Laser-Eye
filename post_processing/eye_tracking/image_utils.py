@@ -18,12 +18,13 @@ def show_image_window(src, window_name, x_pos, y_pos):
     cv2.imshow(window_name, src)
 
 
-def apply_threshold(left_eye):
-    gray_left_eye = cv2.cvtColor(left_eye, cv2.COLOR_BGR2GRAY)
+def apply_threshold(eye_img, threshold_val=20, is_gray=False):
+    if not is_gray:
+        eye_img = cv2.cvtColor(eye_img, cv2.COLOR_BGR2GRAY)
 
-    _, threshold_eye_left = cv2.threshold(gray_left_eye, 70, 255, cv2.THRESH_BINARY_INV)
-    # threshold_eye_left = cv2.resize(threshold_eye_left, None, fx=5, fy=5)
-    show_image_window(threshold_eye_left, window_name="Threshold left eye: ", x_pos=300, y_pos=200)
+    _, threshold_eye_left = cv2.threshold(eye_img, threshold_val, 255, cv2.THRESH_BINARY)
+    threshold_eye_left = cv2.resize(threshold_eye_left, None, fx=5, fy=5)
+    show_image_window(threshold_eye_left, window_name="Threshold eye_img: ", x_pos=300, y_pos=200)
 
 
 def improve_image(image):

@@ -97,14 +97,13 @@ class EyeTracker:
 
             # extract different parts of the eye region and save them as pngs
             eye_region_bbox = self.__extract_eye_region()
-            left_eye_bbox, right_eye_bbox = self.__extract_eyes()
-            self.__log(eye_region_bbox, left_eye_bbox, right_eye_bbox)
+            left_eye_bbox, right_eye_bbox, left_eye_bbox_small, right_eye_bbox_small = self.__extract_eyes()
+            self.__log(eye_region_bbox, left_eye_bbox, right_eye_bbox, left_eye_bbox_small, right_eye_bbox_small)
 
             # new_eye_region = improve_image(eye_region_bbox)
             # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
 
             detect_pupils(cropped_l_e_img=left_eye_bbox, cropped_r_e_img=right_eye_bbox)
-            apply_threshold(left_eye_bbox)
 
         return self.__current_frame
 
@@ -118,7 +117,7 @@ class EyeTracker:
             break  # break to take only the first face (in most cases there should be only one anyway)
     """
 
-    def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox):
+    def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_eye_bbox_small, right_eye_bbox_small):
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
             ProcessingData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
@@ -146,6 +145,8 @@ class EyeTracker:
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
         self.__logger.log_image("eyes", "left_eye", left_eye_bbox, log_timestamp)
         self.__logger.log_image("eyes", "right_eye", right_eye_bbox, log_timestamp)
+        self.__logger.log_image("eyes_small", "left_eye_small", left_eye_bbox_small, log_timestamp)
+        self.__logger.log_image("eyes_small", "right_eye_small", right_eye_bbox_small, log_timestamp)
 
     def stop_tracking(self):
         self.__logger.stop_scheduling()
@@ -260,7 +261,35 @@ class EyeTracker:
                                             left_eye_y_max, padding=padding)
         right_eye_box = extract_image_region(self.__current_frame, right_eye_x_min, right_eye_y_min, right_eye_x_max,
                                              right_eye_y_max, padding=padding)
-        return left_eye_box, right_eye_box
+
+        # use a mask to get only the eyes themselves
+        frame_shape = (self.__current_frame.shape[0], self.__current_frame.shape[1])
+        mask = np.zeros(frame_shape, dtype=np.uint8)  # black mask
+        # mask = np.full(frame_shape, fill_value=255, dtype=np.uint8)  # white mask
+        points = np.array(self.__eye_markers, np.int32)
+        cv2.fillPoly(mask, points, 255)
+
+        gray_frame = cv2.cvtColor(self.__current_frame, cv2.COLOR_BGR2GRAY)
+        eye_mask = cv2.bitwise_and(gray_frame, gray_frame, mask=mask)
+        if self.__annotation_enabled:
+            show_image_window(eye_mask, "Eye Mask", 320, 450)
+
+        left_eye_box_small = extract_image_region(eye_mask, left_eye_x_min, left_eye_y_min, left_eye_x_max,
+                                                  left_eye_y_max, padding=0)
+        right_eye_box_small = extract_image_region(eye_mask, right_eye_x_min, right_eye_y_min,
+                                                   right_eye_x_max, right_eye_y_max, padding=0)
+
+        threshold_val = 18  # TODO different value per person to work correctly!
+        apply_threshold(left_eye_box_small, threshold_val=threshold_val, is_gray=True)
+
+        # TODO: get diameter of the black region by finding the contours of the connected components!
+        # see https://stackoverflow.com/questions/57317579/find-contiguous-black-pixels-in-image for an example
+
+        if self.__annotation_enabled:
+            left_eye_box_small = cv2.resize(left_eye_box_small, None, fx=5, fy=5)
+            show_image_window(left_eye_box_small, "Left eyebox small", 450, 200)
+
+        return left_eye_box, right_eye_box, left_eye_box_small, right_eye_box_small
 
     def __draw_face_landmarks(self):
         frame_copy = self.__current_frame.copy()  # make a copy so we don't edit the original frame

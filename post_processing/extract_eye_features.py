@@ -61,7 +61,7 @@ def debug_postprocess(enable_annotation, video_file_path):
 
 def process_images(eye_tracker, use_all_images=False):
     # for easier debugging; select the participants that should be processed; pass empty list to process all
-    participants = ["participant_3"]
+    participants = ["participant_3", "participant_4", "participant_5"]
 
     frame_count = 0
     start_time = time.time()
