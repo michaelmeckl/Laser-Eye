@@ -40,7 +40,7 @@ class EyeTracker:
         self.__init_logger()
 
         self.saccade_detector = SaccadeFixationDetector()
-        self.blink_detector = BlinkDetector()
+        self.blink_detector = BlinkDetector(show_annotation=self.__annotation_enabled)
 
         weights_path = pathlib.Path(__file__).parent.parent.parent / "weights"
         self.face_detector = MxnetDetectionModel(f"{weights_path / '16and32'}", 0, .6, gpu=gpu_ctx)
@@ -58,9 +58,14 @@ class EyeTracker:
         # print(f"frame width: {frame_width}, frame height: {frame_height}")
         self.head_pose_estimator.set_camera_matrix(frame_width, frame_height)
 
+    def set_current_fps_val(self, fps_val):
+        self.blink_detector.set_participant_fps(fps_val)
+
     # TODO blink detection and logging in general currently does not work with more participants/load levels after
     #  each other!  -> reset image and blink counters after each load level and also save participant and load level
     #  to log file
+    # TODO -> postprocessing results should be saved for each participant individually
+
     def process_current_frame(self, frame: np.ndarray):
         """
         Args:
@@ -103,7 +108,7 @@ class EyeTracker:
             # new_eye_region = improve_image(eye_region_bbox)
             # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
 
-            detect_pupils(cropped_l_e_img=left_eye_bbox, cropped_r_e_img=right_eye_bbox)
+            detect_pupils(left_eye_bbox, right_eye_bbox, self.__annotation_enabled)
 
         return self.__current_frame
 
@@ -226,7 +231,6 @@ class EyeTracker:
         eye_ROI = extract_image_region(self.__current_frame, min_x_rect, min_y_rect, max_x_rect, max_y_rect, padding=20)
         return eye_ROI
 
-    # TODO extract only the eyes without eyebrows by creating a mask!
     def __extract_eyes(self):
         """
         Get both eyes separately as squared images.
@@ -242,17 +246,6 @@ class EyeTracker:
         right_eye_x_max = int(round(right_eye_center[0] + self.__right_eye_width / 2))
         right_eye_y_min = int(round(right_eye_center[1] - self.__right_eye_width / 2))
         right_eye_y_max = int(round(right_eye_center[1] + self.__right_eye_width / 2))
-
-        """
-        if self.__annotation_enabled:
-            frame_copy = self.__current_frame.copy()
-            # draw rectangles around both eyes
-            cv2.rectangle(frame_copy, (left_eye_x_min, left_eye_y_min),
-                          (left_eye_x_max, left_eye_y_max), (0, 0, 255))
-            cv2.rectangle(frame_copy, (right_eye_x_min, right_eye_y_min),
-                          (right_eye_x_max, right_eye_y_max), (255, 0, 0))
-            cv2.imshow("extracted eyes", frame_copy)
-        """
 
         # extract region and add some padding so we get a little bit more; also make sure the extracted region +
         # padding still lies in the image bounding box
@@ -279,8 +272,10 @@ class EyeTracker:
         right_eye_box_small = extract_image_region(eye_mask, right_eye_x_min, right_eye_y_min,
                                                    right_eye_x_max, right_eye_y_max, padding=0)
 
-        threshold_val = 18  # TODO different value per person to work correctly!
-        apply_threshold(left_eye_box_small, threshold_val=threshold_val, is_gray=True)
+        # TODO different value per person to work correctly!  -> probably needs to be done manually for each tp
+        threshold_val = 18
+        apply_threshold(left_eye_box_small, threshold_val=threshold_val, is_gray=True,
+                        show_annotation=self.__annotation_enabled)
 
         # TODO: get diameter of the black region by finding the contours of the connected components!
         # see https://stackoverflow.com/questions/57317579/find-contiguous-black-pixels-in-image for an example

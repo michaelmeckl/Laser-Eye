@@ -3,11 +3,22 @@
 
 import os
 import pathlib
+import re
 import sys
 import shutil
 import time
 from py7zr import py7zr
 from post_processing.post_processing_constants import download_folder, image_folder, logs_folder
+
+
+def get_fps_info(fps_file_path):
+    with open(fps_file_path, mode="r") as fps_file:
+        lines = fps_file.readlines()
+        fps_line = lines[1]  # the fps is in the second line
+        fps = re.findall(r"\d+\.?\d+", fps_line)
+        fps_rounded = round(float(fps[0]), ndigits=2)
+
+    return fps_rounded
 
 
 def unzip(participant_folder, result_dir, file):

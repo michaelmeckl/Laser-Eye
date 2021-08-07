@@ -3,7 +3,6 @@
 
 import os
 import random
-import re
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,7 +10,7 @@ import tensorflow as tf
 from tensorflow.python.keras.preprocessing.image import ImageDataGenerator
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-
+from post_processing.process_downloaded_data import get_fps_info
 
 """
 def load_batched_data():
@@ -98,16 +97,6 @@ def chunks(lst, n):
     """
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
-
-
-def get_fps_info(fps_file_path):
-    with open(fps_file_path, mode="r") as fps_file:
-        lines = fps_file.readlines()
-        fps_line = lines[1]  # the fps is in the second line
-        fps = re.findall(r"\d+\.?\d+", fps_line)
-        fps_rounded = round(float(fps[0]), ndigits=2)
-
-    return fps_rounded
 
 
 def preprocess_train_test_data(data, is_test_data=False):

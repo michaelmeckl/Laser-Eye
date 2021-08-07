@@ -10,13 +10,7 @@ from datetime import datetime
 from post_processing.eye_tracking.eye_tracker import EyeTracker
 from post_processing.eye_tracking.image_utils import show_image_window
 from post_processing.post_processing_constants import download_folder, labeled_images_folder, image_folder
-
-
-# TODO Lösungsansätze für Problem mit unterschiedlichen Bilddimensionen pro Frame:
-# 1. kleinere bilder mit padding versehen bis alle gleich groß wie größtes
-# 2. größere bilder runterskalieren bis alle gleich groß wie kleinstes (oder alternativ crop)
-# 3. jetzt erstmal unterschiedlich lassen und dann später beim CNN vorverarbeiten!
-#      -> vermtl. eh am besten weil später neue Bilder ja auch erstmal vorverarbeitet werden müssen!
+from post_processing.process_downloaded_data import get_fps_info
 
 
 def debug_postprocess(enable_annotation, video_file_path):
@@ -61,7 +55,25 @@ def debug_postprocess(enable_annotation, video_file_path):
 
 def process_images(eye_tracker, use_all_images=False):
     # for easier debugging; select the participants that should be processed; pass empty list to process all
-    participants = ["participant_3", "participant_4", "participant_5"]
+    participants = ["participant_7"]
+
+    """
+    30 sekunden
+
+    1: 0
+    10: 4
+    11: 0
+    12: 2
+    13: 2
+    2: 0
+    3: 0
+    4: 0
+    5: 0 (von 1)
+    6: 0
+    7: 0 (von 2)
+    8: 3
+    9: -
+    """
 
     frame_count = 0
     start_time = time.time()
@@ -69,6 +81,11 @@ def process_images(eye_tracker, use_all_images=False):
     for sub_folder in os.listdir(download_folder):
         if len(participants) > 0 and sub_folder not in participants:
             continue
+
+        # get the recorded fps for the current participant
+        fps_log_path = os.path.join(download_folder, sub_folder, "fps_info.txt")
+        fps = get_fps_info(fps_log_path)
+        eye_tracker.set_current_fps_val(fps)
 
         if use_all_images:
             # process all extracted images, even the ones that aren't useful for the machine learning model

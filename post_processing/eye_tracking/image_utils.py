@@ -18,13 +18,16 @@ def show_image_window(src, window_name, x_pos, y_pos):
     cv2.imshow(window_name, src)
 
 
-def apply_threshold(eye_img, threshold_val=20, is_gray=False):
+def apply_threshold(eye_img, threshold_val=20, is_gray=False, show_annotation=False):
     if not is_gray:
         eye_img = cv2.cvtColor(eye_img, cv2.COLOR_BGR2GRAY)
 
-    _, threshold_eye_left = cv2.threshold(eye_img, threshold_val, 255, cv2.THRESH_BINARY)
-    threshold_eye_left = cv2.resize(threshold_eye_left, None, fx=5, fy=5)
-    show_image_window(threshold_eye_left, window_name="Threshold eye_img: ", x_pos=300, y_pos=200)
+    _, threshold_eye_img = cv2.threshold(eye_img, threshold_val, 255, cv2.THRESH_BINARY)
+    if show_annotation:
+        # threshold_eye_img = cv2.resize(threshold_eye_img, None, fx=5, fy=5)
+        show_image_window(threshold_eye_img, window_name="Threshold eye_img: ", x_pos=300, y_pos=200)
+
+    return threshold_eye_img
 
 
 def improve_image(image):
@@ -80,52 +83,32 @@ def gray_blurred(img, blur_l, gray=False, blur="Median", Lab=False):
         return cv2.GaussianBlur(img, blur_l, 0)
 
 
-def detect_pupils(cropped_l_e_img, cropped_r_e_img=None):
-    all_images_arr = []
+def detect_pupils(cropped_l_e_img, cropped_r_e_img, show_annotation=False):
+    # Function taken and adjusted from https://github.com/anmolduainter/Pupil-Dilation/blob/master/pupilMeasurement.py
 
-    if cropped_r_e_img is None:
-        all_images_arr.append(cropped_l_e_img)
-        img = gray_blurred(cropped_l_e_img, 19, gray=True)
-        all_images_arr.append(img)
-        blurred_img = historgramEqualization(img, clahe=False)
-        all_images_arr.append(blurred_img)
-        # Left Eye
-        _, threshold_l = cv2.threshold(blurred_img, 5, 255, cv2.THRESH_BINARY_INV)
-        all_images_arr.append(threshold_l)
-        contours, _ = cv2.findContours(threshold_l, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
-        cnt = contours[0]
-        center_l, radius_l = cv2.minEnclosingCircle(cnt)
+    cropped_l_e_img = cv2.cvtColor(cropped_l_e_img, cv2.COLOR_BGR2GRAY)
+    cropped_r_e_img = cv2.cvtColor(cropped_r_e_img, cv2.COLOR_BGR2GRAY)
+    blurred_img_l_g = gray_blurred(cropped_l_e_img, 19, gray=False)
+    blurred_img_r_g = gray_blurred(cropped_r_e_img, 19, gray=False)
 
-        if center_l and radius_l:
-            cv2.circle(cropped_l_e_img, tuple(np.array([center_l[0], center_l[1]]).astype(int)),
-                       int(round(radius_l)), (255, 34, 34))
+    blurred_img_l = historgramEqualization(blurred_img_l_g, clahe=False)
+    blurred_img_r = historgramEqualization(blurred_img_r_g, clahe=False)
 
-        return (center_l, radius_l), all_images_arr
+    # Left Eye
+    _, threshold_l = cv2.threshold(blurred_img_l, 5, 255, cv2.THRESH_BINARY_INV)
+    contours, _ = cv2.findContours(threshold_l, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
+    cnt = contours[0]
+    center_l, radius_l = cv2.minEnclosingCircle(cnt)
 
-    else:
-        cropped_l_e_img = cv2.cvtColor(cropped_l_e_img, cv2.COLOR_BGR2GRAY)
-        cropped_r_e_img = cv2.cvtColor(cropped_r_e_img, cv2.COLOR_BGR2GRAY)
-        blurred_img_l_g = gray_blurred(cropped_l_e_img, 19, gray=False)
-        blurred_img_r_g = gray_blurred(cropped_r_e_img, 19, gray=False)
+    # Right Eye
+    _, threshold_r = cv2.threshold(blurred_img_r, 5, 255, cv2.THRESH_BINARY_INV)
+    contours, _ = cv2.findContours(threshold_r, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
+    cnt = contours[0]
+    center_r, radius_r = cv2.minEnclosingCircle(cnt)
 
-        blurred_img_l = historgramEqualization(blurred_img_l_g, clahe=False)
-        blurred_img_r = historgramEqualization(blurred_img_r_g, clahe=False)
-
-        # Left Eye
-        _, threshold_l = cv2.threshold(blurred_img_l, 5, 255, cv2.THRESH_BINARY_INV)
-        contours, _ = cv2.findContours(threshold_l, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
-        cnt = contours[0]
-        center_l, radius_l = cv2.minEnclosingCircle(cnt)
-
-        # Right Eye
-        _, threshold_r = cv2.threshold(blurred_img_r, 5, 255, cv2.THRESH_BINARY_INV)
-        contours, _ = cv2.findContours(threshold_r, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
-        cnt = contours[0]
-        center_r, radius_r = cv2.minEnclosingCircle(cnt)
-
+    if show_annotation:
         if center_l and radius_l:
             cv2.circle(cropped_l_e_img, tuple(np.array([center_l[0], center_l[1]]).astype(int)),
                        int(round(radius_l)), (255, 34, 34))
@@ -135,16 +118,7 @@ def detect_pupils(cropped_l_e_img, cropped_r_e_img=None):
                        int(round(radius_r)), (255, 34, 34))
             show_image_window(cropped_r_e_img, window_name="right eye", x_pos=300, y_pos=50)
 
-        all_images_arr.append(cropped_l_e_img)
-        all_images_arr.append(blurred_img_l_g)
-        all_images_arr.append(blurred_img_l)
-        all_images_arr.append(threshold_l)
-
-        all_images_arr.append(cropped_r_e_img)
-        all_images_arr.append(blurred_img_r_g)
-        all_images_arr.append(blurred_img_r)
-        all_images_arr.append(threshold_r)
-        return ((center_l, radius_l), (center_r, radius_r)), all_images_arr
+    return (center_l, radius_l), (center_r, radius_r)
 
 
 def connected_component_threshold(image):
@@ -191,7 +165,6 @@ def connected_component_threshold(image):
 
 
 def find_pupil(frame, pupil_thresh=30, save=False):
-    # TODO mit dem threshold könnte man vllt auch ganz gut blinks erkennen...
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     ret, thres = cv2.threshold(image, pupil_thresh, 255, cv2.THRESH_BINARY)
 
