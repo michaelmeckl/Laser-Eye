@@ -118,6 +118,7 @@ class EyeTracker:
             # new_eye_region = improve_image(eye_region_bbox)
             # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
 
+            # TODO log pupil sizes
             detect_pupils(left_eye_bbox, right_eye_bbox, self.__annotation_enabled)
 
         return self.__current_frame

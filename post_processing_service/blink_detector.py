@@ -15,9 +15,11 @@ class BlinkDetector:
 
     def __init__(self, show_annotation: bool):
         self.__show_annotation = show_annotation
+        self.__init_values()
+
+    def __init_values(self):
         self.__last_ratio = None
         self.__blink_onset = False
-
         self.__blink_counter, self.__frame_count, self.__consecutive_frames_counter, self.__total_blinks = 0, 0, 0, 0
 
         self.eye_aspect_ratios = []
@@ -38,6 +40,10 @@ class BlinkDetector:
         # print("Current fps in blink detector: ", fps_val)
         # print("max_frame_count in blink detector: ", self.__max_frame_count)
 
+    def reset_blink_detection(self):
+        # TODO call this after each difficulty level? / each participant?
+        self.__init_values()
+
     def get_blink_metrics(self):
         duration_in_minutes = (self.__frame_count / self.__participant_fps) / 60
         blinks_per_minute = self.__total_blinks / duration_in_minutes
@@ -46,15 +52,15 @@ class BlinkDetector:
         # rate of blinking decreases to about 3 to 4 times per minute" (see https://en.wikipedia.org/wiki/Blinking)
         return {"total_blinks": self.__total_blinks,
                 "avg_blinks_per_minute": blinks_per_minute,
-                "min_aspect_ratio": min(self.eye_aspect_ratios),
-                "max_aspect_ratio": max(self.eye_aspect_ratios),
-                "avg_aspect_ratio": np.average(self.eye_aspect_ratios),
-                "min_blink_duration_in_ms": min(self.blink_durations),
-                "max_blink_duration_in_ms": max(self.blink_durations),
-                "avg_blink_duration_in_ms": np.average(self.blink_durations),
+                "min_aspect_ratio": min(self.eye_aspect_ratios, default=0),
+                "max_aspect_ratio": max(self.eye_aspect_ratios, default=0),
+                "avg_aspect_ratio": np.mean(self.eye_aspect_ratios) if len(self.eye_aspect_ratios) > 0 else 0,
+                "min_blink_duration_in_ms": min(self.blink_durations, default=0),
+                "max_blink_duration_in_ms": max(self.blink_durations, default=0),
+                "avg_blink_duration_in_ms": np.mean(self.blink_durations) if len(self.blink_durations) > 0 else 0,
                 }
 
-    def __reset_blink(self):
+    def __reset_blink_onset(self):
         self.__blink_onset = False
         self.__consecutive_frames_counter = 0
 
@@ -116,14 +122,14 @@ class BlinkDetector:
                 # the blink duration is the number of frames needed for the blink times the frame duration for this user
                 blink_duration = self.__consecutive_frames_counter * (1000 / self.__participant_fps)
                 self.blink_durations.append(blink_duration)
-                self.__reset_blink()
+                self.__reset_blink_onset()
 
         elif self.__blink_onset:
             # only some small eye size change happened between this and the last frame;
             # check if we reached the maximum number of frames, i.e. the duration of a blink
             if self.__consecutive_frames_counter > self.__max_frame_count:
                 # this is taking too long; was probably just some noise, so we reset the counter
-                self.__reset_blink()
+                self.__reset_blink_onset()
             else:
                 # if the blink onset is still active and nothing happened, simply increment the counter
                 self.__consecutive_frames_counter += 1
