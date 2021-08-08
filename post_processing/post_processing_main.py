@@ -16,7 +16,7 @@ def main():
     """
     download_data_from_server(folder_names=[])
     extract_data(participant_list=[])
-    assign_load()
+    assign_load(participant_list=[])
     start_extracting_features(debug=False)
 
 
