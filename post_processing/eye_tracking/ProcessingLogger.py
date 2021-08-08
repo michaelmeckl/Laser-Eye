@@ -1,3 +1,4 @@
+import os
 import sys
 from datetime import datetime
 from enum import Enum
@@ -9,6 +10,7 @@ import pathlib
 import schedule
 import time
 import threading
+from post_processing.post_processing_constants import download_folder
 
 ProcessingData = Enum("ProcessingData", "HEAD_POS_ROLL_PITCH_YAW FACE_LANDMARKS LEFT_EYE RIGHT_EYE LEFT_EYE_CENTER "
                                         "RIGHT_EYE_CENTER LEFT_EYE_WIDTH RIGHT_EYE_WIDTH LEFT_EYE_HEIGHT "
@@ -49,13 +51,22 @@ class ProcessingLogger:
         self.__log_folder = log_folder
         self.__log_file = default_log_file
 
-        self.__folder_path = pathlib.Path(__file__).parent / self.__log_folder
-        self.__log_file_path = self.__folder_path / self.__log_file
-
         self.__log_tag = "processing_logger"
-        self.__log_data = self.__init_log()
         self.__processed_data = []
         self.__image_data = []
+
+    def set_participant(self, participant):
+        self.current_participant = participant
+
+    def set_difficulty(self, difficulty):
+        self.current_difficulty_level = difficulty
+
+    def start_logging(self):
+        self.__folder_path = pathlib.Path(__file__).parent.parent / download_folder / self.current_participant / \
+                             self.__log_folder
+        self.__log_file_path = self.__folder_path / self.__log_file
+
+        self.__log_data = self.__init_log()
         self.__start_scheduling()
 
     def __init_log(self):
@@ -122,3 +133,8 @@ class ProcessingLogger:
         # check if empty first as it crashes if given an empty array (e.g. if face / eyes not fully visible)
         if image.size:
             cv2.imwrite(f'{path / filename}__{timestamp}.png', image)
+
+    def log_blink_info(self, blink_info_dict):
+        blink_log_path = os.path.join(self.__folder_path, f"{self.current_difficulty_level}_blink_log.csv")
+        df = pd.DataFrame(blink_info_dict, index=[0])
+        df.to_csv(blink_log_path, sep=",", index=False)

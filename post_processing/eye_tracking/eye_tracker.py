@@ -1,3 +1,4 @@
+import os
 import pathlib
 import cv2
 import numpy as np
@@ -5,7 +6,8 @@ import pyautogui as pyautogui
 from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from post_processing.eye_tracking.ProcessingLogger import ProcessingLogger, ProcessingData
-from post_processing.eye_tracking.image_utils import improve_image, detect_pupils, apply_threshold, show_image_window
+from post_processing.eye_tracking.image_utils import detect_pupils, apply_threshold, show_image_window
+from post_processing.post_processing_constants import download_folder
 from post_processing_service.blink_detector import BlinkDetector
 from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
 from post_processing_service.face_alignment import CoordinateAlignmentModel
@@ -58,13 +60,21 @@ class EyeTracker:
         # print(f"frame width: {frame_width}, frame height: {frame_height}")
         self.head_pose_estimator.set_camera_matrix(frame_width, frame_height)
 
+    def set_current_participant(self, participant_folder):
+        self.__logger.set_participant(participant_folder)
+
+        self.__logger.start_logging()
+
+    def set_current_difficulty(self, difficulty):
+        self.__logger.set_difficulty(difficulty)
+
     def set_current_fps_val(self, fps_val):
         self.blink_detector.set_participant_fps(fps_val)
 
     # TODO blink detection and logging in general currently does not work with more participants/load levels after
     #  each other!  -> reset image and blink counters after each load level and also save participant and load level
     #  to log file
-    # TODO -> postprocessing results should be saved for each participant individually
+    # TODO -> postprocessing results should be saved for each participant individually (even for each difficulty?)
 
     def process_current_frame(self, frame: np.ndarray):
         """
@@ -152,6 +162,10 @@ class EyeTracker:
         self.__logger.log_image("eyes", "right_eye", right_eye_bbox, log_timestamp)
         self.__logger.log_image("eyes_small", "left_eye_small", left_eye_bbox_small, log_timestamp)
         self.__logger.log_image("eyes_small", "right_eye_small", right_eye_bbox_small, log_timestamp)
+
+    def log_blink_information(self):
+        blink_metrics = self.blink_detector.get_blink_metrics()
+        self.__logger.log_blink_info(blink_metrics)
 
     def stop_tracking(self):
         self.__logger.stop_scheduling()
