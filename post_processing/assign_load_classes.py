@@ -42,7 +42,7 @@ def merge_csv_logs(game_log_folder):
     return all_game_logs
 
 
-def assert_task_duration(start_time, end_time, error_variance=10):
+def assert_task_duration(start_time, end_time, error_variance=12):
     """
     Make sure the time difference between the start and end event type for each difficulty and game is 100 seconds (+
     some small measurement error).
@@ -58,19 +58,24 @@ def perform_checks(df: pd.DataFrame):
     Performs some sanity checks on the combined dataframe per participant to make sure everything worked as expected.
     """
 
+    number_of_games = df["gameid"].nunique()
+    if number_of_games != 5:
+        print(f"[WARNING]: Only {number_of_games} games found!")
+        # if we not 5 games, check if we have 3 or 4 instead (as we may have removed the centaur game and/or asteroids)
+        assert df["gameid"].nunique() in [3, 4], f"Only {number_of_games} found for this participant!"
+
     print("len rows:", len(df.index))
-    assert len(df.index) == 30  # 5 games * 3 difficulties each * 2 events (start & end)
+    assert len(df.index) == number_of_games * 3 * 2  # number of games * 3 difficulties each * 2 events (start & end)
 
     num_start_events = len(df[df['event_type'].isin(start_events)])
     num_end_events = len(df[df['event_type'].isin(end_events)])
     assert num_start_events == num_end_events, "The number of start and end events don't match!!"
 
-    assert df["gameid"].nunique() == 5, "Not all games exist for this participant!"
-
     for game_name in df["gameid"].unique():
         # each name should appear 6 times: 3 difficulties * 2 (start & end event type for each)
         assert len(df[df['gameid'] == game_name]) == 6, f"The number of occurences for game '{game_name}' isn't 6!"
 
+    # check that the event types (and therefore the timestamps) of game start and end are in the correct order
     row_iterator = df.iterrows()
     _, last = next(row_iterator)  # take first item from row_iterator
     for i, row in row_iterator:
@@ -151,7 +156,7 @@ def check_image_blur(image_path) -> float:
     return cv2.Laplacian(gray_scale, cv2.CV_64F).var()
 
 
-def split_image_folder(result_dict, participant_folder):
+def split_image_folder(result_dict, participant_folder, create_new_folders=True):
     """
     Param `result_dict` contains a list for each of the 3 load levels which contains all images from this participant
     that were recorded during a game with the corresponding difficulty:
@@ -178,31 +183,35 @@ def split_image_folder(result_dict, participant_folder):
     df_exploded = label_df.explode("image_path")
     df_exploded.to_csv(os.path.join(data_folder, participant_folder, "labeled_images.csv"), index=False)
 
-    labeled_images_folder = os.path.join(data_folder, participant_folder, "labeled_images")
-    if not os.path.exists(labeled_images_folder):
-        os.mkdir(labeled_images_folder)
+    # if this flag is set create a new folder "labeled_imags" with the difficulty levels as subfolders
+    # TODO the rest of the code needs this at the moment to work correctly
+    if create_new_folders is True:
+        labeled_images_folder = os.path.join(data_folder, participant_folder, "labeled_images")
+        if not os.path.exists(labeled_images_folder):
+            os.mkdir(labeled_images_folder)
 
-    for difficulty, image_list in result_dict.items():
-        difficulty_folder = os.path.join(labeled_images_folder, difficulty)
-        if not os.path.exists(difficulty_folder):
-            os.mkdir(difficulty_folder)
+        for difficulty, image_list in result_dict.items():
+            difficulty_folder = os.path.join(labeled_images_folder, difficulty)
+            if not os.path.exists(difficulty_folder):
+                os.mkdir(difficulty_folder)
 
-            for image_name in image_list:
-                original_image_path = os.path.join(data_folder, participant_folder, image_folder, image_name)
-                # TODO enable blur check ?
-                """
-                # skip images that are too blurred
-                focus_measure = check_image_blur(original_image_path)
-                if focus_measure <= blur_threshold:
-                    continue
-                """
-                new_image_path = os.path.join(difficulty_folder, image_name)
-                shutil.copy2(original_image_path, new_image_path)
-                # shutil.move(original_image_path, new_image_path)  # way faster than copy but changes the dir structure
-        else:
-            print(f"Folder {difficulty_folder} already exists. Skipping...")
+                for image_name in image_list:
+                    original_image_path = os.path.join(data_folder, participant_folder, image_folder, image_name)
+                    # TODO enable blur check to remove too blurry images?
+                    """
+                    # skip images that are too blurred
+                    focus_measure = check_image_blur(original_image_path)
+                    if focus_measure <= blur_threshold:
+                        continue
+                    """
+                    new_image_path = os.path.join(difficulty_folder, image_name)
+                    shutil.copy2(original_image_path, new_image_path)
+                    # move is way faster than copy but removes the images from their old directory
+                    # shutil.move(original_image_path, new_image_path)
+            else:
+                print(f"Folder {difficulty_folder} already exists. Skipping...")
 
-    # shutil.rmtree(os.path.join(data_folder, participant_folder, image_folder))
+        # shutil.rmtree(os.path.join(data_folder, participant_folder, image_folder))
 
 
 def assign_load(participant_list=list[str]):
@@ -221,12 +230,15 @@ def assign_load(participant_list=list[str]):
 
         # remove the tutorial rows
         all_logs = all_game_logs[all_game_logs.difficulty != 'tutorial']
+        # remove the centaur game (== "3D-Game-1") and Asteroids (== "2D-Game-2") from the dataframe as well!
+        all_logs = all_logs[~all_logs.gameid.isin(["3D-Game-1", "2D-Game-2"])]
+
         # and sort the df based on the timestamp column in ascending order
         all_logs_sorted = all_logs.sort_values('timestamp')
         # print(all_logs_sorted['timestamp'].equals(all_game_logs['timestamp']))
 
-        # remove unnecessary columns
         df_start_end = all_logs_sorted[all_logs_sorted['event_type'].isin(start_events + end_events)]
+        # remove unnecessary columns
         df_start_end_small = df_start_end.drop(['state_id', 'seed', 'score', 'args'], axis=1)
 
         # some sanity checks and assertions to make sure the logs are correct
@@ -252,4 +264,4 @@ def assign_load(participant_list=list[str]):
 
 
 if __name__ == "__main__":
-    assign_load(participant_list=["participant_11", "participant_12", "participant_13"])
+    assign_load(participant_list=["participant_1"])
