@@ -3,13 +3,15 @@
 
 import argparse
 import os
+import shutil
 import sys
 import time
 import cv2
 from datetime import datetime
 from post_processing.eye_tracking.eye_tracker import EyeTracker
 from post_processing.eye_tracking.image_utils import show_image_window
-from post_processing.post_processing_constants import download_folder, labeled_images_folder, image_folder
+from post_processing.post_processing_constants import download_folder, labeled_images_folder, image_folder, \
+    post_processing_log_folder
 from post_processing.process_downloaded_data import get_fps_info
 
 
@@ -55,14 +57,26 @@ def debug_postprocess(enable_annotation, video_file_path):
 
 def process_images(eye_tracker, use_all_images=False):
     # for easier debugging; select the participants that should be processed; pass empty list to process all
-    participants = ["participant_10", "participant_12"]
+    participants = ["participant_3", "participant_5"]
 
     frame_count = 0
     start_time = time.time()
     # iterate over and process all images in the labeled images subfolders (easy, medium and hard)
     for sub_folder in os.listdir(download_folder):
         if len(participants) > 0 and sub_folder not in participants:
+            print(f"\nSkipping folder '{sub_folder}' as it is not in the specified folder names.\n")
             continue
+
+        post_processing_log_path = os.path.join(download_folder, sub_folder, post_processing_log_folder)
+        if os.path.exists(post_processing_log_path):
+            print(f"A post processing folder already exists for participant '{sub_folder}'!")
+            answer = input("Do you want to overwrite it? [y/n]\n")
+            if str.lower(answer) == "y" or str.lower(answer) == "yes":
+                print(f"\nOverwriting {sub_folder}...\n")
+                shutil.rmtree(post_processing_log_path)
+            else:
+                print(f"\nSkipping folder '{sub_folder}'.\n")
+                continue
 
         # get the recorded fps for the current participant
         fps_log_path = os.path.join(download_folder, sub_folder, "fps_info.txt")
@@ -87,7 +101,7 @@ def process_images(eye_tracker, use_all_images=False):
         # only process the labeled images, that can be associated with one of the load levels
         images_path = os.path.join(download_folder, sub_folder, labeled_images_folder)
         for load_folder in os.listdir(images_path):
-            print(f"Processing images for participant {sub_folder}; current difficulty: {load_folder}")
+            print(f"Processing images for '{sub_folder}'; current difficulty: {load_folder}")
             eye_tracker.set_current_difficulty(load_folder)
 
             for image_file in os.listdir(os.path.join(images_path, load_folder)):

@@ -9,7 +9,7 @@ import pathlib
 import schedule
 import time
 import threading
-from post_processing.post_processing_constants import download_folder
+from post_processing.post_processing_constants import download_folder, post_processing_log_folder
 
 ProcessingData = Enum("ProcessingData", "HEAD_POS_ROLL_PITCH_YAW LEFT_EYE RIGHT_EYE LEFT_EYE_CENTER "
                                         "RIGHT_EYE_CENTER LEFT_EYE_WIDTH RIGHT_EYE_WIDTH LEFT_EYE_HEIGHT "
@@ -46,8 +46,8 @@ ProcessingData = Enum("ProcessingData", "HEAD_POS_ROLL_PITCH_YAW LEFT_EYE RIGHT_
 
 # noinspection PyAttributeOutsideInit
 class ProcessingLogger:
-    def __init__(self, log_folder="processing_data"):
-        self.__log_folder = log_folder
+    def __init__(self):
+        self.__log_folder = post_processing_log_folder
 
         self.__log_tag = "processing_logger"
         self.__processed_data = []

@@ -74,7 +74,7 @@ class EyeTracker:
         Args:
             frame: video frame in the format [width, height, channels]
         """
-        # TODO preprocess the frame first?
+
         # processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
         self.__current_frame = frame
 
@@ -267,7 +267,7 @@ class EyeTracker:
 
         # extract region and add some padding so we get a little bit more; also make sure the extracted region +
         # padding still lies in the image bounding box
-        padding = 15
+        padding = 10
         left_eye_box = extract_image_region(self.__current_frame, left_eye_x_min, left_eye_y_min, left_eye_x_max,
                                             left_eye_y_max, padding=padding)
         right_eye_box = extract_image_region(self.__current_frame, right_eye_x_min, right_eye_y_min, right_eye_x_max,
