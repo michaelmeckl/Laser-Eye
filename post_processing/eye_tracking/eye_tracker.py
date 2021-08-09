@@ -151,10 +151,10 @@ class EyeTracker:
         self.__logger.log_frame_data(frame_id=log_timestamp, data=self.__tracked_data)
 
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
-        self.__logger.log_image("eyes", "left_eye", left_eye_bbox, log_timestamp)
-        self.__logger.log_image("eyes", "right_eye", right_eye_bbox, log_timestamp)
-        self.__logger.log_image("eyes_small", "left_eye_small", left_eye_bbox_small, log_timestamp)
-        self.__logger.log_image("eyes_small", "right_eye_small", right_eye_bbox_small, log_timestamp)
+        # self.__logger.log_image("eyes", "left_eye", left_eye_bbox, log_timestamp)
+        # self.__logger.log_image("eyes", "right_eye", right_eye_bbox, log_timestamp)
+        # self.__logger.log_image("eyes_small", "left_eye_small", left_eye_bbox_small, log_timestamp)
+        # self.__logger.log_image("eyes_small", "right_eye_small", right_eye_bbox_small, log_timestamp)
 
     def log_information(self):
         print("Saving log data ...")
