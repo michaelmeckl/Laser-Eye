@@ -26,7 +26,7 @@ def debug_postprocess(enable_annotation, video_file_path):
 
     video_width, video_height = capture.get(3), capture.get(4)
     print(f"Capture Width: {video_width}, Capture Height: {video_height}")
-    eye_tracker = EyeTracker(enable_annotation, debug_active=False)
+    eye_tracker = EyeTracker(enable_annotation, debug_active=True)
 
     c = 0
     start_time = datetime.now()
@@ -48,14 +48,14 @@ def debug_postprocess(enable_annotation, video_file_path):
 
         # press q to quit this loop
         if cv2.waitKey(1) & 0xFF == ord('q'):
-            eye_tracker.stop_tracking()
+            # eye_tracker.stop_tracking()
             cv2.destroyAllWindows()
             break
 
 
 def process_images(eye_tracker, use_all_images=False):
     # for easier debugging; select the participants that should be processed; pass empty list to process all
-    participants = ["participant_3"]
+    participants = ["participant_10", "participant_12"]
 
     frame_count = 0
     start_time = time.time()
@@ -67,13 +67,10 @@ def process_images(eye_tracker, use_all_images=False):
         # get the recorded fps for the current participant
         fps_log_path = os.path.join(download_folder, sub_folder, "fps_info.txt")
         fps = get_fps_info(fps_log_path)
-        eye_tracker.set_current_fps_val(fps)
-
         # set the current participant for the post processing logger
-        eye_tracker.set_current_participant(sub_folder)
+        eye_tracker.set_current_participant(sub_folder, fps)
 
-        # TODO reset the values for the last participant, maybe even create a completely new blink detector?
-
+        """
         if use_all_images:
             # process all extracted images, even the ones that aren't useful for the machine learning model
             images_path = os.path.join(download_folder, sub_folder, image_folder)
@@ -86,36 +83,34 @@ def process_images(eye_tracker, use_all_images=False):
                 # press q to skip to next participant / load level
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
-        else:
-            # only process the labeled images, that can be associated with one of the load levels
-            images_path = os.path.join(download_folder, sub_folder, labeled_images_folder)
-            for load_folder in os.listdir(images_path):
-                print(f"Processing images for participant {sub_folder}; current difficulty: {load_folder}")
-                eye_tracker.set_current_difficulty(load_folder)
+        """
+        # only process the labeled images, that can be associated with one of the load levels
+        images_path = os.path.join(download_folder, sub_folder, labeled_images_folder)
+        for load_folder in os.listdir(images_path):
+            print(f"Processing images for participant {sub_folder}; current difficulty: {load_folder}")
+            eye_tracker.set_current_difficulty(load_folder)
 
-                for image_file in os.listdir(os.path.join(images_path, load_folder)):
-                    current_frame = cv2.imread(os.path.join(images_path, load_folder, image_file))
-                    processed_frame = eye_tracker.process_current_frame(current_frame)
+            for image_file in os.listdir(os.path.join(images_path, load_folder)):
+                current_frame = cv2.imread(os.path.join(images_path, load_folder, image_file))
+                processed_frame = eye_tracker.process_current_frame(current_frame)
 
-                    frame_count += 1
-                    show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
-                    # press q to skip to next participant / load level
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
+                frame_count += 1
+                show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
+                # press q to skip to next participant / load level
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
-                # after we finished one folder, log all information that was recorded for it
-                eye_tracker.log_blink_information()
-
-        # TODO stop logging here already as it' started again for the next participant?
-        # eye_tracker.stop_tracking()
+            # after we finished one load folder, log all information that was recorded for it
+            eye_tracker.log_information()
+            # and reset the blink detector
+            eye_tracker.reset_blink_detector()
 
     duration = time.time() - start_time
     print(f"[INFO]: Frame Count: {frame_count}")
     print(f"[INFO]: Duration: {duration} seconds")
-    # print(f"[INFO]: FPS: {duration / frame_count:.3f}")
 
     # cleanup
-    eye_tracker.stop_tracking()
+    # eye_tracker.stop_tracking()
     cv2.destroyAllWindows()
     sys.exit(0)
 

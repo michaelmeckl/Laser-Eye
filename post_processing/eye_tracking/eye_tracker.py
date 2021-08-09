@@ -1,5 +1,5 @@
-import os
 import pathlib
+import threading
 import cv2
 import numpy as np
 import pyautogui as pyautogui
@@ -7,7 +7,6 @@ from numpy import sin, cos, pi, arctan
 from numpy.linalg import norm
 from post_processing.eye_tracking.ProcessingLogger import ProcessingLogger, ProcessingData
 from post_processing.eye_tracking.image_utils import detect_pupils, apply_threshold, show_image_window
-from post_processing.post_processing_constants import download_folder
 from post_processing_service.blink_detector import BlinkDetector
 from post_processing_service.saccade_fixation_detector import SaccadeFixationDetector
 from post_processing_service.face_alignment import CoordinateAlignmentModel
@@ -60,21 +59,15 @@ class EyeTracker:
         # print(f"frame width: {frame_width}, frame height: {frame_height}")
         self.head_pose_estimator.set_camera_matrix(frame_width, frame_height)
 
-    def set_current_participant(self, participant_folder):
+    def set_current_participant(self, participant_folder, fps_val):
         self.__logger.set_participant(participant_folder)
-
-        self.__logger.start_logging()
+        self.blink_detector.set_participant_fps(fps_val)
 
     def set_current_difficulty(self, difficulty):
         self.__logger.set_difficulty(difficulty)
 
-    def set_current_fps_val(self, fps_val):
-        self.blink_detector.set_participant_fps(fps_val)
-
-    # TODO blink detection and logging in general currently does not work with more participants/load levels after
-    #  each other!  -> reset image and blink counters after each load level and also save participant and load level
-    #  to log file
-    # TODO -> postprocessing results should be saved for each participant individually (even for each difficulty?)
+    def reset_blink_detector(self):
+        self.blink_detector.reset_blink_detection()
 
     def process_current_frame(self, frame: np.ndarray):
         """
@@ -113,13 +106,13 @@ class EyeTracker:
             # extract different parts of the eye region and save them as pngs
             eye_region_bbox = self.__extract_eye_region()
             left_eye_bbox, right_eye_bbox, left_eye_bbox_small, right_eye_bbox_small = self.__extract_eyes()
+
+            self.__left_pupil_diameter, self.__right_pupil_diameter = detect_pupils(left_eye_bbox, right_eye_bbox,
+                                                                                    self.__annotation_enabled)
             self.__log(eye_region_bbox, left_eye_bbox, right_eye_bbox, left_eye_bbox_small, right_eye_bbox_small)
 
             # new_eye_region = improve_image(eye_region_bbox)
             # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
-
-            # TODO log pupil sizes
-            detect_pupils(left_eye_bbox, right_eye_bbox, self.__annotation_enabled)
 
         return self.__current_frame
 
@@ -137,7 +130,6 @@ class EyeTracker:
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
             ProcessingData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
-            ProcessingData.FACE_LANDMARKS.name: self.__landmarks,  # .tolist(),
             ProcessingData.LEFT_EYE.name: self.__left_eye,
             ProcessingData.RIGHT_EYE.name: self.__right_eye,
             ProcessingData.LEFT_EYE_CENTER.name: self.__eye_centers[0],
@@ -148,10 +140,10 @@ class EyeTracker:
             ProcessingData.RIGHT_EYE_HEIGHT.name: self.__right_eye_height,
             ProcessingData.LEFT_PUPIL_POS.name: self.__pupils[0],
             ProcessingData.RIGHT_PUPIL_POS.name: self.__pupils[1],
-            ProcessingData.LEFT_PUPIL_DIAMETER.name: 0,  # TODO
-            ProcessingData.RIGHT_PUPIL_DIAMETER.name: 0,
+            ProcessingData.LEFT_PUPIL_DIAMETER.name: self.__left_pupil_diameter,
+            ProcessingData.RIGHT_PUPIL_DIAMETER.name: self.__right_pupil_diameter,
+            # ProcessingData.FACE_LANDMARKS.name: self.__landmarks,  # .tolist(),
         })
-        # TODO count, avg and std of blinks, fixations, saccades (also duration and peak)
 
         # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
         # can't be matched later!
@@ -164,12 +156,23 @@ class EyeTracker:
         self.__logger.log_image("eyes_small", "left_eye_small", left_eye_bbox_small, log_timestamp)
         self.__logger.log_image("eyes_small", "right_eye_small", right_eye_bbox_small, log_timestamp)
 
-    def log_blink_information(self):
+    def log_information(self):
+        print("Saving log data ...")
         blink_metrics = self.blink_detector.get_blink_metrics()
         self.__logger.log_blink_info(blink_metrics)
 
-    def stop_tracking(self):
-        self.__logger.stop_scheduling()
+        # save the logs on a background thread so the ui won't freeze during this!
+        self.save_log_thread = threading.Thread(target=self.__save_post_processing_data, name="SaveLogs", daemon=True)
+        self.save_log_thread.start()
+
+        # we still need to wait for it to finish as otherwise the new data would be added to the same list
+        self.save_log_thread.join()
+
+    def __save_post_processing_data(self):
+        self.__logger.save_tracking_data()
+
+    # def stop_tracking(self):
+    #     self.__logger.stop_scheduling()
 
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
@@ -254,13 +257,13 @@ class EyeTracker:
 
         left_eye_x_min = int(round(left_eye_center[0] - self.__left_eye_width / 2))
         left_eye_x_max = int(round(left_eye_center[0] + self.__left_eye_width / 2))
-        left_eye_y_min = int(round(left_eye_center[1] - self.__left_eye_width / 2))
-        left_eye_y_max = int(round(left_eye_center[1] + self.__left_eye_width / 2))
+        left_eye_y_min = int(round(left_eye_center[1] - self.__left_eye_height / 2))
+        left_eye_y_max = int(round(left_eye_center[1] + self.__left_eye_height / 2))
 
         right_eye_x_min = int(round(right_eye_center[0] - self.__right_eye_width / 2))
         right_eye_x_max = int(round(right_eye_center[0] + self.__right_eye_width / 2))
-        right_eye_y_min = int(round(right_eye_center[1] - self.__right_eye_width / 2))
-        right_eye_y_max = int(round(right_eye_center[1] + self.__right_eye_width / 2))
+        right_eye_y_min = int(round(right_eye_center[1] - self.__right_eye_height / 2))
+        right_eye_y_max = int(round(right_eye_center[1] + self.__right_eye_height / 2))
 
         # extract region and add some padding so we get a little bit more; also make sure the extracted region +
         # padding still lies in the image bounding box
@@ -279,7 +282,7 @@ class EyeTracker:
 
         gray_frame = cv2.cvtColor(self.__current_frame, cv2.COLOR_BGR2GRAY)
         eye_mask = cv2.bitwise_and(gray_frame, gray_frame, mask=mask)
-        if self.__annotation_enabled:
+        if self.__annotation_enabled and eye_mask is not None:
             show_image_window(eye_mask, "Eye Mask", 320, 450)
 
         left_eye_box_small = extract_image_region(eye_mask, left_eye_x_min, left_eye_y_min, left_eye_x_max,
@@ -295,9 +298,8 @@ class EyeTracker:
         # TODO: get diameter of the black region by finding the contours of the connected components!
         # see https://stackoverflow.com/questions/57317579/find-contiguous-black-pixels-in-image for an example
 
-        if self.__annotation_enabled:
-            left_eye_box_small = cv2.resize(left_eye_box_small, None, fx=5, fy=5)
-            show_image_window(left_eye_box_small, "Left eyebox small", 450, 200)
+        # if self.__annotation_enabled and left_eye_box_small is not None:
+        #     show_image_window(left_eye_box_small, "Left eyebox small", 450, 200)
 
         return left_eye_box, right_eye_box, left_eye_box_small, right_eye_box_small
 

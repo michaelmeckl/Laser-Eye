@@ -23,7 +23,7 @@ def apply_threshold(eye_img, threshold_val=20, is_gray=False, show_annotation=Fa
         eye_img = cv2.cvtColor(eye_img, cv2.COLOR_BGR2GRAY)
 
     _, threshold_eye_img = cv2.threshold(eye_img, threshold_val, 255, cv2.THRESH_BINARY)
-    if show_annotation:
+    if show_annotation and threshold_eye_img is not None:
         # threshold_eye_img = cv2.resize(threshold_eye_img, None, fx=5, fy=5)
         show_image_window(threshold_eye_img, window_name="Threshold eye_img: ", x_pos=300, y_pos=200)
 
@@ -118,7 +118,7 @@ def detect_pupils(cropped_l_e_img, cropped_r_e_img, show_annotation=False):
                        int(round(radius_r)), (255, 34, 34))
             show_image_window(cropped_r_e_img, window_name="right eye", x_pos=300, y_pos=50)
 
-    return (center_l, radius_l), (center_r, radius_r)
+    return 2 * radius_l, 2 * radius_r  # return the diameter of both pupils
 
 
 def connected_component_threshold(image):

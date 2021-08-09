@@ -41,8 +41,7 @@ class BlinkDetector:
         # print("max_frame_count in blink detector: ", self.__max_frame_count)
 
     def reset_blink_detection(self):
-        # TODO call this after each difficulty level? / each participant?
-        self.__init_values()
+        self.__init_values()  # (re-)set the initial values again after each difficulty level
 
     def get_blink_metrics(self):
         duration_in_minutes = (self.__frame_count / self.__participant_fps) / 60
