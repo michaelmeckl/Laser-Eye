@@ -6,11 +6,11 @@ import os
 import pathlib
 import random
 import sys
-from enum import Enum
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from machine_learning_predictor.difficulty_levels import DifficultyLevels
 from post_processing.post_processing_constants import download_folder, labeled_images_folder, image_folder
 
 
@@ -25,6 +25,7 @@ data_folder_path = os.path.join(os.path.dirname(__file__), "..", "post_processin
 random.seed(42)  # for reproducibility
 
 
+"""
 def show_samples(dataset):
     fig = plt.figure(figsize=(14, 14))
     columns = 3
@@ -40,6 +41,7 @@ def show_samples(dataset):
 
         i = i + 1
     plt.show()
+"""
 
 
 def show_batch(image_batch, label_batch):
@@ -92,50 +94,6 @@ def get_participant_images(participant_folder, use_folder=False):
                 full_image_path = os.path.join(labeled_images_path, difficulty_level, image_file)
                 # current_image = cv2.imread(full_image_path)
                 yield full_image_path, difficulty_level
-
-
-class DifficultyLevels(Enum):
-    HARD = "hard"
-    MEDIUM = "medium"
-    EASY = "easy"
-
-    @classmethod
-    def values(cls):
-        return list(map(lambda c: c.value, cls))
-
-    @staticmethod
-    def get_one_hot_encoding(category):
-        if category not in DifficultyLevels.values():
-            sys.stderr.write(f"\nNo one hot encoding possible for category {category}. Must be one of '"
-                             f"{DifficultyLevels.values()}'!")
-            return None
-
-        # return one-hot-encoded vector for this category
-        if category == DifficultyLevels.HARD.value:
-            label_vector = [0, 0, 1]
-        elif category == DifficultyLevels.MEDIUM.value:
-            label_vector = [0, 1, 0]
-        elif category == DifficultyLevels.EASY.value:
-            label_vector = [1, 0, 0]
-        else:
-            sys.stderr.write(f"\nCategory {category} doesn't match one of the difficulty levels!")
-            return None
-
-        return label_vector
-
-    @staticmethod
-    def get_label_for_encoding(encoded_vector):
-        if encoded_vector == [0, 0, 1]:
-            label = DifficultyLevels.HARD.value
-        elif encoded_vector == [0, 1, 0]:
-            label = DifficultyLevels.MEDIUM.value
-        elif encoded_vector == [1, 0, 0]:
-            label = DifficultyLevels.EASY.value
-        else:
-            sys.stderr.write(f"\nEncoded_vector {encoded_vector} can't be matched to one of the labels!")
-            return None
-
-        return label
 
 
 def preprocess_train_test_data(data):
@@ -210,13 +168,13 @@ def start_preprocessing():
         os.mkdir(result_folder)
 
     # TODO use savez to save compressed?
-    np.save(os.path.join(result_folder, "train_images.npy"), train_images)
-    np.save(os.path.join(result_folder, "train_labels.npy"), train_labels)
-    np.save(os.path.join(result_folder, "train_paths.npy"), train_paths)
+    np.save(os.path.join(result_folder, "train_images.npy"), train_images, allow_pickle=False)
+    np.save(os.path.join(result_folder, "train_labels.npy"), train_labels, allow_pickle=False)
+    np.save(os.path.join(result_folder, "train_paths.npy"), train_paths, allow_pickle=False)
 
-    np.save(os.path.join(result_folder, "test_images.npy"), test_images)
-    np.save(os.path.join(result_folder, "test_labels.npy"), test_labels)
-    np.save(os.path.join(result_folder, "test_paths.npy"), test_paths)
+    np.save(os.path.join(result_folder, "test_images.npy"), test_images, allow_pickle=False)
+    np.save(os.path.join(result_folder, "test_labels.npy"), test_labels, allow_pickle=False)
+    np.save(os.path.join(result_folder, "test_paths.npy"), test_paths, allow_pickle=False)
 
 
 if __name__ == "__main__":

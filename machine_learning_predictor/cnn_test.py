@@ -12,13 +12,13 @@ from tensorflow.python.keras.callbacks import ModelCheckpoint
 
 
 results_folder = "ml_results"
-images_train = np.load(os.path.join(results_folder, 'train_images.npy'), allow_pickle=True)  # TODO don't use pickle!
-labels_train = np.load(os.path.join(results_folder, 'train_labels.npy'), allow_pickle=True)
-paths_train = np.load(os.path.join(results_folder, 'train_paths.npy'), allow_pickle=True)
+images_train = np.load(os.path.join(results_folder, 'train_images.npy'), allow_pickle=False)  # TODO don't use pickle!
+labels_train = np.load(os.path.join(results_folder, 'train_labels.npy'), allow_pickle=False)
+paths_train = np.load(os.path.join(results_folder, 'train_paths.npy'), allow_pickle=False)
 
-images_test = np.load(os.path.join(results_folder, 'test_images.npy'), allow_pickle=True)
-labels_test = np.load(os.path.join(results_folder, 'test_labels.npy'), allow_pickle=True)
-paths_test = np.load(os.path.join(results_folder, 'test_paths.npy'), allow_pickle=True)
+images_test = np.load(os.path.join(results_folder, 'test_images.npy'), allow_pickle=False)
+labels_test = np.load(os.path.join(results_folder, 'test_labels.npy'), allow_pickle=False)
+paths_test = np.load(os.path.join(results_folder, 'test_paths.npy'), allow_pickle=False)
 
 MODEL_NAME = 'Cognitive-Load-CNN-Model'
 model_path = os.path.join(results_folder, MODEL_NAME)
