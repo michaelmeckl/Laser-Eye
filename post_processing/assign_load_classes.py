@@ -156,7 +156,7 @@ def check_image_blur(image_path) -> float:
     return cv2.Laplacian(gray_scale, cv2.CV_64F).var()
 
 
-def split_image_folder(result_dict, participant_folder, create_new_folders=True):
+def split_image_folder(result_dict, participant_folder, create_new_folders=True):  # TODO set to False ?
     """
     Param `result_dict` contains a list for each of the 3 load levels which contains all images from this participant
     that were recorded during a game with the corresponding difficulty:
@@ -184,7 +184,6 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=True)
     df_exploded.to_csv(os.path.join(data_folder, participant_folder, "labeled_images.csv"), index=False)
 
     # if this flag is set create a new folder "labeled_imags" with the difficulty levels as subfolders
-    # TODO the rest of the code needs this at the moment to work correctly
     if create_new_folders is True:
         labeled_images_folder = os.path.join(data_folder, participant_folder, "labeled_images")
         if not os.path.exists(labeled_images_folder):

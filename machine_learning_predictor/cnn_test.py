@@ -8,6 +8,7 @@ import numpy as np
 from matplotlib import pyplot as plt, image as mpimg
 from tensorflow import keras
 import tensorflow as tf
+from tensorflow.python.keras.callbacks import ModelCheckpoint
 
 
 results_folder = "ml_results"
@@ -22,7 +23,14 @@ paths_test = np.load(os.path.join(results_folder, 'test_paths.npy'), allow_pickl
 MODEL_NAME = 'Cognitive-Load-CNN-Model'
 model_path = os.path.join(results_folder, MODEL_NAME)
 
-label_encoding = {"high": [0, 0, 1], "normal": [0, 1, 0], "low": [1, 0, 0]}
+checkpoint_folder = "./checkpoints"
+if not os.path.exists(checkpoint_folder):
+    os.mkdir(checkpoint_folder)
+
+checkpoint_path = os.path.join(results_folder, checkpoint_folder,
+                               "checkpoint-improvement-{epoch:02d}-{categorical_accuracy:.3f}.h5")
+
+label_encoding = {"hard": [0, 0, 1], "medium": [0, 1, 0], "easy": [1, 0, 0]}
 
 
 def random_seed(seed=42):
@@ -80,6 +88,9 @@ def train_model():
     print("Len train data:", len(images_train))
     print("Len test data:", len(images_test))
 
+    # TODO show some images in the train set first
+    # show_samples(images_train)
+
     random_seed()
 
     model = keras.Sequential(
@@ -117,16 +128,23 @@ def train_model():
 
     # for the choice of last layer, activation and loss functions see
     # https://medium.com/deep-learning-with-keras/which-activation-loss-functions-in-multi-class-clasification-4cd599e4e61f
-    # model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=['categorical_accuracy'])
+    # metrics=['categorical_accuracy'])
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=[tf.keras.metrics.CategoricalAccuracy()])
 
     EPOCHS = 25
     BATCH_SIZE = 64
     VALIDATION_SPLIT = 0.25
 
-    # TODO: validation_set=... angeben und da die test data rein tun; nicht erst splitten
-    history = model.fit(images_train, labels_train, batch_size=BATCH_SIZE, validation_split=VALIDATION_SPLIT,
-                        verbose=1, epochs=EPOCHS)
+    # save checkpoints
+    checkpoint_callback = ModelCheckpoint(checkpoint_path, monitor='val_categorical_accuracy', verbose=1, mode="max",
+                                          save_best_only=True)
+    # TODO load checkpoint with:
+    # model.load_weights(checkpoint_path)
+
+    # history = model.fit(images_train, labels_train, batch_size=BATCH_SIZE, validation_split=VALIDATION_SPLIT,
+    #                     verbose=1, epochs=EPOCHS, callbacks=[checkpoint_callback])
+    history = model.fit(images_train, labels_train, batch_size=BATCH_SIZE, validation_data=(images_test, labels_test),
+                        verbose=1, epochs=EPOCHS, callbacks=[checkpoint_callback, keras.callbacks.ReduceLROnPlateau()])
     print(history.history)
 
     model.save(model_path)
@@ -160,4 +178,4 @@ def show_result_plot(accuracy, val_accuracy, loss, val_loss, epochs):
 
 if __name__ == "__main__":
     train_model()
-    test_model()
+    # test_model()
