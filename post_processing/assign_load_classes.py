@@ -181,9 +181,14 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=True)
     # right now, the first column contains only a list with all paths, so this column needs to be "exploded",
     # see https://stackoverflow.com/questions/53218931/how-to-unnest-explode-a-column-in-a-pandas-dataframe
     df_exploded = label_df.explode("image_path")
+
+    # add download and participant_folder to the path column to have complete paths
+    df_exploded["image_path"] = df_exploded["image_path"].apply(
+        lambda name: f"{os.path.join(download_folder, participant_folder, image_folder, name)}"
+    )
     df_exploded.to_csv(os.path.join(data_folder, participant_folder, "labeled_images.csv"), index=False)
 
-    # if this flag is set create a new folder "labeled_imags" with the difficulty levels as subfolders
+    # if this flag is set create a new folder "labeled_images" with the difficulty levels as subfolders
     if create_new_folders is True:
         labeled_images_folder = os.path.join(data_folder, participant_folder, "labeled_images")
         if not os.path.exists(labeled_images_folder):
@@ -263,4 +268,4 @@ def assign_load(participant_list=list[str]):
 
 
 if __name__ == "__main__":
-    assign_load(participant_list=["participant_1"])
+    assign_load(participant_list=[])

@@ -25,25 +25,6 @@ data_folder_path = os.path.join(os.path.dirname(__file__), "..", "post_processin
 random.seed(42)  # for reproducibility
 
 
-"""
-def show_samples(dataset):
-    fig = plt.figure(figsize=(14, 14))
-    columns = 3
-    rows = 3
-
-    print(columns * rows, "samples from the dataset")
-    i = 1
-    for a, b in dataset.take(columns * rows):
-        fig.add_subplot(rows, columns, i)
-        plt.imshow(a)
-        # plt.imshow(a.numpy())
-        plt.title("image shape:" + str(a.shape) + " Label:" + str(b.numpy()))
-
-        i = i + 1
-    plt.show()
-"""
-
-
 def show_batch(image_batch, label_batch):
     plt.figure(figsize=(10, 10))
     for n in range(25):
@@ -56,8 +37,8 @@ def show_batch(image_batch, label_batch):
 
 
 def get_participant_images(participant_folder, use_folder=False):
-    participant_folder_path = pathlib.Path(__file__).parent.parent / "post_processing" / download_folder / \
-                              participant_folder
+    post_processing_folder_path = pathlib.Path(__file__).parent.parent / "post_processing"
+    participant_folder_path = post_processing_folder_path / download_folder / participant_folder
     subset_size = 150
 
     if not use_folder:
@@ -69,19 +50,22 @@ def get_participant_images(participant_folder, use_folder=False):
         # less flexible version:
         for idx, row in labeled_images_df.iterrows():
             difficulty_level = row["load_level"]
-            image_name = row["image_path"]
-            full_image_path = os.path.join(participant_folder_path, image_folder, image_name)
+            image_path = row["image_path"]
+            full_image_path = os.path.join(post_processing_folder_path, image_path)
             # current_image = cv2.imread(full_image_path)
             yield full_image_path, difficulty_level
         """
+
+        # FIXME unfortunately a different order changes the results :(
+        # for difficulty_level in ["easy", "hard", "medium"]:
         for difficulty_level in labeled_images_df.load_level.unique():
             # create a subset of the df that contains only the rows with this difficulty level
             sub_df = labeled_images_df[labeled_images_df.load_level == difficulty_level]
 
             df_iterator = list(itertools.islice(sub_df.iterrows(), subset_size))  # TODO only subset for faster testing
             for idx, row in df_iterator:
-                image_name = row["image_path"]
-                full_image_path = os.path.join(participant_folder_path, image_folder, image_name)
+                image_path = row["image_path"]
+                full_image_path = os.path.join(post_processing_folder_path, image_path)
                 # current_image = cv2.imread(full_image_path)
                 yield full_image_path, difficulty_level
 
@@ -113,18 +97,20 @@ def preprocess_train_test_data(data):
                     break
 
                 resized_img = cv2.resize(grayscale_img, (NEW_IMAGE_SIZE, NEW_IMAGE_SIZE))
-                train_test_data.append([np.array(resized_img), label_vector, image_path])
+                train_test_data.append([np.array(resized_img, dtype=np.uint8), label_vector, image_path])
 
             except Exception as e:
                 sys.stderr.write(f"\nError in reading and resizing image '{image_path}': {e}")
 
-    random.shuffle(train_test_data)
+    # random.shuffle(train_test_data)
     return train_test_data
 
 
 def start_preprocessing():
-    all_participants = os.listdir(data_folder_path)  # [:12]  # TODO only take 12 so the counterbalancing works
+    all_participants = os.listdir(data_folder_path)[:12]  # only take 12 so the counterbalancing works
     random.shuffle(all_participants)
+
+    # TODO random choice one to use as test set ?
 
     train_ratio = 0.8
     train_split = int(len(all_participants) * train_ratio)
@@ -157,17 +143,28 @@ def start_preprocessing():
 
     show_batch([data[0] for data in train_data[25:]], [data[1] for data in train_data[25:]])
 
+    # TODO necessary?
     train_images = np.asarray(train_images).reshape(-1, NEW_IMAGE_SIZE, NEW_IMAGE_SIZE, 1)
     test_images = np.asarray(test_images).reshape(-1, NEW_IMAGE_SIZE, NEW_IMAGE_SIZE, 1)
     # normalize all images to [0, 1] for the neural network
-    train_images = train_images / 255.0
-    test_images = test_images / 255.0
+    train_images = train_images.astype('float32') / 255.0
+    test_images = test_images.astype('float32') / 255.0
+
+    plt.figure(figsize=(10, 10))
+    for i in range(25):
+        plt.subplot(5, 5, i + 1)
+        plt.xticks([])
+        plt.yticks([])
+        plt.grid(False)
+        plt.imshow(train_images[i], cmap=plt.cm.binary)
+        plt.xlabel(train_labels[i])
+    plt.show()
 
     result_folder = "ml_results"
     if not os.path.exists(result_folder):
         os.mkdir(result_folder)
 
-    # TODO use savez to save compressed?
+    # TODO use np.savez() to save compressed?
     np.save(os.path.join(result_folder, "train_images.npy"), train_images, allow_pickle=False)
     np.save(os.path.join(result_folder, "train_labels.npy"), train_labels, allow_pickle=False)
     np.save(os.path.join(result_folder, "train_paths.npy"), train_paths, allow_pickle=False)

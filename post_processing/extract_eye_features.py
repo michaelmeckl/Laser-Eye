@@ -132,9 +132,8 @@ def process_images(eye_tracker, use_all_images=False, use_folder=False):
                 # create a subset of the df that contains only the rows with this difficulty level
                 sub_df = labeled_images_df[labeled_images_df.load_level == difficulty_level]
                 for idx, row in sub_df.iterrows():
-                    image_name = row["image_path"]
-                    full_image_path = os.path.join(download_folder, sub_folder, image_folder, image_name)
-                    current_image = cv2.imread(full_image_path)
+                    image_path = row["image_path"]
+                    current_image = cv2.imread(image_path)
 
                     processed_frame = eye_tracker.process_current_frame(current_image)
 
