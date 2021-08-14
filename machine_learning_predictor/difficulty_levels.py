@@ -1,5 +1,7 @@
 import sys
 from enum import Enum
+from typing import Union, Iterable
+import numpy as np
 
 
 class DifficultyLevels(Enum):
@@ -32,12 +34,13 @@ class DifficultyLevels(Enum):
         return label_vector
 
     @staticmethod
-    def get_label_for_encoding(encoded_vector):
-        if encoded_vector == [0, 0, 1]:
+    def get_label_for_encoding(encoded_vector: Union[np.ndarray, Iterable]):
+        # np.array_equal() as the encoded vector can either be a normal list or a ndarray
+        if np.array_equal(encoded_vector, [0, 0, 1]):
             label = DifficultyLevels.HARD.value
-        elif encoded_vector == [0, 1, 0]:
+        elif np.array_equal(encoded_vector, [0, 1, 0]):
             label = DifficultyLevels.MEDIUM.value
-        elif encoded_vector == [1, 0, 0]:
+        elif np.array_equal(encoded_vector, [1, 0, 0]):
             label = DifficultyLevels.EASY.value
         else:
             sys.stderr.write(f"\nEncoded_vector {encoded_vector} can't be matched to one of the labels!")
