@@ -119,3 +119,6 @@ tracking_data_download_copy/
 tracking_data/
 *.exe
 *.7z
+
+/machine_learning_predictor/tests/
+/machine_learning_predictor/ml_results/
