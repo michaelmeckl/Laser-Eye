@@ -9,6 +9,8 @@ import time
 import cv2
 from datetime import datetime
 import pandas as pd
+import tensorflow as tf
+from machine_learning_predictor.machine_learning_constants import NEW_IMAGE_SIZE
 from post_processing.eye_tracking.eye_tracker import EyeTracker
 from post_processing.eye_tracking.image_utils import show_image_window
 from post_processing.post_processing_constants import download_folder, labeled_images_folder, image_folder, \
@@ -58,7 +60,7 @@ def debug_postprocess(enable_annotation, video_file_path):
 
 def process_images(eye_tracker, use_all_images=False, use_folder=False):
     # for easier debugging; select the participants that should be processed; pass empty list to process all
-    participants = ["participant_3", "participant_5"]
+    participants = ["participant_3", "participant_10", "participant_14"]
 
     frame_count = 0
     start_time = time.time()
@@ -135,7 +137,12 @@ def process_images(eye_tracker, use_all_images=False, use_folder=False):
                     image_path = row["image_path"]
                     current_image = cv2.imread(image_path)
 
-                    processed_frame = eye_tracker.process_current_frame(current_image)
+                    # crop or pad image depending on it's size
+                    resized_img = tf.image.resize_with_crop_or_pad(current_image,
+                                                                   target_height=NEW_IMAGE_SIZE[1],
+                                                                   target_width=NEW_IMAGE_SIZE[0]).numpy()
+
+                    processed_frame = eye_tracker.process_current_frame(resized_img)
 
                     frame_count += 1
                     show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
