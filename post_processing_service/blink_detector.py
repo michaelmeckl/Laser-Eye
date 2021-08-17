@@ -99,8 +99,8 @@ class BlinkDetector:
             font = cv2.FONT_HERSHEY_SIMPLEX
             cv2.putText(frame_copy, f"Blinks: {self.__total_blinks}", (10, 20), font, 0.6, (0, 0, 255), 2)
             cv2.putText(frame_copy, f"Onset: {self.__blink_onset}", (10, 50), font, 0.5, (0, 0, 255), 2)
-            cv2.putText(frame_copy, f"EAR: {ear:.2f}", (10, 150), font, 0.5, (0, 0, 255), 2)
-            cv2.putText(frame_copy, f"LAST EAR: {self.__last_ratio:.2f}", (10, 180), font, 0.5, (0, 0, 255), 2)
+            cv2.putText(frame_copy, f"EAR: {ear:.2f}", (10, 80), font, 0.5, (0, 0, 255), 2)
+            cv2.putText(frame_copy, f"LAST EAR: {self.__last_ratio:.2f}", (10, 120), font, 0.5, (0, 0, 255), 2)
             show_image_window(frame_copy, window_name="blink detection", x_pos=600, y_pos=350)
 
         if self.__last_ratio - ear > diff_threshold:

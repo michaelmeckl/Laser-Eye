@@ -130,8 +130,6 @@ class EyeTracker:
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
             ProcessingData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
-            ProcessingData.LEFT_EYE.name: self.__left_eye,
-            ProcessingData.RIGHT_EYE.name: self.__right_eye,
             ProcessingData.LEFT_EYE_CENTER.name: self.__eye_centers[0],
             ProcessingData.RIGHT_EYE_CENTER.name: self.__eye_centers[1],
             ProcessingData.LEFT_EYE_WIDTH.name: self.__left_eye_width,
@@ -142,6 +140,8 @@ class EyeTracker:
             ProcessingData.RIGHT_PUPIL_POS.name: self.__pupils[1],
             ProcessingData.LEFT_PUPIL_DIAMETER.name: self.__left_pupil_diameter,
             ProcessingData.RIGHT_PUPIL_DIAMETER.name: self.__right_pupil_diameter,
+            # ProcessingData.LEFT_EYE.name: self.__left_eye,
+            # ProcessingData.RIGHT_EYE.name: self.__right_eye,
             # ProcessingData.FACE_LANDMARKS.name: self.__landmarks,  # .tolist(),
         })
 
@@ -225,7 +225,7 @@ class EyeTracker:
 
     def __extract_eye_region(self):
         """
-        Get the smallest squared frame that encompasses the whole eye region.
+        Get the smallest frame that encompasses the whole eye region.
         """
         # find the outermost eye markers: i.e. the smallest and largest x and y values in the matrix
         min_vals = np.amin(self.__eye_markers, axis=1)
@@ -246,7 +246,8 @@ class EyeTracker:
         max_y_rect = int(round(max_y))
         min_x_rect = int(round(min_x))
         max_x_rect = int(round(max_x))
-        eye_ROI = extract_image_region(self.__current_frame, min_x_rect, min_y_rect, max_x_rect, max_y_rect, padding=20)
+        # a little bit of padding is necessary
+        eye_ROI = extract_image_region(self.__current_frame, min_x_rect, min_y_rect, max_x_rect, max_y_rect, padding=10)
         return eye_ROI
 
     def __extract_eyes(self):

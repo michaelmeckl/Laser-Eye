@@ -11,10 +11,10 @@ import time
 import threading
 from post_processing.post_processing_constants import download_folder, post_processing_log_folder
 
-ProcessingData = Enum("ProcessingData", "HEAD_POS_ROLL_PITCH_YAW LEFT_EYE RIGHT_EYE LEFT_EYE_CENTER "
-                                        "RIGHT_EYE_CENTER LEFT_EYE_WIDTH RIGHT_EYE_WIDTH LEFT_EYE_HEIGHT "
-                                        "RIGHT_EYE_HEIGHT LEFT_PUPIL_POS RIGHT_PUPIL_POS LEFT_PUPIL_DIAMETER "
-                                        "RIGHT_PUPIL_DIAMETER")  # FACE_LANDMARKS
+ProcessingData = Enum("ProcessingData", "HEAD_POS_ROLL_PITCH_YAW LEFT_EYE_CENTER RIGHT_EYE_CENTER LEFT_EYE_WIDTH "
+                                        "RIGHT_EYE_WIDTH LEFT_EYE_HEIGHT RIGHT_EYE_HEIGHT LEFT_PUPIL_POS "
+                                        "RIGHT_PUPIL_POS LEFT_PUPIL_DIAMETER "
+                                        "RIGHT_PUPIL_DIAMETER")  # LEFT_EYE RIGHT_EYE FACE_LANDMARKS
 
 
 # def run_continuously(interval=1):
