@@ -9,7 +9,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from machine_learning_predictor.classifier import DifficultyImageClassifier
 from machine_learning_predictor.custom_data_generator import CustomImageDataGenerator
-from machine_learning_predictor.machine_learning_constants import NUMBER_OF_CLASSES
+from machine_learning_predictor.machine_learning_constants import NUMBER_OF_CLASSES, data_folder_path
 from machine_learning_predictor.ml_utils import set_random_seed
 from post_processing.post_processing_constants import download_folder
 
@@ -35,7 +35,15 @@ def merge_participant_image_logs(participant_list):
     return image_data_frame_numbered
 
 
-# TODO:
+# TODO alternativ:
+"""
+fps_log_path = os.path.join(data_folder_path, participant_folder, "fps_info.txt")
+fps = get_fps_info(fps_log_path)
+print("FPS:", fps)
+
+batch_time_span = 6  # 6 seconds as in the Fridman Paper: "Cognitive Load Estimation in the Wild"
+batch_size = round(fps * batch_time_span)  # the number of images we take as one batch
+"""
 def get_suitable_batch_size(dataset_len: int, test_data=False):
     # Find a suitable batch size that is a divisor of the number of images in the data (1 would obviously work but
     # feeding one image per time would be quite inefficient). For the training generator finding a perfect divisor
@@ -63,8 +71,8 @@ def split_train_test(participant_list, train_ratio=0.8):
     train_split = int(len(participant_list) * train_ratio)
     train_participants = participant_list[:train_split]
     test_participants = participant_list[train_split:]
-    print("Number of participants used for training: ", len(train_participants))
-    print("Number of participants used for testing: ", len(test_participants))
+    print(f"{len(train_participants)} participants used for training: {train_participants}")
+    print(f"{len(test_participants)} participants used for validation: {test_participants}")
 
     return train_participants, test_participants
 
@@ -72,8 +80,13 @@ def split_train_test(participant_list, train_ratio=0.8):
 def start_preprocessing():
     set_random_seed()  # set seed for reproducibility
 
-    data_folder_path = os.path.join(os.path.dirname(__file__), "..", "post_processing", download_folder)
+    # without_participants = ["participant_1", "participant_5"]  # "participant_6"  # TODO
+    without_participants = []
+
     all_participants = os.listdir(data_folder_path)[:12]  # TODO only take 12 or 18 so the counterbalancing works
+    # remove some participants for testing
+    all_participants = [p for p in all_participants if p not in set(without_participants)]
+
     train_participants, test_participants = split_train_test(all_participants)
 
     train_data = merge_participant_image_logs(train_participants)

@@ -119,7 +119,7 @@ def train_model(train_data: tuple, test_data: tuple, model_path, checkpoint_path
     print("Len test data:", len(images_test))
 
     # show some images in the train set first
-    show_sample_images(images_train, labels_train)
+    # show_sample_images(images_train, labels_train)
     set_random_seed()
 
     # TODO reshape input to feed 10 images as a sequence; not working correctly atm
@@ -214,4 +214,4 @@ def main(train=True, test=False):
 
 
 if __name__ == "__main__":
-    main(train=True, test=False)
+    main(train=True, test=True)

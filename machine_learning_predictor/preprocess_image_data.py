@@ -14,15 +14,24 @@ from machine_learning_predictor.difficulty_levels import DifficultyLevels
 from machine_learning_predictor.machine_learning_constants import RANDOM_SEED, data_folder_path
 from machine_learning_predictor.ml_utils import show_sample_images, set_random_seed
 from post_processing.post_processing_constants import download_folder, labeled_images_folder
+from post_processing.process_downloaded_data import get_fps_info
 
 
 NEW_IMAGE_SIZE = 128
 
 
-def get_participant_images(participant_folder, use_folder=False):
+def get_participant_images(participant_folder, use_folder=False, use_step_size=False):
     post_processing_folder_path = pathlib.Path(__file__).parent.parent / "post_processing"
     participant_folder_path = post_processing_folder_path / download_folder / participant_folder
     subset_size = 150
+
+    if use_step_size:
+        subset_size = 2000
+        # TODO step_size good or bad idea ?
+        fps_log_path = os.path.join(data_folder_path, participant_folder, "fps_info.txt")
+        fps = get_fps_info(fps_log_path)
+        # print("FPS:", fps)
+        step_size = int(round(fps))  # take only one image per second ?
 
     if not use_folder:
         # iterate over the csv file and yield the image paths and their corresponding difficulty level
@@ -45,7 +54,12 @@ def get_participant_images(participant_folder, use_folder=False):
             # create a subset of the df that contains only the rows with this difficulty level
             sub_df = labeled_images_df[labeled_images_df.load_level == difficulty_level]
 
-            df_iterator = list(itertools.islice(sub_df.iterrows(), subset_size))  # TODO only subset for faster testing
+            # TODO take only small subset for faster testing
+            if use_step_size:
+                df_iterator = list(itertools.islice(sub_df.iterrows(), 0, subset_size, step_size))
+            else:
+                df_iterator = list(itertools.islice(sub_df.iterrows(), 0, subset_size))
+
             for idx, row in df_iterator:
                 image_path = row["image_path"]
                 full_image_path = os.path.join(post_processing_folder_path, image_path)
@@ -57,7 +71,12 @@ def get_participant_images(participant_folder, use_folder=False):
         labeled_images_path = participant_folder_path / labeled_images_folder
         for difficulty_level in os.listdir(labeled_images_path):
             # TODO only subset for faster testing
-            for image_file in os.listdir(os.path.join(labeled_images_path, difficulty_level))[:subset_size]:
+            if use_step_size:
+                image_list = os.listdir(os.path.join(labeled_images_path, difficulty_level))[:subset_size:step_size]
+            else:
+                image_list = os.listdir(os.path.join(labeled_images_path, difficulty_level))[:subset_size]
+
+            for image_file in image_list:
                 full_image_path = os.path.join(labeled_images_path, difficulty_level, image_file)
                 # current_image = cv2.imread(full_image_path)
                 yield full_image_path, difficulty_level
@@ -67,7 +86,7 @@ def preprocess_train_test_data(data):
     train_test_data = []
 
     for participant in data:
-        for image_path, difficulty_level in get_participant_images(participant, use_folder=False):
+        for image_path, difficulty_level in get_participant_images(participant, use_folder=False, use_step_size=False):
             label_vector = DifficultyLevels.get_one_hot_encoding(difficulty_level)
             try:
                 # grayscale_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
@@ -85,17 +104,21 @@ def preprocess_train_test_data(data):
             except Exception as e:
                 sys.stderr.write(f"\nError in reading and resizing image '{image_path}': {e}")
 
-    # random.shuffle(train_test_data)
+    random.shuffle(train_test_data)
     return train_test_data
 
 
 def start_preprocessing():
     set_random_seed(RANDOM_SEED)  # for reproducibility
 
-    without_participants = ["participant_1"]
+    without_participants = ["participant_1", "participant_5"]  # "participant_6"
+    # without_participants = []
 
     all_participants = os.listdir(data_folder_path)[:12]  # TODO only take 12 or 18 so the counterbalancing works
-    all_participants = list(set(all_participants) - set(without_participants))  # remove some participants for testing
+    # remove some participants for testing
+    # all_participants = list(set(all_participants) - set(without_participants))  # doesn't keep the original order!
+    all_participants = [p for p in all_participants if p not in set(without_participants)]
+
     random.shuffle(all_participants)
 
     # TODO random choice one to use as test set ?
@@ -104,8 +127,8 @@ def start_preprocessing():
     train_split = int(len(all_participants) * train_ratio)
     train_participants = all_participants[:train_split]
     test_participants = all_participants[train_split:]
-    print("Number of participants used for training: ", len(train_participants))
-    print("Number of participants used for testing: ", len(test_participants))
+    print(f"{len(train_participants)} participants used for training: {train_participants}")
+    print(f"{len(test_participants)} participants used for validation: {test_participants}")
 
     train_data = preprocess_train_test_data(train_participants)
     test_data = preprocess_train_test_data(test_participants)
