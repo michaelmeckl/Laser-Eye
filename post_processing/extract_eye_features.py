@@ -137,12 +137,15 @@ def process_images(eye_tracker, use_all_images=False, use_folder=False):
                     image_path = row["image_path"]
                     current_image = cv2.imread(image_path)
 
+                    # TODO resizing needs to be done later in the process as it causes problems in correctly finding
+                    #  faces and pupils for some participants
+                    """
                     # crop or pad image depending on it's size
-                    resized_img = tf.image.resize_with_crop_or_pad(current_image,
+                    current_image = tf.image.resize_with_crop_or_pad(current_image,
                                                                    target_height=NEW_IMAGE_SIZE[1],
                                                                    target_width=NEW_IMAGE_SIZE[0]).numpy()
-
-                    processed_frame = eye_tracker.process_current_frame(resized_img)
+                    """
+                    processed_frame = eye_tracker.process_current_frame(current_image)
 
                     frame_count += 1
                     show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
