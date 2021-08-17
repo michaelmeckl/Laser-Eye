@@ -11,29 +11,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
-from post_processing.post_processing_constants import download_folder, labeled_images_folder, image_folder
+from machine_learning_predictor.machine_learning_constants import RANDOM_SEED, data_folder_path
+from machine_learning_predictor.ml_utils import show_sample_images, set_random_seed
+from post_processing.post_processing_constants import download_folder, labeled_images_folder
 
 
-# TODO Lösungsansätze für Problem mit unterschiedlichen Bilddimensionen pro Frame:
-# 1. kleinere bilder mit padding versehen bis alle gleich groß wie größtes
-# 2. größere bilder runterskalieren bis alle gleich groß wie kleinstes (oder alternativ crop)
-# 3. einfach irgendeine größe nehmen und verzerrung akzeptieren:
-NEW_IMAGE_SIZE = 80
-
-data_folder_path = os.path.join(os.path.dirname(__file__), "..", "post_processing", "tracking_data_download")
-
-random.seed(42)  # for reproducibility
-
-
-def show_batch(image_batch, label_batch):
-    plt.figure(figsize=(10, 10))
-    for n in range(25):
-        ax = plt.subplot(5, 5, n + 1)
-        plt.imshow(image_batch[n])
-        label = DifficultyLevels.get_label_for_encoding(label_batch[n])
-        plt.title(label)
-        plt.axis('off')
-    plt.show()
+NEW_IMAGE_SIZE = 128
 
 
 def get_participant_images(participant_folder, use_folder=False):
@@ -107,7 +90,12 @@ def preprocess_train_test_data(data):
 
 
 def start_preprocessing():
-    all_participants = os.listdir(data_folder_path)[:12]  # only take 12 so the counterbalancing works
+    set_random_seed(RANDOM_SEED)  # for reproducibility
+
+    without_participants = ["participant_1"]
+
+    all_participants = os.listdir(data_folder_path)[:12]  # TODO only take 12 or 18 so the counterbalancing works
+    all_participants = list(set(all_participants) - set(without_participants))  # remove some participants for testing
     random.shuffle(all_participants)
 
     # TODO random choice one to use as test set ?
@@ -141,9 +129,8 @@ def start_preprocessing():
         test_labels.append(label)
         test_paths.append(path)
 
-    show_batch([data[0] for data in train_data[25:]], [data[1] for data in train_data[25:]])
+    show_sample_images([data[0] for data in train_data[25:]], [data[1] for data in train_data[25:]])
 
-    # TODO necessary?
     train_images = np.asarray(train_images).reshape(-1, NEW_IMAGE_SIZE, NEW_IMAGE_SIZE, 1)
     test_images = np.asarray(test_images).reshape(-1, NEW_IMAGE_SIZE, NEW_IMAGE_SIZE, 1)
     # normalize all images to [0, 1] for the neural network
