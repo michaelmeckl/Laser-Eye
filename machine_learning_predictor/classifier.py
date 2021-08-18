@@ -1,5 +1,4 @@
 import os
-from typing import Optional
 import numpy as np
 import psutil
 import tensorflow as tf
@@ -21,15 +20,15 @@ class DifficultyImageClassifier:
         self.train_generator = train_generator
         self.validation_generator = val_generator
 
-        self.step_size_train = train_generator.n // train_generator.batch_size
-        self.step_size_val = val_generator.n // val_generator.batch_size
+        self.step_size_train = train_generator.n // train_generator.sample_size
+        self.step_size_val = val_generator.n // val_generator.sample_size
 
         # check the maximum number of available cores
         cpu_count_available = len(psutil.Process().cpu_affinity()),  # number of usable cpus by this process
         print("CPU Count available", cpu_count_available)
         self.num_workers = cpu_count_available[0] if cpu_count_available[0] else 1
 
-    def build_model(self, input_shape: tuple[Optional[int], int, int, int]) -> tf.keras.Model:
+    def build_model(self, input_shape: tuple) -> tf.keras.Model:
         # TODO test with different architectures:
         self.sequential_model = tf.keras.Sequential(
             [
@@ -70,7 +69,7 @@ class DifficultyImageClassifier:
 
         return self.sequential_model
 
-    def build_model_functional_version(self, input_shape: tuple[Optional[int], int, int, int]) -> tf.keras.Model:
+    def build_model_functional_version(self, input_shape: tuple) -> tf.keras.Model:
         inputs = tf.keras.Input(shape=input_shape)
         output = tf.keras.layers.Conv2D(32, (3, 3), activation='relu')(inputs)
         output = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(output)
@@ -162,9 +161,7 @@ class DifficultyImageClassifier:
         print("Validation accuracy: ", val_acc * 100)
 
     def evaluate_classifier_dataset_version(self, val_ds):
-        val_loss, val_acc = self.sequential_model.evaluate(val_ds,
-                                                           # steps=self.step_size_val,  # TODO ?
-                                                           verbose=1)
+        val_loss, val_acc = self.sequential_model.evaluate(val_ds, verbose=1)
         print("Validation loss: ", val_loss)
         print("Validation accuracy: ", val_acc * 100)
 

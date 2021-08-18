@@ -4,7 +4,6 @@
 import os
 import pathlib
 import random
-import sys
 import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
@@ -44,34 +43,17 @@ def merge_participant_image_logs(participant_list):
     return image_data_frame_numbered
 
 
-# TODO alternativ:
-"""
-fps_log_path = os.path.join(data_folder_path, participant_folder, "fps_info.txt")
-fps = get_fps_info(fps_log_path)
-print("FPS:", fps)
-
-batch_time_span = 6  # 6 seconds as in the Fridman Paper: "Cognitive Load Estimation in the Wild"
-batch_size = round(fps * batch_time_span)  # the number of images we take as one batch
-"""
-def get_suitable_batch_size(dataset_len: int, test_data=False):
-    # Find a suitable batch size that is a divisor of the number of images in the data (1 would obviously work but
-    # feeding one image per time would be quite inefficient). For the training generator finding a perfect divisor
-    # isn't as important as for testing, so we simply use 64 as default if no other divisor is found.
-    # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences.
-    num_batches = 1 if test_data else 64
-    max_batch_number = 1001
-    if dataset_len < max_batch_number:
-        sys.stderr.write("Dataset is too small to generate useful batches!")
-
-    # start in reverse to get smaller batches as smaller batches work better in general, see link above
-    for i in reversed(range(11, max_batch_number)):
-        if dataset_len % i == 0:
-            num_batches = i
-            break
-
-    print("Number of batches: ", num_batches)
-    batch_size = dataset_len // num_batches  # floor division only necessary if we didn't find a divisor
-    return batch_size
+def get_suitable_sample_size():
+    """
+    fps_log_path = os.path.join(data_folder_path, participant_folder, "fps_info.txt")
+    fps = get_fps_info(fps_log_path)
+    print("FPS:", fps)
+    """
+    fps = 14  # TODO use the fps that is used for post processing as well and drop images for users with more!
+    sample_time_span = 6  # 6 seconds as in the Fridman Paper: "Cognitive Load Estimation in the Wild"
+    sample_size = round(fps * sample_time_span)  # the number of images we take as one sample
+    print("Sample size: ", sample_size)
+    return sample_size
 
 
 def split_train_test(participant_list, train_ratio=0.8):
@@ -92,7 +74,7 @@ def configure_for_performance(ds, filename, batch_size):
         os.mkdir(ds_folder)
     ds = ds.cache(os.path.join(ds_folder, filename))
     # TODO batch based on train or val batch size to increase performance further? -> this adds another dimension!
-    # ds = ds.batch(batch_size)
+    # ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(buffer_size=tf.data.AUTOTUNE)
     return ds
 
@@ -112,10 +94,12 @@ def start_preprocessing(use_dataset_version=True):
     train_data = merge_participant_image_logs(train_participants)
     val_data = merge_participant_image_logs(test_participants)
 
-    train_batch_size = get_suitable_batch_size(len(train_data), test_data=False)
-    val_batch_size = get_suitable_batch_size(len(val_data), test_data=True)
-    print(f"Train batch size: {train_batch_size} (Data len: {len(train_data)})")
-    print(f"Validation batch size: {val_batch_size} (Data len: {len(val_data)})")
+    # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
+    # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
+    batch_size = 64
+
+    sample_size = get_suitable_sample_size()
+    print(f"Sample size: {sample_size} (Train data len: {len(train_data)}, val data len: {len(val_data)})")
 
     # TODO make sure we have nearly the same number of images per difficulty level!
     for difficulty_level in train_data.load_level.unique():
@@ -125,12 +109,12 @@ def start_preprocessing(use_dataset_version=True):
     images_path = pathlib.Path(__file__).parent.parent / "post_processing"
     use_gray = False
     train_generator = CustomImageDataGenerator(data_frame=train_data, x_col_name="image_path", y_col_name="load_level",
-                                               batch_size=train_batch_size, images_base_path=images_path,
-                                               use_grayscale=use_gray, shuffle=False)
+                                               sample_size=sample_size, batch_size=batch_size,
+                                               images_base_path=images_path, use_grayscale=use_gray)
 
     val_generator = CustomImageDataGenerator(data_frame=val_data, x_col_name="image_path", y_col_name="load_level",
-                                             batch_size=val_batch_size, images_base_path=images_path,
-                                             use_grayscale=use_gray, shuffle=False)
+                                             sample_size=sample_size, batch_size=batch_size,
+                                             images_base_path=images_path, use_grayscale=use_gray)
 
     # show some example train images to verify the generator is working correctly
     first_sample, sample_labels = train_generator[0]
@@ -146,37 +130,36 @@ def start_preprocessing(use_dataset_version=True):
         plt.xlabel(sample_labels[i])
     # plt.show()
 
-    image_shape = train_generator.get_image_shape()
     train_epochs = 12
+    image_shape = train_generator.get_image_shape()
+    print("Image Shape: ", image_shape)
 
     classifier = DifficultyImageClassifier(train_generator, val_generator, num_classes=NUMBER_OF_CLASSES,
                                            num_epochs=train_epochs)
-    classifier.build_model(input_shape=image_shape)
 
     if use_dataset_version:
-        train_dataset = tf.data.Dataset.from_generator(
-            lambda: train_generator,
-            output_signature=(
-                tf.TensorSpec(shape=(train_batch_size, *image_shape), dtype=tf.float64),
-                tf.TensorSpec(shape=(train_batch_size, NUMBER_OF_CLASSES), dtype=tf.float64),
-            )
+        ds_output_signature = (
+            # tf.TensorSpec(shape=(batch_size, sample_size, *image_shape), dtype=tf.float64),
+            tf.TensorSpec(shape=(sample_size, *image_shape), dtype=tf.float64),
+            tf.TensorSpec(shape=(sample_size, NUMBER_OF_CLASSES), dtype=tf.float64),
         )
-        val_dataset = tf.data.Dataset.from_generator(
-            lambda: val_generator,
-            output_signature=(
-                tf.TensorSpec(shape=(val_batch_size, *image_shape), dtype=tf.float64),
-                tf.TensorSpec(shape=(val_batch_size, NUMBER_OF_CLASSES), dtype=tf.float64),
-            )
-        )
+        train_dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_signature=ds_output_signature)
+        val_dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_signature=ds_output_signature)
 
         # add caching and prefetching to speed up the process
-        train_dataset = configure_for_performance(train_dataset, filename="train_dataset", batch_size=train_batch_size)
-        val_dataset = configure_for_performance(val_dataset, filename="val_dataset", batch_size=val_batch_size)
+        train_dataset = configure_for_performance(train_dataset, filename="train_dataset", batch_size=batch_size)
+        val_dataset = configure_for_performance(val_dataset, filename="val_dataset", batch_size=batch_size)
 
+        # TODO after adding batches:
+        # new_image_shape = (batch_size, sample_size, *image_shape)
+        # print("New image shape: ", new_image_shape)
+
+        classifier.build_model(input_shape=image_shape)
         classifier.train_classifier_dataset_version(train_dataset, val_dataset)
         classifier.evaluate_classifier_dataset_version(val_dataset)
 
     else:
+        classifier.build_model(input_shape=image_shape)
         classifier.train_classifier()
         classifier.evaluate_classifier()
 

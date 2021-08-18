@@ -1,7 +1,6 @@
 import os
 import random
 import sys
-import cv2
 import numpy as np
 import tensorflow as tf
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
@@ -13,19 +12,20 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
     Structure based on https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly
     """
 
-    def __init__(self, data_frame, x_col_name, y_col_name, batch_size, num_classes=3,
-                 images_base_path=".", use_grayscale=False, shuffle=False):
+    def __init__(self, data_frame, x_col_name, y_col_name, sample_size, batch_size, num_classes=3,
+                 images_base_path=".", use_grayscale=False):
         self.df = data_frame.copy()
+        # self.original_df = data_frame.copy()
         self.X_col = x_col_name
         self.y_col = y_col_name
+        self.sample_size = sample_size
         self.batch_size = batch_size
         self.n_classes = num_classes
         self.images_base_path = images_base_path
         self.use_grayscale = use_grayscale
-        self.should_shuffle = shuffle
 
         self.n = len(self.df)
-        self.indexes = self.df.index.to_list()
+        self.indices = self.df.index.to_list()
 
         num_channels = 1 if self.use_grayscale else 3
         self.output_size = (*NEW_IMAGE_SIZE, num_channels)
@@ -43,38 +43,44 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         would not necessarily be correct consecutive images if parts in-between were taken for a previous sample!
         """
         sample_indices = []
-        for i in range(0, self.n, self.batch_size):
+        for i in range(0, self.n, self.sample_size):
             sample_indices.append(i)
 
         random.shuffle(sample_indices)
         return sample_indices
 
     """
-    def generate_random_index_list(self):
-        original_indexes = self.indexes[:]
+    def create_random_index_list(self):
+        original_indexes = self.indices[:]
         used_indices = []
         random_indexes = []
-        num_images = self.n - self.batch_size
         num_samples = self.__len__()
 
-        for i in range(num_samples-1):
-            # get difference of both lists, see 
-            s = set(used_indices)
-            index_list = [x for x in original_indexes if x not in s]
+        for i in range(num_samples):
+            # index_list = [x for x in original_indexes if x not in set(used_indices)]
 
-            start_index = random.choice(range(index_list))
+            start_index = random.choice(original_indexes)
             random_indexes.append(start_index)
-            used_indices.append(original_indexes[start_index:start_index + self.batch_size)
-            num_images -= self.batch_size
+            del original_indexes[start_index:start_index + self.batch_size]
+            # used_indices.extend(original_indexes[start_index:start_index + self.batch_size])
 
-        # TODO add the one batch that is left
+        # add the one batch that is left
+        # index_list = [x for x in original_indexes if x not in set(used_indices)]
+        # last_sample_index = index_list[0]
+        # random_indexes.append(last_sample_index)
+
+        random.shuffle(random_indexes)
         return random_indexes
     """
 
     def __len__(self):
-        return self.n // self.batch_size
+        return self.n // self.sample_size
 
-    # TODO test the dataframe subset version too!
+    def on_epoch_end(self):
+        random.shuffle(self.index_order)
+        # self.df = self.original_df.copy()
+        # # self.df = self.df.sample(frac=1).reset_index(drop=True)
+
     def __getitem__(self, index):
         """
         Return a new sample in the form (X, y) where X is an image and y the corresponding label.
@@ -83,16 +89,24 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             index: the number of the current sample from 0 to __len__() - 1
         """
         actual_index = self.index_order[index]
+        # actual_index = random.choice(self.df.index.to_list())
+
         # Take all elements starting from the current index until the start of the next index
-        sample_rows = self.df[actual_index:actual_index + self.batch_size]
+        sample_rows = self.df[actual_index:actual_index + self.sample_size]
 
         X, y = self.__get_data(sample_rows)
+        # TODO only works if workers are set to 1 in classifier!
+        # self.df.drop(self.df.index[actual_index:actual_index + self.batch_size], inplace=True)
+        # if len(self.df) == 0:
+        #     self.df = self.original_df.copy()
+        # self.df = self.df.reset_index(drop=True)
+
         return X, y
 
     def __get_data(self, sample):
-        # Init empty arrays for the image and label data
-        X = np.empty((self.batch_size, *self.output_size))
-        y = np.empty((self.batch_size, self.n_classes))
+        # Setup arrays for the image and label data
+        X = np.empty((self.sample_size, *self.output_size))
+        y = np.empty((self.sample_size, self.n_classes))
 
         # Load and preprocess the images and labels for the current sample
         i = 0
@@ -109,26 +123,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
     def __scale_and_convert_image(self, image_path):
         try:
-            """
-            # opencv version:
-
-            # img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-            # use this instead: (for the reason see
-            # https://stackoverflow.com/questions/37203970/opencv-grayscale-mode-vs-gray-color-conversion#comment103382641_37208336)
-            img = cv2.imread(image_path)
-            if self.use_grayscale:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-            resized_img = cv2.resize(img, NEW_IMAGE_SIZE)
-            scaled_img = resized_img / 255.0
-
-            if self.use_grayscale:
-                # add the third dimension again that was lost during opencv's grayscale conversion
-                scaled_img = scaled_img[:, :, np.newaxis]
-
-            return scaled_img
-            """
-            # tensorflow image version:
             color_mode = "grayscale" if self.use_grayscale else "rgb"
 
             image = tf.keras.preprocessing.image.load_img(image_path, color_mode=color_mode)
@@ -138,7 +132,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             resized_img = tf.image.resize_with_crop_or_pad(image_arr,
                                                            target_height=NEW_IMAGE_SIZE[1],
                                                            target_width=NEW_IMAGE_SIZE[0])
-            # resized_img = tf.image.resize(image_arr, [NEW_IMAGE_SIZE[1], NEW_IMAGE_SIZE[0]])
 
             # normalize pixel values to [0, 1] so the ml model can work with smaller values
             scaled_img = resized_img.numpy() / 255.0
@@ -147,11 +140,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         except Exception as e:
             sys.stderr.write(f"\nError in processing image '{image_path}': {e}")
             return None
-
-    def on_epoch_end(self):
-        # TODO remove used indexes from df and reset index?
-        if self.should_shuffle:
-            self.df = self.df.sample(frac=1).reset_index(drop=True)
 
     def get_first(self):
         return self.__getitem__(0)

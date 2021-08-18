@@ -187,9 +187,9 @@ def preprocess_image_data():
     channels = 3  # if 'rgb' else 1
     model = build_model_sequential(input_shape=(*new_image_size, channels), num_classes=3)
 
-    STEP_SIZE_TRAIN = train_generator.n // train_generator.batch_size
+    STEP_SIZE_TRAIN = train_generator.n // train_generator.sample_size
     # STEP_SIZE_VALID = valid_generator.n // valid_generator.batch_size
-    STEP_SIZE_TEST = test_generator.n // test_generator.batch_size
+    STEP_SIZE_TEST = test_generator.n // test_generator.sample_size
 
     # history = model.fit_generator(generator=train_generator,
     history = model.fit(train_generator,
