@@ -6,11 +6,12 @@ import pathlib
 import random
 import sys
 import pandas as pd
+import tensorflow as tf
 from matplotlib import pyplot as plt
 from machine_learning_predictor.classifier import DifficultyImageClassifier
 from machine_learning_predictor.custom_data_generator import CustomImageDataGenerator
 from machine_learning_predictor.machine_learning_constants import NUMBER_OF_CLASSES, data_folder_path
-from machine_learning_predictor.ml_utils import set_random_seed
+from machine_learning_predictor.ml_utils import set_random_seed, show_result_plot
 from post_processing.post_processing_constants import download_folder
 
 
@@ -21,8 +22,16 @@ def merge_participant_image_logs(participant_list):
     for participant in participant_list:
         images_label_log = post_processing_folder_path / download_folder / participant / "labeled_images.csv"
         labeled_images_df = pd.read_csv(images_label_log)
-        labeled_images_df = labeled_images_df.sample(n=450)  # TODO for testing take only 450 rows randomly
-        image_data_frame = pd.concat([image_data_frame, labeled_images_df])
+
+        difficulty_level_df = pd.DataFrame()
+        # TODO for testing take only the first 150 rows for each difficulty level
+        for difficulty_level in labeled_images_df.load_level.unique():
+            # create a subset of the df that contains only the rows with this difficulty level
+            sub_df = labeled_images_df[labeled_images_df.load_level == difficulty_level]
+            sub_df = sub_df[:150]
+            difficulty_level_df = pd.concat([difficulty_level_df, sub_df])
+
+        image_data_frame = pd.concat([image_data_frame, difficulty_level_df])
 
     # add the index numbers as own column (reset the index first as the concatenate above creates duplicate indexes)
     image_data_frame_numbered = image_data_frame.reset_index(drop=True)
@@ -77,10 +86,21 @@ def split_train_test(participant_list, train_ratio=0.8):
     return train_participants, test_participants
 
 
-def start_preprocessing():
+def configure_for_performance(ds, filename, batch_size):
+    ds_folder = "cached_dataset"
+    if not os.path.exists(ds_folder):
+        os.mkdir(ds_folder)
+    ds = ds.cache(os.path.join(ds_folder, filename))
+    # TODO batch based on train or val batch size to increase performance further? -> this adds another dimension!
+    # ds = ds.batch(batch_size)
+    ds = ds.prefetch(buffer_size=tf.data.AUTOTUNE)
+    return ds
+
+
+def start_preprocessing(use_dataset_version=True):
     set_random_seed()  # set seed for reproducibility
 
-    # without_participants = ["participant_1", "participant_5"]  # "participant_6"  # TODO
+    # without_participants = ["participant_1", "participant_5"]  # "participant_6"
     without_participants = []
 
     all_participants = os.listdir(data_folder_path)[:12]  # TODO only take 12 or 18 so the counterbalancing works
@@ -96,6 +116,11 @@ def start_preprocessing():
     val_batch_size = get_suitable_batch_size(len(val_data), test_data=True)
     print(f"Train batch size: {train_batch_size} (Data len: {len(train_data)})")
     print(f"Validation batch size: {val_batch_size} (Data len: {len(val_data)})")
+
+    # TODO make sure we have nearly the same number of images per difficulty level!
+    for difficulty_level in train_data.load_level.unique():
+        difficulty_level_df = train_data[train_data.load_level == difficulty_level]
+        print(f"Found {len(difficulty_level_df)} train images for category \"{difficulty_level}\".")
 
     images_path = pathlib.Path(__file__).parent.parent / "post_processing"
     use_gray = False
@@ -121,26 +146,39 @@ def start_preprocessing():
         plt.xlabel(sample_labels[i])
     # plt.show()
 
-    # TODO add caching and prefetching to speed up the process
-    """
-    def configure_for_performance(ds):
-      ds = ds.cache()
-      ds = ds.shuffle(buffer_size=1000)
-      ds = ds.batch(batch_size)
-      ds = ds.prefetch(buffer_size=AUTOTUNE)
-      return ds
-
-    train_ds = configure_for_performance(train_ds)
-    val_ds = configure_for_performance(val_ds)
-    """
-
     image_shape = train_generator.get_image_shape()
+    train_epochs = 12
 
     classifier = DifficultyImageClassifier(train_generator, val_generator, num_classes=NUMBER_OF_CLASSES,
-                                           num_epochs=12)
+                                           num_epochs=train_epochs)
     classifier.build_model(input_shape=image_shape)
-    classifier.train_classifier()
-    classifier.evaluate_classifier()
+
+    if use_dataset_version:
+        train_dataset = tf.data.Dataset.from_generator(
+            lambda: train_generator,
+            output_signature=(
+                tf.TensorSpec(shape=(train_batch_size, *image_shape), dtype=tf.float64),
+                tf.TensorSpec(shape=(train_batch_size, NUMBER_OF_CLASSES), dtype=tf.float64),
+            )
+        )
+        val_dataset = tf.data.Dataset.from_generator(
+            lambda: val_generator,
+            output_signature=(
+                tf.TensorSpec(shape=(val_batch_size, *image_shape), dtype=tf.float64),
+                tf.TensorSpec(shape=(val_batch_size, NUMBER_OF_CLASSES), dtype=tf.float64),
+            )
+        )
+
+        # add caching and prefetching to speed up the process
+        train_dataset = configure_for_performance(train_dataset, filename="train_dataset", batch_size=train_batch_size)
+        val_dataset = configure_for_performance(val_dataset, filename="val_dataset", batch_size=val_batch_size)
+
+        classifier.train_classifier_dataset_version(train_dataset, val_dataset)
+        classifier.evaluate_classifier_dataset_version(val_dataset)
+
+    else:
+        classifier.train_classifier()
+        classifier.evaluate_classifier()
 
 
 if __name__ == "__main__":
