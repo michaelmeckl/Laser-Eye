@@ -24,9 +24,9 @@ def merge_participant_image_logs(participant_list):
 
         difficulty_level_df = pd.DataFrame()
         # TODO for testing take only the first 150 rows for each difficulty level
-        for difficulty_level in labeled_images_df.load_level.unique():
+        for difficulty_level in labeled_images_df.difficulty.unique():
             # create a subset of the df that contains only the rows with this difficulty level
-            sub_df = labeled_images_df[labeled_images_df.load_level == difficulty_level]
+            sub_df = labeled_images_df[labeled_images_df.difficulty == difficulty_level]
             sub_df = sub_df[:150]
             difficulty_level_df = pd.concat([difficulty_level_df, sub_df])
 
@@ -102,17 +102,17 @@ def start_preprocessing(use_dataset_version=True):
     print(f"Sample size: {sample_size} (Train data len: {len(train_data)}, val data len: {len(val_data)})")
 
     # TODO make sure we have nearly the same number of images per difficulty level!
-    for difficulty_level in train_data.load_level.unique():
-        difficulty_level_df = train_data[train_data.load_level == difficulty_level]
+    for difficulty_level in train_data.difficulty.unique():
+        difficulty_level_df = train_data[train_data.difficulty == difficulty_level]
         print(f"Found {len(difficulty_level_df)} train images for category \"{difficulty_level}\".")
 
     images_path = pathlib.Path(__file__).parent.parent / "post_processing"
     use_gray = False
-    train_generator = CustomImageDataGenerator(data_frame=train_data, x_col_name="image_path", y_col_name="load_level",
+    train_generator = CustomImageDataGenerator(data_frame=train_data, x_col_name="image_path", y_col_name="difficulty",
                                                sample_size=sample_size, batch_size=batch_size,
                                                images_base_path=images_path, use_grayscale=use_gray)
 
-    val_generator = CustomImageDataGenerator(data_frame=val_data, x_col_name="image_path", y_col_name="load_level",
+    val_generator = CustomImageDataGenerator(data_frame=val_data, x_col_name="image_path", y_col_name="difficulty",
                                              sample_size=sample_size, batch_size=batch_size,
                                              images_base_path=images_path, use_grayscale=use_gray)
 

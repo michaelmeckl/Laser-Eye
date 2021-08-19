@@ -174,9 +174,9 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=True)
     print("Number images 'easy':", len(result_dict['easy']))
 
     # create a pandas df with 2 columns where each row consists of the image path and the corresponding load level
-    label_df = pd.DataFrame(columns=["image_path", "load_level"])
+    label_df = pd.DataFrame(columns=["image_path", "difficulty"])
     for difficulty, image_list in result_dict.items():
-        label_df = label_df.append({"image_path": image_list, "load_level": difficulty}, ignore_index=True)
+        label_df = label_df.append({"image_path": image_list, "difficulty": difficulty}, ignore_index=True)
 
     # right now, the first column contains only a list with all paths, so this column needs to be "exploded",
     # see https://stackoverflow.com/questions/53218931/how-to-unnest-explode-a-column-in-a-pandas-dataframe

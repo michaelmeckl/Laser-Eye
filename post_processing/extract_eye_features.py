@@ -127,12 +127,12 @@ def process_images(eye_tracker, use_all_images=False, use_folder=False):
             images_label_log = os.path.join(download_folder, sub_folder, "labeled_images.csv")
             labeled_images_df = pd.read_csv(images_label_log)
 
-            for difficulty_level in labeled_images_df.load_level.unique():
+            for difficulty_level in labeled_images_df.difficulty.unique():
                 print(f"Processing images for '{sub_folder}'; current difficulty: {difficulty_level}")
                 eye_tracker.set_current_difficulty(difficulty_level)
 
                 # create a subset of the df that contains only the rows with this difficulty level
-                sub_df = labeled_images_df[labeled_images_df.load_level == difficulty_level]
+                sub_df = labeled_images_df[labeled_images_df.difficulty == difficulty_level]
                 for idx, row in sub_df.iterrows():
                     image_path = row["image_path"]
                     current_image = cv2.imread(image_path)

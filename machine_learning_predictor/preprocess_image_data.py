@@ -41,7 +41,7 @@ def get_participant_images(participant_folder, use_folder=False, use_step_size=F
         """
         # less flexible version:
         for idx, row in labeled_images_df.iterrows():
-            difficulty_level = row["load_level"]
+            difficulty_level = row["difficulty"]
             image_path = row["image_path"]
             full_image_path = os.path.join(post_processing_folder_path, image_path)
             # current_image = cv2.imread(full_image_path)
@@ -50,9 +50,9 @@ def get_participant_images(participant_folder, use_folder=False, use_step_size=F
 
         # FIXME unfortunately a different order changes the results :(
         # for difficulty_level in ["easy", "hard", "medium"]:
-        for difficulty_level in labeled_images_df.load_level.unique():
+        for difficulty_level in labeled_images_df.difficulty.unique():
             # create a subset of the df that contains only the rows with this difficulty level
-            sub_df = labeled_images_df[labeled_images_df.load_level == difficulty_level]
+            sub_df = labeled_images_df[labeled_images_df.difficulty == difficulty_level]
 
             # TODO take only small subset for faster testing
             if use_step_size:
