@@ -4,7 +4,8 @@ from post_processing.post_processing_constants import download_folder
 
 RANDOM_SEED = 42
 NUMBER_OF_CLASSES = 3
-NEW_IMAGE_SIZE = (128, 128)  # (256, 256)  # TODO or try to keep the ratio of the images -> should be taller than wide
+# TODO or try to keep the ratio of the images
+NEW_IMAGE_SIZE = (32, 128)  # (256, 256)  # format: (height, width)
 
 TRAIN_SUBSET_SIZE = 450
 

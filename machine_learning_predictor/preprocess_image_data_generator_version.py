@@ -19,7 +19,8 @@ def merge_participant_image_logs(participant_list):
     post_processing_folder_path = pathlib.Path(__file__).parent.parent / "post_processing"
 
     for participant in participant_list:
-        images_label_log = post_processing_folder_path / download_folder / participant / "labeled_images.csv"
+        # images_label_log = post_processing_folder_path / download_folder / participant / "labeled_images.csv"
+        images_label_log = post_processing_folder_path / download_folder / participant / "labeled_eye_regions.csv"
         labeled_images_df = pd.read_csv(images_label_log)
 
         difficulty_level_df = pd.DataFrame()
@@ -83,7 +84,11 @@ def start_preprocessing(use_dataset_version=True):
     set_random_seed()  # set seed for reproducibility
 
     # without_participants = ["participant_1", "participant_5"]  # "participant_6"
-    without_participants = []
+    # for eye regions testing:
+    without_participants = ["participant_1", "participant_2", "participant_5", "participant_6",
+                            "participant_7", "participant_8", "participant_9", "participant_12",
+                            "participant_13"]
+    # without_participants = []
 
     all_participants = os.listdir(data_folder_path)[:12]  # TODO only take 12 or 18 so the counterbalancing works
     # remove some participants for testing
@@ -128,7 +133,7 @@ def start_preprocessing(use_dataset_version=True):
         plt.grid(False)
         plt.imshow(first_sample[i], cmap=plt.cm.binary)
         plt.xlabel(sample_labels[i])
-    # plt.show()
+    plt.show()
 
     train_epochs = 12
     image_shape = train_generator.get_image_shape()

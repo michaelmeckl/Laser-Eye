@@ -130,8 +130,8 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
             # crop or pad image depending on it's size
             resized_img = tf.image.resize_with_crop_or_pad(image_arr,
-                                                           target_height=NEW_IMAGE_SIZE[1],
-                                                           target_width=NEW_IMAGE_SIZE[0])
+                                                           target_height=NEW_IMAGE_SIZE[0],
+                                                           target_width=NEW_IMAGE_SIZE[1])
 
             # normalize pixel values to [0, 1] so the ml model can work with smaller values
             scaled_img = resized_img.numpy() / 255.0

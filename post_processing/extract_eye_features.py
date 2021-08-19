@@ -5,16 +5,14 @@ import argparse
 import os
 import shutil
 import sys
+import csv
 import time
 import cv2
 from datetime import datetime
 import pandas as pd
-import tensorflow as tf
-from machine_learning_predictor.machine_learning_constants import NEW_IMAGE_SIZE
 from post_processing.eye_tracking.eye_tracker import EyeTracker
 from post_processing.eye_tracking.image_utils import show_image_window
-from post_processing.post_processing_constants import download_folder, labeled_images_folder, image_folder, \
-    post_processing_log_folder
+from post_processing.post_processing_constants import download_folder, labeled_images_folder, post_processing_log_folder
 from post_processing.process_downloaded_data import get_fps_info
 
 
@@ -58,9 +56,33 @@ def debug_postprocess(enable_annotation, video_file_path):
             break
 
 
+def create_eye_region_csv(participant_folder):
+    post_processing_path = os.path.join(download_folder, participant_folder, post_processing_log_folder)
+    csv_file_path = os.path.join(download_folder, participant_folder, "labeled_eye_regions.csv")
+
+    with open(csv_file_path, "w", newline='') as csv_file:
+        # Using csv writer instead of pandas as this is far more efficient, pandas would require almost 2 minutes for
+        # what can be done with the csv writer in under a second
+        writer = csv.writer(csv_file, delimiter=',')
+        writer.writerow(["image_path", "participant", "difficulty"])  # write header row first
+
+        for difficulty_sub_dir in os.listdir(post_processing_path):
+            eye_region_dir_path = os.path.join(post_processing_path, difficulty_sub_dir, "eye_regions")
+            start_time = time.time()
+            for idx, image_file in enumerate(os.listdir(eye_region_dir_path)):
+                full_image_path = os.path.join(eye_region_dir_path, image_file)
+                writer.writerow([full_image_path, participant_folder, difficulty_sub_dir])
+
+            end_time = time.time()
+            print(f"Writing eye regions with csv writer for difficulty {difficulty_sub_dir} took"
+                  f" {(end_time - start_time):.2f} seconds.")
+
+    print(f"Finished writing eye region csv file for {participant_folder}.")
+
+
 def process_images(eye_tracker, use_all_images=False, use_folder=False):
     # for easier debugging; select the participants that should be processed; pass empty list to process all
-    participants = ["participant_3", "participant_10", "participant_14"]
+    participants = ["participant_3", "participant_10", "participant_14", "participant_11", "participant_4"]
 
     frame_count = 0
     start_time = time.time()
@@ -157,6 +179,11 @@ def process_images(eye_tracker, use_all_images=False, use_folder=False):
                 eye_tracker.log_information()
                 # and reset the blink detector
                 eye_tracker.reset_blink_detector()
+
+        # after we finished one participant folder, create a csv file with the paths to the new eye region images so
+        # they can be easily found by the machine learning model
+        print("Creating csv file for eye regions ...")
+        create_eye_region_csv(sub_folder)
 
     duration = time.time() - start_time
     print(f"[INFO]: Frame Count: {frame_count}")
