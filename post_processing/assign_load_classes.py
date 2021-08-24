@@ -5,7 +5,6 @@ import os
 import csv
 import shutil
 import sys
-import time
 import cv2
 import pandas as pd
 from collections import defaultdict
@@ -45,7 +44,7 @@ def merge_csv_logs(game_log_folder):
     return all_game_logs
 
 
-def assert_task_duration(start_time, end_time, error_variance=12):
+def assert_task_duration(start_time, end_time, error_variance=5):
     """
     Make sure the time difference between the start and end event type for each difficulty and game is 100 seconds (+
     some small measurement error).
@@ -142,31 +141,6 @@ def normalize_images_per_participant(sorted_img_file_dict, current_timestamp, st
 
     return image_list
 
-"""
-for difficulty, image_list in original_dict.items():
-    new_image_list = []
-    last_timestamp = None
-    last_timestamp_image = None
-
-    for image in image_list:
-        timestamp = int(get_timestamp_from_image(image))
-        if last_timestamp is None:
-            new_image_list.append(image)
-            last_timestamp = timestamp
-            last_timestamp_image = image
-            continue
-
-        if (timestamp - last_timestamp) >= time_dist:
-            new_image_list.append(image)
-            last_timestamp = timestamp
-            last_timestamp_image = image
-        else:
-            print("Timestamp Diff wasn't greater or equal to time dist!")
-            # new_image_list.append(last_timestamp_image) # append the last image?  # TODO no! append the closest?
-
-    new_result_dict[difficulty].extend(new_image_list)
-"""
-
 
 def find_image_event_indexes(df, all_images, sorted_img_idx_dict, sorted_img_file_dict, fps_val):
     """
@@ -228,7 +202,6 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=False
     print("Number images 'hard':", len(result_dict['hard']))
     print("Number images 'medium':", len(result_dict['medium']))
     print("Number images 'easy':", len(result_dict['easy']))
-    start_time = time.time()
 
     # create a pandas df with 2 columns where each row consists of the image path and the corresponding load level
     label_df = pd.DataFrame(columns=["image_path", "participant", "difficulty"])
@@ -245,9 +218,6 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=False
         lambda name: f"{os.path.join(download_folder, participant_folder, image_folder, name)}"
     )
     df_exploded.to_csv(os.path.join(data_folder, participant_folder, "labeled_images.csv"), index=False)
-
-    end_time = time.time()
-    print(f"Writing csv for {participant_folder} took {end_time-start_time} seconds.")
 
     # if this flag is set create a new folder "labeled_images" with the difficulty levels as subfolders
     if create_new_folders is True:
@@ -338,14 +308,14 @@ def assign_load(participant_list=list[str]):
             if smallest_difficulty_list_len is None or len(image_list) < smallest_difficulty_list_len:
                 smallest_difficulty_list_len = len(image_list)
 
-    print(f"List with fewest elements has {smallest_difficulty_list_len} items")
+    print(f"\nList with fewest elements has {smallest_difficulty_list_len} items")
     for participant_name, difficulty_dict in participant_dict.items():
         # cut off the last elements of every list that is longer than the minimum, so we have the exact same amount of
         # image elements per difficulty (and therefore, per participant as well)
         for difficulty, image_list in difficulty_dict.items():
             len_diff = len(image_list) - smallest_difficulty_list_len
             if len_diff > 0:
-                del image_list[-len_diff:]
+                del image_list[-len_diff:]  # remove the elements at the end if the list is too long
 
         print(f"\n####################Creating labeled images file for {participant_name} ...\n####################")
         split_image_folder(difficulty_dict, participant_name)
