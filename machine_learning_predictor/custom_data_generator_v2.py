@@ -68,37 +68,32 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             index: the number of the current sample from 0 to __len__() - 1
         """
         self.get_item_index = index  # TODO only for debugging
+        new_image_shape = ((self.sequence_length * self.output_size[0]), self.output_size[1], self.output_size[2])
 
-        X = np.empty((self.batch_size, self.sequence_length, *self.output_size))
+        X = np.empty((self.batch_size, *new_image_shape))
         y = np.empty((self.batch_size, self.n_classes))
 
-        # if len(self.indices_list) < self.batch_size:
-        #    print(f"\nself.indices_list is smaller than batch size in __get_item__()!", flush=True)
-        #    self.indices_list = self.generate_random_index_list()
+        if len(self.indices_list) < self.batch_size:
+            print(f"\nself.indices_list is smaller than batch size in __get_item__()!", flush=True)
+            # self.indices_list = self.generate_random_index_list()  # TODO
 
-        for i, batch in enumerate(range(self.batch_size)):
-            if len(self.indices_list) == 0:
-                print(f"\nself.indices_list is empty in __get_item__()!", flush=True)
-                continue
-
-            # Get a random index from the list
-            start_index = random.choice(self.indices_list)
-            # and remove this index from the list so it won't be used more than once per epoch
-            self.indices_list.remove(start_index)
-
-            # Take all elements starting from the current index until the start of the next index
-            sample_rows = self.df[start_index:start_index + self.sequence_length]
+        indices = random.sample(self.indices_list, k=self.batch_size)  # get k (= batch_size) random elements from list
+        for i, start_index in enumerate(indices):
+            sample_rows = self.df[start_index:start_index + self.sequence_length]  # get the corresponding df rows
             image_sample, sample_label = self.__get_data(sample_rows)
 
-            X[i, ] = image_sample
+            reshaped_image_sample = image_sample.reshape(new_image_shape)  # reshape into (sequence_length * img_height)
+            X[i, ] = reshaped_image_sample
             y[i, ] = sample_label
 
         # X_new = tf.concat([X[i] for i in range(len(X))], axis=0)
 
-        reshaped_X = X.reshape((self.batch_size * self.sequence_length), *self.output_size)
-        reshaped_y = np.repeat(y, self.sequence_length, axis=0)  # needs to be extended to the same dim size for the cnn
+        # y_new = np.repeat(y, self.output_size[0], axis=0)
+        # print(y_new.shape)
 
-        return reshaped_X, reshaped_y
+        # removed the used indices from the original list so they won't be selected more than once per epoch
+        self.indices_list = [idx for idx in self.indices_list if idx not in set(indices)]
+        return X, y
 
     def __get_data(self, sample):
         image_sample = np.empty((self.sequence_length, *self.output_size))

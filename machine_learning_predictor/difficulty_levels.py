@@ -31,6 +31,7 @@ class DifficultyLevels(Enum):
             sys.stderr.write(f"\nCategory {category} doesn't match one of the difficulty levels!")
             return None
 
+        label_vector = np.asarray(label_vector)  # convert to numpy array
         return label_vector
 
     @staticmethod

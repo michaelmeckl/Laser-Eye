@@ -17,6 +17,7 @@ from post_processing.post_processing_constants import download_folder, labeled_i
 from post_processing.process_downloaded_data import get_fps_info
 
 
+# TODO two different sizes for width and height?
 NEW_IMAGE_SIZE = 128
 
 
@@ -35,7 +36,8 @@ def get_participant_images(participant_folder, use_folder=False, use_step_size=F
 
     if not use_folder:
         # iterate over the csv file and yield the image paths and their corresponding difficulty level
-        images_label_log = participant_folder_path / "labeled_images.csv"
+        # images_label_log = participant_folder_path / "labeled_images.csv"
+        images_label_log = participant_folder_path / "labeled_eye_regions.csv"
         labeled_images_df = pd.read_csv(images_label_log)
 
         """
