@@ -21,6 +21,22 @@ def get_fps_info(fps_file_path):
     return fps_rounded
 
 
+def get_smallest_fps():
+    smallest_fps_val = 30
+    participant_smallest_fps = ""
+
+    all_participants_path = os.path.join(os.path.dirname(__file__), download_folder)
+    for participant in os.listdir(all_participants_path):
+        fps_log_path = os.path.join(all_participants_path, participant, "fps_info.txt")
+        fps = get_fps_info(fps_log_path)
+        if fps < smallest_fps_val:
+            participant_smallest_fps = participant
+            smallest_fps_val = fps
+
+    print(f"Smallest fps value for {participant_smallest_fps}: {smallest_fps_val} fps")
+    return smallest_fps_val
+
+
 def unzip(participant_folder, result_dir, file):
     if result_dir == image_folder:
         archive = py7zr.SevenZipFile(pathlib.Path(__file__).parent / download_folder / participant_folder / "images" /

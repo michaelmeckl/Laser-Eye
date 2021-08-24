@@ -5,11 +5,14 @@ import os
 import csv
 import shutil
 import sys
+import time
 import cv2
 import pandas as pd
 from collections import defaultdict
 from bisect import bisect_left
 from post_processing.post_processing_constants import download_folder, image_folder, logs_folder, blur_threshold
+from post_processing.process_downloaded_data import get_smallest_fps
+
 
 data_folder = download_folder
 start_events = ["started", "Game_Start"]
@@ -121,13 +124,63 @@ def find_closest_value(dictionary, timestamp):
     return dictionary.get(timestamp) or dictionary.get(take_closest(list(dictionary.keys()), timestamp))
 
 
-def find_image_event_indexes(df, all_images, sorted_img_dict):
+def get_timestamp_from_image(image_file_name):
+    # all images are in the format: "capture__timestamp.timestamp_nanosec_precision.png"
+    img_timestamp = image_file_name.removesuffix(".png").split("__")[1]
+    timestamp = img_timestamp.split(".")[0]  # we only want the timestamp in ms precision to match the game logs
+    return timestamp
+
+
+def normalize_images_per_participant(sorted_img_file_dict, current_timestamp, start_timestamp, time_dist=100):
+    time_diff_overall = current_timestamp - start_timestamp
+    image_list = []
+
+    for t in range(0, time_diff_overall, time_dist):
+        new_time = start_timestamp + t
+        image = find_closest_value(sorted_img_file_dict, new_time)
+        image_list.append(image)
+
+    return image_list
+
+"""
+for difficulty, image_list in original_dict.items():
+    new_image_list = []
+    last_timestamp = None
+    last_timestamp_image = None
+
+    for image in image_list:
+        timestamp = int(get_timestamp_from_image(image))
+        if last_timestamp is None:
+            new_image_list.append(image)
+            last_timestamp = timestamp
+            last_timestamp_image = image
+            continue
+
+        if (timestamp - last_timestamp) >= time_dist:
+            new_image_list.append(image)
+            last_timestamp = timestamp
+            last_timestamp_image = image
+        else:
+            print("Timestamp Diff wasn't greater or equal to time dist!")
+            # new_image_list.append(last_timestamp_image) # append the last image?  # TODO no! append the closest?
+
+    new_result_dict[difficulty].extend(new_image_list)
+"""
+
+
+def find_image_event_indexes(df, all_images, sorted_img_idx_dict, sorted_img_file_dict, fps_val):
     """
     Find the corresponding images for the difficulty start and end times.
     """
+
+    # we take an image every 'time_dist' milliseconds to get an equal amount of images per participant and difficulty
+    time_dist = round(1000 / fps_val)
+
     result_dict = defaultdict(list)
+    start_pos_timestamp = None
     start_pos = None
     end_pos = None
+
     for i, row in df.iterrows():
         event_type = row["event_type"]
         difficulty = row["difficulty"]
@@ -137,12 +190,15 @@ def find_image_event_indexes(df, all_images, sorted_img_dict):
             # get doesn't work as there won't be any values that match exactly (no image is captured at the
             # exact same milliseconds than the game start or game end events were logged)
             # Because of this we need to find the closest value from the image timestamps!
-            start_pos = find_closest_value(sorted_img_dict, timestamp)
+            start_pos = find_closest_value(sorted_img_idx_dict, timestamp)
+            start_pos_timestamp = timestamp
         elif event_type in end_events:
-            end_pos = find_closest_value(sorted_img_dict, timestamp)
+            end_pos = find_closest_value(sorted_img_idx_dict, timestamp)
             if start_pos and end_pos:
-                image_slice = all_images[start_pos:end_pos]
-                result_dict[difficulty].extend(image_slice)
+                # image_slice = all_images[start_pos:end_pos]
+                new_image_slice = normalize_images_per_participant(sorted_img_file_dict, timestamp,
+                                                                   start_pos_timestamp, time_dist)
+                result_dict[difficulty].extend(new_image_slice)
             elif end_pos < start_pos:
                 sys.stderr.write("Something went horribly wrong... End pos should always be larger than start pos!")
 
@@ -156,7 +212,7 @@ def check_image_blur(image_path) -> float:
     return cv2.Laplacian(gray_scale, cv2.CV_64F).var()
 
 
-def split_image_folder(result_dict, participant_folder, create_new_folders=True):  # TODO set to False ?
+def split_image_folder(result_dict, participant_folder, create_new_folders=False):
     """
     Param `result_dict` contains a list for each of the 3 load levels which contains all images from this participant
     that were recorded during a game with the corresponding difficulty:
@@ -172,11 +228,13 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=True)
     print("Number images 'hard':", len(result_dict['hard']))
     print("Number images 'medium':", len(result_dict['medium']))
     print("Number images 'easy':", len(result_dict['easy']))
+    start_time = time.time()
 
     # create a pandas df with 2 columns where each row consists of the image path and the corresponding load level
-    label_df = pd.DataFrame(columns=["image_path", "difficulty"])
+    label_df = pd.DataFrame(columns=["image_path", "participant", "difficulty"])
     for difficulty, image_list in result_dict.items():
-        label_df = label_df.append({"image_path": image_list, "difficulty": difficulty}, ignore_index=True)
+        label_df = label_df.append({"image_path": image_list, "participant": participant_folder,
+                                    "difficulty": difficulty}, ignore_index=True)
 
     # right now, the first column contains only a list with all paths, so this column needs to be "exploded",
     # see https://stackoverflow.com/questions/53218931/how-to-unnest-explode-a-column-in-a-pandas-dataframe
@@ -187,6 +245,9 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=True)
         lambda name: f"{os.path.join(download_folder, participant_folder, image_folder, name)}"
     )
     df_exploded.to_csv(os.path.join(data_folder, participant_folder, "labeled_images.csv"), index=False)
+
+    end_time = time.time()
+    print(f"Writing csv for {participant_folder} took {end_time-start_time} seconds.")
 
     # if this flag is set create a new folder "labeled_images" with the difficulty levels as subfolders
     if create_new_folders is True:
@@ -215,10 +276,13 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=True)
             else:
                 print(f"Folder {difficulty_folder} already exists. Skipping...")
 
-        # shutil.rmtree(os.path.join(data_folder, participant_folder, image_folder))
-
 
 def assign_load(participant_list=list[str]):
+    smallest_fps_val = get_smallest_fps()
+
+    smallest_difficulty_list_len = None  # length of the list with the least entries over all participants
+    participant_dict = defaultdict(dict)
+
     for participant in os.listdir(data_folder):
         # if specific participants are given, skip the others
         if len(participant_list) > 0 and participant not in participant_list:
@@ -250,21 +314,41 @@ def assign_load(participant_list=list[str]):
 
         # extract all image timestamps from the image names and save them with the image index position
         all_images = os.listdir(images_folder)
-        img_dict = {}
+        img_index_dict = {}
+        img_file_dict = {}
         for idx, image_file in enumerate(all_images):
-            # all images are in the format: "capture__timestamp_part1.timestamp_part2.png"
-            img_timestamp = image_file.removesuffix(".png").split("__")[1]
-            timestamp = img_timestamp.split(".")[0]
-            img_dict[timestamp] = idx
+            timestamp = int(get_timestamp_from_image(image_file))
+            img_index_dict[timestamp] = idx
+            img_file_dict[timestamp] = image_file
 
         # convert the keys from string to int
-        img_dict = {int(key): value for key, value in img_dict.items()}
+        # img_index_dict = {int(key): value for key, value in img_index_dict.items()}
+
         # sort the image timestamp as well (even though the order should be already correct right now but whatever)
         # see https://stackoverflow.com/questions/9001509/how-can-i-sort-a-dictionary-by-key#comment89671526_9001529
-        sorted_img_dict = dict(sorted(img_dict.items()))
+        sorted_img_index_dict = dict(sorted(img_index_dict.items()))
+        sorted_img_file_dict = dict(sorted(img_file_dict.items()))
 
-        result_dict = find_image_event_indexes(df_start_end_small, all_images, sorted_img_dict)
-        split_image_folder(result_dict, participant)
+        result_dict = find_image_event_indexes(df_start_end_small, all_images, sorted_img_index_dict,
+                                               sorted_img_file_dict, smallest_fps_val)
+        participant_dict[participant] = result_dict
+
+        # check if any difficulty level of this participant has fewer entries than the current minimum
+        for image_list in result_dict.values():
+            if smallest_difficulty_list_len is None or len(image_list) < smallest_difficulty_list_len:
+                smallest_difficulty_list_len = len(image_list)
+
+    print(f"List with fewest elements has {smallest_difficulty_list_len} items")
+    for participant_name, difficulty_dict in participant_dict.items():
+        # cut off the last elements of every list that is longer than the minimum, so we have the exact same amount of
+        # image elements per difficulty (and therefore, per participant as well)
+        for difficulty, image_list in difficulty_dict.items():
+            len_diff = len(image_list) - smallest_difficulty_list_len
+            if len_diff > 0:
+                del image_list[-len_diff:]
+
+        print(f"\n####################Creating labeled images file for {participant_name} ...\n####################")
+        split_image_folder(difficulty_dict, participant_name)
 
 
 if __name__ == "__main__":
