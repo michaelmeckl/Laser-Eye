@@ -8,11 +8,10 @@ import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from machine_learning_predictor.classifier import DifficultyImageClassifier
-from machine_learning_predictor.custom_data_generator import CustomImageDataGenerator
-# from machine_learning_predictor.custom_data_generator_v2 import CustomImageDataGenerator
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
-from machine_learning_predictor.machine_learning_constants import NUMBER_OF_CLASSES, data_folder_path, results_folder
-from machine_learning_predictor.ml_utils import set_random_seed, show_result_plot
+from machine_learning_predictor.machine_learning_constants import NUMBER_OF_CLASSES, data_folder_path, results_folder, \
+    NEW_IMAGE_SIZE
+from machine_learning_predictor.ml_utils import set_random_seed
 from post_processing.post_processing_constants import download_folder
 from post_processing.process_downloaded_data import get_smallest_fps
 
@@ -36,20 +35,16 @@ def merge_participant_image_logs(participant_list):
 
         image_data_frame = pd.concat([image_data_frame, difficulty_level_df])
 
-    # add the index numbers as own column (reset the index first as the concatenate above creates duplicate indexes)
+    # reset the df index as the concatenate above creates duplicate indexes
     image_data_frame_numbered = image_data_frame.reset_index(drop=True)
-    image_data_frame_numbered["index"] = image_data_frame_numbered.index
-
-    # shuffle the dataframe rows but maintain the row content,
-    # see https://stackoverflow.com/questions/29576430/shuffle-dataframe-rows
-    # image_data_frame_numbered = image_data_frame_numbered.sample(frac=1)
+    # image_data_frame_numbered["index"] = image_data_frame_numbered.index  # add the index numbers as own column
 
     return image_data_frame_numbered
 
 
 def get_suitable_sample_size(category_size):
-    # TODO use a divisor of the amount of images per label category for a participant
-    #  -> this way their wouldn't be any overlap of label categories or participants per sample!
+    # use a divisor of the amount of images per difficulty category for a participant
+    # -> this way their won't be any overlap of label categories or participants per sample!
     sample_size = 1
     for i in range(10, 101):
         if category_size % i == 0:
@@ -79,43 +74,41 @@ def split_train_test(participant_list, train_ratio=0.8):
     return train_participants, test_participants
 
 
-"""
-def show_generator_example_images(sample, labels):
-    for j, image in enumerate(range(len(sample))):
-        sample_len = len(sample[j])
-        length = min(100, sample_len)  # show 100 images or sample length if samples has less images
+def show_generator_example_images(batch, labels, sample_size, gen_v2=False):
+    batch_len = len(batch)
+    length = min(100, batch_len)  # show 100 images or batch length if one batch has less images
 
-        plt.figure(figsize=(15, 10))
+    img_height, img_width = NEW_IMAGE_SIZE
+
+    if gen_v2:
+        plt.figure(figsize=(10, 10))
+        for i in range(length):
+            plt.subplot(1, 5, i + 1)
+            plt.grid(False)
+            plt.xticks([])
+            plt.yticks([])
+            plt.imshow(batch[i][0:sample_size * img_height, :, :])
+            plt.title(DifficultyLevels.get_label_for_encoding(labels[i]))
+            # if width instead of height is used:
+            # plt.imshow(sample[i][:, 0:sample_size * img_width, :])
+            # plt.ylabel(DifficultyLevels.get_label_for_encoding(labels[i]))
+    else:
+        plt.figure(figsize=(10, 10))
         for i in range(length):
             plt.subplot(10, 10, i + 1)
             plt.grid(False)
-            plt.imshow(sample[j][i])  # , cmap=plt.cm.binary)
-            plt.xlabel(labels[j])
-            # plt.axis('off')
-        plt.show()
-"""
-
-
-def show_generator_example_images(sample, labels):
-    sample_len = len(sample)
-    length = min(100, sample_len)  # show 100 images or sample length if samples has less images
-
-    plt.figure(figsize=(12, 10))
-    for i in range(length):
-        plt.subplot(10, 10, i + 1)
-        plt.grid(False)
-        plt.xticks([])
-        plt.yticks([])
-        plt.imshow(sample[i])  # , cmap=plt.cm.binary)
-        plt.title(DifficultyLevels.get_label_for_encoding(labels[i]))
+            plt.xticks([])
+            plt.yticks([])
+            plt.imshow(batch[i])  # , cmap=plt.cm.binary)
+            # plt.title(DifficultyLevels.get_label_for_encoding(labels[i]))
 
     if not os.path.exists(results_folder):
         os.mkdir(results_folder)
-    plt.savefig(os.path.join(results_folder, "example_images.png"))
+    plt.savefig(os.path.join(results_folder, f"example_images_{'gen_2' if gen_v2 else 'gen_1'}.png"))
     plt.show()
 
 
-def configure_for_performance(ds, batch_size, filename=None):
+def configure_for_performance(ds, filename=None):
     if filename:
         ds_folder = "cached_dataset"
         if not os.path.exists(ds_folder):
@@ -125,13 +118,19 @@ def configure_for_performance(ds, batch_size, filename=None):
         # only cache in memory, not on disk
         ds = ds.cache()
 
-    # TODO batch based on train or val batch size to increase performance further? -> this adds another dimension!
-    # ds = ds.batch(batch_size, drop_remainder=True)  # todo batch before cache ?
     ds = ds.prefetch(buffer_size=tf.data.AUTOTUNE)
     return ds
 
 
-def start_preprocessing(use_dataset_version=False):
+def start_preprocessing(use_dataset_version=False, use_gen_v2=True):
+    print(f"[INFO] Using custom generator version_2: {use_gen_v2}\n"
+          f"[INFO] Using dataset version: {use_dataset_version}\n")
+
+    if use_gen_v2:
+        from machine_learning_predictor.custom_data_generator_v2 import CustomImageDataGenerator
+    else:
+        from machine_learning_predictor.custom_data_generator import CustomImageDataGenerator
+
     set_random_seed()  # set seed for reproducibility
 
     # without_participants = ["participant_1", "participant_5"]  # "participant_6"
@@ -150,13 +149,12 @@ def start_preprocessing(use_dataset_version=False):
     train_data = merge_participant_image_logs(train_participants)
     val_data = merge_participant_image_logs(test_participants)
 
-    difficulty_category_size = None  # the amount of entries per difficulty category in the dataframe (the same for all)
-
     # make sure we have the same number of images per difficulty level!
     for difficulty_level in train_data.difficulty.unique():
         difficulty_level_df = train_data[train_data.difficulty == difficulty_level]
         print(f"Found {len(difficulty_level_df)} train images for category \"{difficulty_level}\".")
 
+    difficulty_category_size = None  # the amount of entries per difficulty category in the dataframe (the same for all)
     # make sure we have the same number of images per participant!
     for participant in train_data.participant.unique():
         participant_df = train_data[train_data.participant == participant]
@@ -171,13 +169,13 @@ def start_preprocessing(use_dataset_version=False):
 
     # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
     # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
-    batch_size = 4  # 64  # TODO smaller batches necessary with the new generator
+    batch_size = 4
 
     sample_size = get_suitable_sample_size(difficulty_category_size)
     print(f"Sample size: {sample_size} (Train data len: {len(train_data)}, val data len: {len(val_data)})")
 
     images_path = pathlib.Path(__file__).parent.parent / "post_processing"
-    use_gray = False
+    use_gray = False  # TODO use grayscale images instead?
     train_generator = CustomImageDataGenerator(data_frame=train_data, x_col_name="image_path", y_col_name="difficulty",
                                                sequence_length=sample_size, batch_size=batch_size,
                                                images_base_path=images_path, use_grayscale=use_gray)
@@ -187,43 +185,55 @@ def start_preprocessing(use_dataset_version=False):
                                              images_base_path=images_path, use_grayscale=use_gray)
 
     # show some example train images to verify the generator is working correctly
-    sample, sample_labels = train_generator.get_example_batch()
-    # show_generator_example_images(sample, sample_labels)
+    batch, batch_labels = train_generator.get_example_batch()
+    show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
 
     print("Len train generator: ", train_generator.__len__())
     print("Len val generator: ", val_generator.__len__())
 
     train_epochs = 15
-    image_shape = train_generator.get_image_shape()
-    print("Image Shape: ", image_shape)
+    classifier = DifficultyImageClassifier(train_generator, val_generator, num_classes=NUMBER_OF_CLASSES,
+                                           num_epochs=train_epochs)
 
-    classifier = DifficultyImageClassifier(num_classes=NUMBER_OF_CLASSES, num_epochs=train_epochs)
+    # get the correct image shape based on the generator that is used
+    if use_gen_v2:
+        image_shape = train_generator.get_reshaped_image_shape()
+        print("Reshaped Image Shape: ", image_shape)
+    else:
+        image_shape = train_generator.get_image_shape()
+        print("Image Shape: ", image_shape)
 
     if use_dataset_version:
-        ds_output_signature = (
-            # tf.TensorSpec(shape=(batch_size, sample_size, *image_shape), dtype=tf.float64),
-            tf.TensorSpec(shape=((sample_size*batch_size), *image_shape), dtype=tf.float64),
-            tf.TensorSpec(shape=((sample_size*batch_size), NUMBER_OF_CLASSES), dtype=tf.float64),
-        )
+        if use_gen_v2:
+            ds_output_signature = (
+                tf.TensorSpec(shape=(batch_size, *image_shape), dtype=tf.float64),
+                tf.TensorSpec(shape=(batch_size, NUMBER_OF_CLASSES), dtype=tf.float64),
+            )
+        else:
+            ds_output_signature = (
+                tf.TensorSpec(shape=((sample_size * batch_size), *image_shape), dtype=tf.float64),
+                tf.TensorSpec(shape=((sample_size * batch_size), NUMBER_OF_CLASSES), dtype=tf.float64),
+            )
 
         # make sure all the dataset preprocessing is done on the CPU so the GPU can fully be used for training
         # see https://cs230.stanford.edu/blog/datapipeline/#best-practices
         with tf.device('/cpu:0'):
-            train_dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_signature=ds_output_signature)
-            val_dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_signature=ds_output_signature)
+            train_dataset = tf.data.Dataset.from_generator(lambda: train_generator,
+                                                           output_signature=ds_output_signature)
+            val_dataset = tf.data.Dataset.from_generator(lambda: val_generator,
+                                                         output_signature=ds_output_signature)
+            # print("Dataset Train Spec: ", train_dataset.element_spec)
 
-            print("Dataset Train Spec: ", train_dataset.element_spec)
             # add caching and prefetching to speed up the process
-            train_dataset = configure_for_performance(train_dataset, batch_size=batch_size)
-            val_dataset = configure_for_performance(val_dataset, batch_size=batch_size)
+            train_dataset = configure_for_performance(train_dataset)
+            val_dataset = configure_for_performance(val_dataset)
 
         classifier.build_model(input_shape=image_shape)
         classifier.train_classifier_dataset_version(train_dataset, val_dataset)
         classifier.evaluate_classifier_dataset_version(val_dataset)
-
     else:
         classifier.build_model(input_shape=image_shape)
-        classifier.train_classifier(train_generator, val_generator)
+        classifier.train_classifier()
         classifier.evaluate_classifier()
 
 

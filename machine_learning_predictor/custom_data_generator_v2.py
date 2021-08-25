@@ -25,9 +25,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         self.use_grayscale = use_grayscale
 
         self.n = len(self.df)
-        # self.indices = self.df.index.to_list()
-        self.get_item_index = None
-
         num_channels = 1 if self.use_grayscale else 3
         self.output_size = (*NEW_IMAGE_SIZE, num_channels)
 
@@ -52,8 +49,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
     def __len__(self):
         length = self.n // (self.sequence_length * self.batch_size)
-        # if length * self.batch_size * self.sequence_length < self.n:
-        #    length += 1
         return length
 
     def on_epoch_end(self):
@@ -67,32 +62,33 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         Args:
             index: the number of the current sample from 0 to __len__() - 1
         """
-        self.get_item_index = index  # TODO only for debugging
-        new_image_shape = ((self.sequence_length * self.output_size[0]), self.output_size[1], self.output_size[2])
+        # TODO stack horizontally instead of vertically?
+        self.new_image_shape = ((self.sequence_length * self.output_size[0]), self.output_size[1], self.output_size[2])
 
-        X = np.empty((self.batch_size, *new_image_shape))
+        X = np.empty((self.batch_size, *self.new_image_shape))
         y = np.empty((self.batch_size, self.n_classes))
 
-        if len(self.indices_list) < self.batch_size:
-            print(f"\nself.indices_list is smaller than batch size in __get_item__()!", flush=True)
-            # self.indices_list = self.generate_random_index_list()  # TODO
+        for i, batch in enumerate(range(self.batch_size)):
+            if len(self.indices_list) == 0:
+                # print(f"\nself.indices_list is empty in __get_item__()!", flush=True)
+                continue
 
-        indices = random.sample(self.indices_list, k=self.batch_size)  # get k (= batch_size) random elements from list
-        for i, start_index in enumerate(indices):
+            # Get a random index from the list
+            start_index = random.choice(self.indices_list)
+            # and remove this index from the list so it won't be used more than once per epoch
+            self.indices_list.remove(start_index)
+
             sample_rows = self.df[start_index:start_index + self.sequence_length]  # get the corresponding df rows
             image_sample, sample_label = self.__get_data(sample_rows)
 
-            reshaped_image_sample = image_sample.reshape(new_image_shape)  # reshape into (sequence_length * img_height)
+            # reshape sample into (sequence_length * img_height), img_width, num_channels
+            reshaped_image_sample = image_sample.reshape(self.new_image_shape)
             X[i, ] = reshaped_image_sample
             y[i, ] = sample_label
 
         # X_new = tf.concat([X[i] for i in range(len(X))], axis=0)
-
         # y_new = np.repeat(y, self.output_size[0], axis=0)
-        # print(y_new.shape)
 
-        # removed the used indices from the original list so they won't be selected more than once per epoch
-        self.indices_list = [idx for idx in self.indices_list if idx not in set(indices)]
         return X, y
 
     def __get_data(self, sample):
@@ -141,6 +137,9 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
     def get_image_shape(self):
         return self.output_size
+
+    def get_reshaped_image_shape(self):
+        return self.new_image_shape
 
     def get_example_batch(self):
         # we need to make a copy first so we don't actually change the list by taking an example

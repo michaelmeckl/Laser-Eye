@@ -25,9 +25,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         self.use_grayscale = use_grayscale
 
         self.n = len(self.df)
-        # self.indices = self.df.index.to_list()
-        self.get_item_index = None
-
         num_channels = 1 if self.use_grayscale else 3
         self.output_size = (*NEW_IMAGE_SIZE, num_channels)
 
@@ -52,8 +49,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
     def __len__(self):
         length = self.n // (self.sequence_length * self.batch_size)
-        # if length * self.batch_size * self.sequence_length < self.n:
-        #    length += 1
         return length
 
     def on_epoch_end(self):
@@ -67,8 +62,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         Args:
             index: the number of the current sample from 0 to __len__() - 1
         """
-        self.get_item_index = index  # TODO only for debugging
-
         X = np.empty((self.batch_size, self.sequence_length, *self.output_size))
         y = np.empty((self.batch_size, self.n_classes))
 
@@ -78,7 +71,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
         for i, batch in enumerate(range(self.batch_size)):
             if len(self.indices_list) == 0:
-                print(f"\nself.indices_list is empty in __get_item__()!", flush=True)
+                # print(f"\nself.indices_list is empty in __get_item__()!", flush=True)
                 continue
 
             # Get a random index from the list
@@ -94,7 +87,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             y[i, ] = sample_label
 
         # X_new = tf.concat([X[i] for i in range(len(X))], axis=0)
-
         reshaped_X = X.reshape((self.batch_size * self.sequence_length), *self.output_size)
         reshaped_y = np.repeat(y, self.sequence_length, axis=0)  # needs to be extended to the same dim size for the cnn
 

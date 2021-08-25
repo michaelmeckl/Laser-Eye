@@ -7,26 +7,30 @@ from machine_learning_predictor.machine_learning_constants import results_folder
 from machine_learning_predictor.ml_utils import show_result_plot
 
 
+# TODO loss on the first epoch should always be: -ln(1/n) with n = number_of_classes = 3
+#  -> 1.0986 here
+
+
 # noinspection PyAttributeOutsideInit
 class DifficultyImageClassifier:
     """
     Custom CNN for predicting the difficulty level with images of a user's face.
     """
 
-    def __init__(self, num_classes, num_epochs=30):
+    def __init__(self, train_generator, val_generator, num_classes, num_epochs=30):
         self.n_classes = num_classes
         self.n_epochs = num_epochs
+
+        self.train_generator = train_generator
+        self.validation_generator = val_generator
 
         # check the maximum number of available cores
         cpu_count_available = len(psutil.Process().cpu_affinity()),  # number of usable cpus by this process
         print("CPU Count available", cpu_count_available)
         self.num_workers = cpu_count_available[0] if cpu_count_available[0] else 1
 
-    # TODO try VGG-16 and check if it changes something if a different architecture is used
-    # see https://medium.com/deep-learning-with-keras/tf-data-build-efficient-tensorflow-input-pipelines-for-image-datasets-47010d2e4330
-
-    # loss on the first epoch should always be: -ln(1/n) with n = number_of_classes = 3
-    # -> 1.0986 here
+    # TODO try VGG-16 and check if it changes something if a different architecture is used, see
+    #  https://medium.com/deep-learning-with-keras/tf-data-build-efficient-tensorflow-input-pipelines-for-image-datasets-47010d2e4330
 
     def build_model(self, input_shape: tuple) -> tf.keras.Model:
         # TODO test with different architectures:
@@ -34,21 +38,15 @@ class DifficultyImageClassifier:
             [
                 tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
                 tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-                # tf.keras.layers.Dropout(0.25),
-
-                # TODO use padding='same' ?
-                tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+                tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),  # TODO use padding='same' ?
                 tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-                # tf.keras.layers.Dropout(0.25),
-
                 tf.keras.layers.Conv2D(128, (3, 3), activation='relu'),
                 tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-                # tf.keras.layers.Dropout(0.25),
 
                 tf.keras.layers.Flatten(),
                 # units in the last layer should be a power of two
                 tf.keras.layers.Dense(units=512, activation="relu"),
-                # tf.keras.layers.Dropout(0.3),  # TODO no dropout currently
+                # tf.keras.layers.Dropout(0.3),
 
                 # units must be the number of classes -> we want a vector that looks like this: [0.2, 0.5, 0.3]
                 tf.keras.layers.Dense(units=self.n_classes, activation="softmax")
@@ -63,7 +61,8 @@ class DifficultyImageClassifier:
         self.sequential_model.compile(optimizer="adam",
                                       loss="categorical_crossentropy",
                                       metrics=["categorical_accuracy"])
-        # TODO
+
+        # TODO use SparseCategoricalCrossentropy and accuracy as metrics?
         # self.sequential_model.compile(optimizer='adam', loss=tf.losses.SparseCategoricalCrossentropy(
         # from_logits=True), metrics=['accuracy'])
 
@@ -97,19 +96,16 @@ class DifficultyImageClassifier:
     def log_custom_generator_info_before(self, batch, logs):
         print("\nBefore batch: ", batch, flush=True)
         print("Index list len:", len(self.train_generator.indices_list), flush=True)
-        print(f"get item index: {self.train_generator.get_item_index}", flush=True)
 
     def log_custom_generator_info_after(self, batch, logs):
         print("\nAfter batch: ", batch, flush=True)
         print("Index list len:", len(self.train_generator.indices_list), flush=True)
-        print(f"get item index: {self.train_generator.get_item_index}", flush=True)
 
-    def train_classifier(self, train_generator, val_generator):
-        self.train_generator = train_generator
-        self.validation_generator = val_generator
-
-        self.step_size_train = train_generator.n // (train_generator.sequence_length * train_generator.batch_size)
-        self.step_size_val = val_generator.n // (val_generator.sequence_length * val_generator.batch_size)
+    def train_classifier(self):
+        self.step_size_train = self.train_generator.n // (self.train_generator.sequence_length *
+                                                          self.train_generator.batch_size)
+        self.step_size_val = self.validation_generator.n // (self.validation_generator.sequence_length *
+                                                             self.validation_generator.batch_size)
 
         model_name = "Difficulty-CNN-Model-Generator.h5"
         model_path = os.path.join(results_folder, model_name)
@@ -134,11 +130,9 @@ class DifficultyImageClassifier:
                                             validation_data=self.validation_generator,
                                             # validation_steps=self.step_size_val,
                                             use_multiprocessing=False,
-                                            # workers=self.num_workers,
-                                            # see https://stackoverflow.com/questions/53779968/why-keras-fit-generator-load-before-actually-training
-                                            # max_queue_size=1,
+                                            workers=self.num_workers,
                                             epochs=self.n_epochs,
-                                            callbacks=[checkpoint_callback, lr_callback, custom_callback],
+                                            callbacks=[checkpoint_callback, lr_callback],  # custom_callback],
                                             verbose=1)
 
         self.sequential_model.save(model_path)
@@ -161,14 +155,15 @@ class DifficultyImageClassifier:
         # early_callback = tf.keras.callbacks.EarlyStopping(monitor='val_categorical_accuracy', mode='max',
         #                                                  restore_best_weights=True, patience=5, verbose=1)
 
+        custom_callback = tf.keras.callbacks.LambdaCallback(
+            on_batch_begin=self.log_custom_generator_info_before, on_batch_end=self.log_custom_generator_info_after)
+
         history = self.sequential_model.fit(train_ds,
                                             validation_data=val_ds,
-                                            # steps_per_epoch=self.step_size_train,  # TODO this crashes!
-                                            # validation_steps=self.step_size_val,
                                             use_multiprocessing=False,
                                             workers=self.num_workers,
                                             epochs=self.n_epochs,
-                                            callbacks=[checkpoint_callback, lr_callback],
+                                            callbacks=[checkpoint_callback, lr_callback],  # custom_callback],
                                             verbose=1)
 
         self.sequential_model.save(model_path)
