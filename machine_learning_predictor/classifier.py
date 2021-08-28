@@ -7,7 +7,7 @@ from machine_learning_predictor.machine_learning_constants import results_folder
 from machine_learning_predictor.ml_utils import show_result_plot
 
 
-# TODO loss on the first epoch should always be: -ln(1/n) with n = number_of_classes = 3
+# TODO (val) loss on the first epoch should always be: -ln(1/n) with n = number_of_classes = 3
 #  -> 1.0986 here
 
 
@@ -32,6 +32,7 @@ class DifficultyImageClassifier:
     # TODO try VGG-16 and check if it changes something if a different architecture is used, see
     #  https://medium.com/deep-learning-with-keras/tf-data-build-efficient-tensorflow-input-pipelines-for-image-datasets-47010d2e4330
 
+    # TODO: use keras.Tuner or Optuna for hyperparameter search!
     def build_model(self, input_shape: tuple) -> tf.keras.Model:
         # TODO test with different architectures:
         self.sequential_model = tf.keras.Sequential(
@@ -46,7 +47,7 @@ class DifficultyImageClassifier:
                 tf.keras.layers.Flatten(),
                 # units in the last layer should be a power of two
                 tf.keras.layers.Dense(units=512, activation="relu"),
-                # tf.keras.layers.Dropout(0.3),
+                # tf.keras.layers.Dropout(0.3),  # TODO add BatchNormalization() Layers instead of Dropout ?
 
                 # units must be the number of classes -> we want a vector that looks like this: [0.2, 0.5, 0.3]
                 tf.keras.layers.Dense(units=self.n_classes, activation="softmax")
@@ -93,6 +94,54 @@ class DifficultyImageClassifier:
         self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["categorical_accuracy"])
         return self.model
 
+    def build_and_train_multi_input_model(self, train, val, sequence_length, input_shape: tuple):
+        # Idea based on https://stackoverflow.com/questions/53020898/multiple-input-cnn-for-images
+        branches = []
+        for i in range(sequence_length):
+            inputs = tf.keras.Input(shape=input_shape)
+            conv1 = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu')(inputs)
+            pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(conv1)
+            conv2 = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation='relu')(pool1)
+            pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(conv2)
+            flatten = tf.keras.layers.Flatten()(pool2)
+
+            model = tf.keras.Model(inputs=inputs, outputs=flatten)
+            branches.append(model)
+
+        combinedInput = tf.keras.layers.concatenate([branch.output for branch in branches])
+
+        dense1 = tf.keras.layers.Dense(128, activation='relu')(combinedInput)
+        dropout = tf.keras.layers.Dropout(0.5)(dense1)
+        # units must be the number of classes -> we want a vector that looks like this: [0.2, 0.5, 0.3]
+        output = tf.keras.layers.Dense(self.n_classes, activation='softmax')(dropout)
+
+        self.model = tf.keras.Model(inputs=[branch.input for branch in branches], outputs=output)
+        # print(self.model.summary())
+        # tf.keras.utils.plot_model(self.model, to_file="multi_input_model_graph.png")
+
+        self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["categorical_accuracy"])
+
+        all_train_batches = []
+        all_train_labels = []
+        all_val_labels = []
+        all_val_batches = []
+
+        # for i in range(train.n, 10):
+        for i in range(10):
+            batch_train, batch_train_labels = train[i]
+            batch_val, batch_val_labels = val[i]
+
+            all_train_batches.append(batch_train)
+            all_val_batches.append(batch_val)
+            all_train_labels.append(batch_train_labels)
+            all_val_labels.append(batch_val_labels)
+
+        self.model.fit(x=all_train_batches, y=all_train_labels, validation_data=(all_val_batches, all_val_labels),
+                       use_multiprocessing=False,
+                       # workers=self.num_workers,
+                       epochs=self.n_epochs,
+                       verbose=1)
+
     def log_custom_generator_info_before(self, batch, logs):
         print("\nBefore batch: ", batch, flush=True)
         print("Index list len:", len(self.train_generator.indices_list), flush=True)
@@ -124,11 +173,10 @@ class DifficultyImageClassifier:
         custom_callback = tf.keras.callbacks.LambdaCallback(
             on_batch_begin=self.log_custom_generator_info_before, on_batch_end=self.log_custom_generator_info_after)
 
-        # history = self.sequential_model.fit_generator(generator=self.train_generator,
         history = self.sequential_model.fit(self.train_generator,
-                                            # steps_per_epoch=self.step_size_train,
                                             validation_data=self.validation_generator,
-                                            # validation_steps=self.step_size_val,
+                                            shuffle=False,   # VERY IMPORTANT even when used with custom data generator!
+                                            # see https://github.com/keras-team/keras/issues/12082#issuecomment-455877627
                                             use_multiprocessing=False,
                                             workers=self.num_workers,
                                             epochs=self.n_epochs,
@@ -160,8 +208,7 @@ class DifficultyImageClassifier:
 
         history = self.sequential_model.fit(train_ds,
                                             validation_data=val_ds,
-                                            use_multiprocessing=False,
-                                            workers=self.num_workers,
+                                            shuffle=False,
                                             epochs=self.n_epochs,
                                             callbacks=[checkpoint_callback, lr_callback],  # custom_callback],
                                             verbose=1)

@@ -9,11 +9,13 @@ from machine_learning_predictor.machine_learning_constants import NEW_IMAGE_SIZE
 
 class CustomImageDataGenerator(tf.keras.utils.Sequence):
     """
-    Structure based on https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly
+    Custom Generator that loads, preprocesses and returns the images and their corresponding labels in batches.
+    Structure and implementation based on https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly.
+    The custom Generator inherits from `Sequence` to support multi-threading.
     """
 
     def __init__(self, data_frame, x_col_name, y_col_name, sequence_length, batch_size, num_classes=NUMBER_OF_CLASSES,
-                 images_base_path=".", use_grayscale=False):
+                 images_base_path=".", use_grayscale=False, is_train_set=True):
 
         self.df = data_frame.copy()
         self.X_col = x_col_name
@@ -23,6 +25,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         self.n_classes = num_classes
         self.images_base_path = images_base_path
         self.use_grayscale = use_grayscale
+        self.is_train = is_train_set
 
         self.n = len(self.df)
         num_channels = 1 if self.use_grayscale else 3
@@ -30,6 +33,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
         # create a random order for the samples
         self.indices_list = self.generate_random_index_list()
+        print(f"Train: {self.is_train}; IndicesList (Len {len(self.indices_list)}): {self.indices_list}")
 
     def generate_random_index_list(self):
         """
@@ -52,7 +56,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         return length
 
     def on_epoch_end(self):
-        self.indices_list = self.generate_random_index_list()  # each epoch we generate a new indices order
+        random.shuffle(self.indices_list)  # each epoch we generate a new indices order
         print(f"\nEpoch finished! Generating new indices list: {self.indices_list}\n", flush=True)
 
     def __getitem__(self, index):
@@ -65,20 +69,15 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         X = np.empty((self.batch_size, self.sequence_length, *self.output_size))
         y = np.empty((self.batch_size, self.n_classes))
 
-        # if len(self.indices_list) < self.batch_size:
-        #    print(f"\nself.indices_list is smaller than batch size in __get_item__()!", flush=True)
-        #    self.indices_list = self.generate_random_index_list()
+        # start from the current batch and take the next 'batch_size' indices
+        current_index = index * self.batch_size
+        indices = self.indices_list[current_index:current_index + self.batch_size]
 
-        for i, batch in enumerate(range(self.batch_size)):
-            if len(self.indices_list) == 0:
-                # print(f"\nself.indices_list is empty in __get_item__()!", flush=True)
-                continue
+        # print(f"\nTrain: {self.is_train}; Indices ({len(indices)}): {indices}", flush=True)
+        # print(f"Train: {self.is_train}; Index in get item: {index}; Current index: {current_index}; Items left in "
+        #       f"list: {len(self.indices_list) - current_index}")
 
-            # Get a random index from the list
-            start_index = random.choice(self.indices_list)
-            # and remove this index from the list so it won't be used more than once per epoch
-            self.indices_list.remove(start_index)
-
+        for i, start_index in enumerate(indices):
             # Take all elements starting from the current index until the start of the next index
             sample_rows = self.df[start_index:start_index + self.sequence_length]
             image_sample, sample_label = self.__get_data(sample_rows)
@@ -86,7 +85,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             X[i, ] = image_sample
             y[i, ] = sample_label
 
-        # X_new = tf.concat([X[i] for i in range(len(X))], axis=0)
         reshaped_X = X.reshape((self.batch_size * self.sequence_length), *self.output_size)
         reshaped_y = np.repeat(y, self.sequence_length, axis=0)  # needs to be extended to the same dim size for the cnn
 
@@ -114,8 +112,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
             image = tf.keras.preprocessing.image.load_img(image_path, color_mode=color_mode)
             image_arr = tf.keras.preprocessing.image.img_to_array(image)
-            # TODO
-            # image_arr = tf.image.convert_image_dtype(image_arr, tf.float32)
 
             # crop or pad image depending on it's size
             resized_img = tf.image.resize_with_crop_or_pad(image_arr,
@@ -129,12 +125,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         except Exception as e:
             sys.stderr.write(f"\nError in processing image '{image_path}': {e}")
             return None
-
-    def get_first(self):
-        return self.__getitem__(0)
-
-    def get_last(self):
-        return self.__getitem__(self.__len__() - 1)
 
     def get_image_shape(self):
         return self.output_size

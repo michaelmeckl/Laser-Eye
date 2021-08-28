@@ -1,6 +1,7 @@
 import os
 import random
 import sys
+import cv2
 import numpy as np
 import tensorflow as tf
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
@@ -9,11 +10,13 @@ from machine_learning_predictor.machine_learning_constants import NEW_IMAGE_SIZE
 
 class CustomImageDataGenerator(tf.keras.utils.Sequence):
     """
-    Structure based on https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly
+    Custom Generator that loads, preprocesses and returns the images and their corresponding labels in batches.
+    Structure and implementation based on https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly.
+    The custom Generator inherits from `Sequence` to support multi-threading.
     """
 
     def __init__(self, data_frame, x_col_name, y_col_name, sequence_length, batch_size, num_classes=NUMBER_OF_CLASSES,
-                 images_base_path=".", use_grayscale=False):
+                 images_base_path=".", use_grayscale=False, is_train_set=True):
 
         self.df = data_frame.copy()
         self.X_col = x_col_name
@@ -23,13 +26,16 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         self.n_classes = num_classes
         self.images_base_path = images_base_path
         self.use_grayscale = use_grayscale
+        self.is_train = is_train_set
 
-        self.n = len(self.df)
         num_channels = 1 if self.use_grayscale else 3
         self.output_size = (*NEW_IMAGE_SIZE, num_channels)
+        # TODO stack horizontally instead of vertically?
+        self.new_image_shape = ((self.sequence_length * self.output_size[0]), self.output_size[1], self.output_size[2])
 
-        # create a random order for the samples
-        self.indices_list = self.generate_random_index_list()
+        self.n = len(self.df)
+        self.indices_list = self.generate_random_index_list()  # create a random order for the samples
+        # print(f"Train: {self.is_train}; IndicesList (Len {len(self.indices_list)}): {self.indices_list}")
 
     def generate_random_index_list(self):
         """
@@ -62,9 +68,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         Args:
             index: the number of the current sample from 0 to __len__() - 1
         """
-        # TODO stack horizontally instead of vertically?
-        self.new_image_shape = ((self.sequence_length * self.output_size[0]), self.output_size[1], self.output_size[2])
-
         X = np.empty((self.batch_size, *self.new_image_shape))
         y = np.empty((self.batch_size, self.n_classes))
 
@@ -86,9 +89,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             X[i, ] = reshaped_image_sample
             y[i, ] = sample_label
 
-        # X_new = tf.concat([X[i] for i in range(len(X))], axis=0)
         # y_new = np.repeat(y, self.output_size[0], axis=0)
-
         return X, y
 
     def __get_data(self, sample):
@@ -107,33 +108,41 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
         return image_sample, sample_label
 
+    # TODO use this instead?  -> looks good as well; simply compare resulting accuracy!
+    def crop_center_square(self, frame):
+        y, x = frame.shape[0:2]
+        min_dim = min(y, x)
+        start_x = (x // 2) - (min_dim // 2)
+        start_y = (y // 2) - (min_dim // 2)
+        cropped_frame = frame[start_y: start_y + min_dim, start_x: start_x + min_dim]
+        frame = cv2.resize(cropped_frame, NEW_IMAGE_SIZE)
+        return frame
+
     def __scale_and_convert_image(self, image_path):
         try:
             color_mode = "grayscale" if self.use_grayscale else "rgb"
 
             image = tf.keras.preprocessing.image.load_img(image_path, color_mode=color_mode)
             image_arr = tf.keras.preprocessing.image.img_to_array(image)
-            # TODO
-            # image_arr = tf.image.convert_image_dtype(image_arr, tf.float32)
-
             # crop or pad image depending on it's size
             resized_img = tf.image.resize_with_crop_or_pad(image_arr,
                                                            target_height=NEW_IMAGE_SIZE[0],
                                                            target_width=NEW_IMAGE_SIZE[1])
+            # resized_img = self.crop_center_square(image_arr)
 
-            # normalize pixel values to [0, 1] so the ml model can work with smaller values
+            # TODO different image adjustments?
+            # resized_img = tf.image.adjust_hue(resized_img, 0.5)  # must be in [-1, 1]
+            # resized_img = tf.image.adjust_contrast(resized_img, 2)
+            # resized_img = tf.image.adjust_brightness(resized_img, -0.2)
+            # resized_img = tf.image.adjust_saturation(resized_img, 0.5)
+
+            # normalize pixel values to [0, 1] so the CNN can work with smaller values
             scaled_img = resized_img.numpy() / 255.0
             return scaled_img
 
         except Exception as e:
             sys.stderr.write(f"\nError in processing image '{image_path}': {e}")
             return None
-
-    def get_first(self):
-        return self.__getitem__(0)
-
-    def get_last(self):
-        return self.__getitem__(self.__len__() - 1)
 
     def get_image_shape(self):
         return self.output_size
