@@ -17,6 +17,9 @@ from post_processing.process_downloaded_data import get_fps_info
 
 
 def debug_postprocess(enable_annotation, video_file_path):
+    """
+    Used for debugging the eye tracker functionality "live" with own webcam or video file.
+    """
     # uses the webcam or a given video file for the processing & annotation instead of the images from the participants
     if args.video_file:
         # use a custom threaded video captures to increase fps;
@@ -74,15 +77,15 @@ def create_eye_region_csv(participant_folder):
                 writer.writerow([full_image_path, participant_folder, difficulty_sub_dir])
 
             end_time = time.time()
-            print(f"Writing eye regions with csv writer for difficulty {difficulty_sub_dir} took"
+            print(f"Writing eye regions to csv for difficulty {difficulty_sub_dir} took"
                   f" {(end_time - start_time):.2f} seconds.")
 
     print(f"Finished writing eye region csv file for {participant_folder}.")
 
 
-def process_images(eye_tracker, use_all_images=False, use_folder=False):
+def process_images(eye_tracker, use_folder=False):
     # for easier debugging; select the participants that should be processed; pass empty list to process all
-    participants = ["participant_3", "participant_10", "participant_14", "participant_11", "participant_4"]
+    participants = ["participant_15", "participant_16"]
 
     frame_count = 0
     start_time = time.time()
@@ -109,20 +112,6 @@ def process_images(eye_tracker, use_all_images=False, use_folder=False):
         # set the current participant for the post processing logger
         eye_tracker.set_current_participant(sub_folder, fps)
 
-        """
-        if use_all_images:
-            # process all extracted images, even the ones that aren't useful for the machine learning model
-            images_path = os.path.join(download_folder, sub_folder, image_folder)
-            for image_file in os.listdir(images_path):
-                current_frame = cv2.imread(os.path.join(images_path, image_file))
-                processed_frame = eye_tracker.process_current_frame(current_frame)
-
-                frame_count += 1
-                show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
-                # press q to skip to next participant / load level
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-        """
         # only process the labeled images, that can be associated with one of the load levels
         if use_folder:
             images_path = os.path.join(download_folder, sub_folder, labeled_images_folder)
@@ -204,6 +193,10 @@ def start_extracting_features(debug=False, enable_annotation=False, video_file_p
 
 
 if __name__ == "__main__":
+    """
+    Takes around 2h 45min to run for the first 13 participants.
+    """
+
     # setup an argument parser to enable command line parameters
     parser = argparse.ArgumentParser(description="Postprocessing system to find the useful data in the recorded "
                                                  "images.")

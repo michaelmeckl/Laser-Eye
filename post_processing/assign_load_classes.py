@@ -259,7 +259,7 @@ def assign_load(participant_list=list[str]):
             print(f"\nSkipping folder {participant} as it is not in the specified participant list.\n")
             continue
 
-        print(f"\n####################\nAssigning labels for participant {participant}\n####################\n")
+        print(f"\n####################\nAssigning labels for {participant}\n####################\n")
         images_folder = os.path.join(data_folder, participant, image_folder)
         game_log_folder = os.path.join(data_folder, participant, logs_folder, "CSV")
 
@@ -322,4 +322,4 @@ def assign_load(participant_list=list[str]):
 
 
 if __name__ == "__main__":
-    assign_load(participant_list=[])
+    assign_load(participant_list=["participant_15", "participant_16"])

@@ -33,7 +33,7 @@ def get_smallest_fps():
             participant_smallest_fps = participant
             smallest_fps_val = fps
 
-    print(f"Smallest fps value for {participant_smallest_fps}: {smallest_fps_val} fps")
+    print(f"Smallest fps value has {participant_smallest_fps}: {smallest_fps_val} fps")
     return smallest_fps_val
 
 
@@ -54,10 +54,10 @@ def extract_zipped_images(participant_folder):
     subfolder in each participant folder
     """
 
-    print(f"\n####################\nUnzipping image data for participant {participant_folder} ...")
+    print(f"\n####################\nUnzipping image data for {participant_folder} ...")
     for zipped_file in os.listdir(os.path.join(download_folder, participant_folder, "images")):
         unzip(participant_folder, image_folder, zipped_file)
-    print("\n####################\n")
+    print(f"Finished unzipping image data for {participant_folder}\n")
 
     extracted_images_path = os.path.join(download_folder, participant_folder, image_folder, "tracking_data", "images")
     result_images_dir = os.path.join(download_folder, participant_folder, image_folder)
@@ -65,16 +65,13 @@ def extract_zipped_images(participant_folder):
     # flatten the hierarchy and remove obsolete folders
     start_time = time.time()
     for sub_folder in os.listdir(extracted_images_path):
-        start = time.time()
         for image in os.listdir(os.path.join(extracted_images_path, sub_folder)):
             shutil.move(os.path.join(extracted_images_path, sub_folder, image),
                         os.path.join(result_images_dir, image))
 
-        end = time.time()
-        print(f"Copying folder {sub_folder} took {(end - start):.2f} seconds.")
-
     end_time = time.time()
-    print(f"Copying participant folder {participant_folder} took {(end_time - start_time):.2f} seconds.")
+    # print(f"Copying participant folder {participant_folder} took {(end_time - start_time):.2f} seconds.")
+
     # delete the now empty unzipped folder
     shutil.rmtree(os.path.join(download_folder, participant_folder, image_folder, "tracking_data"))
 
@@ -85,12 +82,12 @@ def extract_game_logs(participant_folder):
         sys.stderr.write(f"\nGame Log zip file not found in {download_folder}/{participant_folder}!\n")
         return
 
-    print(f"\n####################\nUnzipping game log for participant {participant_folder} ...")
+    print(f"\n####################\nUnzipping game log for {participant_folder} ...")
     # unzip file
     unzip(participant_folder, logs_folder, game_log_path)
-    print("\n####################\n")
+    print(f"Finished unzipping game log for {participant_folder}\n")
 
-    # and flatten the hierarchy
+    # and flatten the hierarchy by moving all game logs to the new log dir
     extracted_logs_path = os.path.join(download_folder, participant_folder, logs_folder, "Game_Data", "StudyLogs")
     result_logs_dir = os.path.join(download_folder, participant_folder, logs_folder)
     for element in os.listdir(extracted_logs_path):
@@ -105,6 +102,7 @@ def extract_game_logs(participant_folder):
             for file in os.listdir(element_path):
                 shutil.move(os.path.join(element_path, file), os.path.join(new_dir_path, file))
 
+    # remove obsolete Game_Data folder
     shutil.rmtree(os.path.join(download_folder, participant_folder, logs_folder, "Game_Data"))
 
 
@@ -132,5 +130,5 @@ def extract_data(participant_list=list[str]):
 
 if __name__ == "__main__":
     # empty list means we want to extract all participants
-    extract_data(participant_list=["participant_11", "participant_12", "participant_13"])
+    extract_data(participant_list=["participant_15", "participant_16"])
     print("\n####################\nFinished extracting data\n####################\n")
