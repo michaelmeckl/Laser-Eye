@@ -1,8 +1,11 @@
 import os
+import sys
 import numpy as np
 import psutil
 import tensorflow as tf
+from matplotlib import pyplot as plt
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, LambdaCallback, EarlyStopping
+from machine_learning_predictor.difficulty_levels import DifficultyLevels
 from machine_learning_predictor.machine_learning_constants import results_folder, NEW_IMAGE_SIZE
 from machine_learning_predictor.ml_utils import show_result_plot
 
@@ -236,19 +239,69 @@ class DifficultyImageClassifier:
         print("Validation loss: ", val_loss)
         print("Validation accuracy: ", val_acc * 100)
 
-    def predict(self, test_ds):
-        predict_image_path = test_ds[0]
-        img = tf.keras.preprocessing.image.load_img(
-            predict_image_path, target_size=NEW_IMAGE_SIZE  # TODO use the same resizing as for training!
-        )
-        img_array = tf.keras.preprocessing.image.img_to_array(img)
-        img_array = tf.expand_dims(img_array, 0)  # Create a batch
+    def predict_test_generator(self, test_gen):
+        predictions = self.sequential_model.predict(test_gen)
+        score = tf.nn.softmax(predictions[0])  # take the softmax over all predictions ([0] because it's nested)
+        # print("Predictions:\n", predictions)
+        print(f"Confidence: {100 * np.max(score):.2f} %")
 
-        predictions = self.sequential_model.predict(img_array)
-        score = tf.nn.softmax(predictions[0])
+        # evaluate on the test set as well
+        test_loss, test_acc = self.sequential_model.evaluate(test_gen, verbose=1)
+        print("Test accuracy: ", test_acc * 100)
 
-        print("Prediction:", predictions)
-        print("Score:", score)
+        # load latest (i.e. the best) checkpoint
+        loaded_model = self.load_saved_model(dataset_version=False)  # re-create the model first!
+        checkpoint_folder = os.path.join(results_folder, "checkpoints_generator")  # "checkpoints_dataset"
 
-        category = test_ds.class_names[np.argmax(score)]
-        print(f"This image most likely belongs to {category} with a {100 * np.max(score):.2f} percent confidence.")
+        latest = tf.train.latest_checkpoint(checkpoint_folder)
+        loaded_model.load_weights(latest)
+        # and re-evaluate the model
+        loss, acc = loaded_model.evaluate(test_gen, verbose=1)
+        print(f"Accuracy with restored model weights: {100 * acc:5.2f}%")
+
+    def load_saved_model(self, dataset_version=False):
+        model_name = "Difficulty-CNN-Model-Dataset.h5" if dataset_version else "Difficulty-CNN-Model-Generator.h5"
+        model_path = os.path.join(results_folder, model_name)
+
+        if os.path.exists(model_path):
+            loaded_model = tf.keras.models.load_model(model_path)
+            print("Model successfully loaded")
+            return loaded_model
+        else:
+            sys.stderr.write("No saved model found!")
+            return None
+
+    def save_prediction_as_image(self, batch, sequence_number, actual_label, predicted_label, use_dataset=False):
+        sequence = batch[sequence_number]
+        sequence_len = int(sequence.shape[1] / sequence.shape[0])   # calculate the sequence length based on the shape
+        img_height, img_width = NEW_IMAGE_SIZE
+
+        plt.figure(figsize=(10, 10))
+        plt.grid(False)
+        plt.xticks([])
+        plt.yticks([])
+        plt.imshow(sequence[:, 0:sequence_len * img_width, :])
+        plt.ylabel(DifficultyLevels.get_label_for_encoding(actual_label))
+        plt.title(f"Predicted label: {predicted_label}")
+
+        # TODO currently only the last images are saved and overwrite the previous ones
+        plt.savefig(os.path.join(results_folder,
+                                 f"{'ds_' if use_dataset else 'gen_'}_prediction_result_{sequence_number}.png"))
+
+    def get_label_name_for_index_pos(self, index_pos):
+        mask_array = np.zeros(self.n_classes, dtype=int)  # creates this: [0 0 0]
+        mask_array[index_pos] = 1  # if index_pos was 0: [1 0 0]
+        return DifficultyLevels.get_label_for_encoding(mask_array)
+
+    def predict(self, img_batch, correct_labels):
+        predictions = self.sequential_model.predict(img_batch)
+
+        for i, (prediction, correct_label) in enumerate(zip(predictions, correct_labels)):
+            score = tf.nn.softmax(prediction)  # TODO use this or prediction?
+            print(f"\nPrediction for sequence {i}: {prediction}\nScore: {score})")
+            index = np.argmax(score)
+            predicted_label = self.get_label_name_for_index_pos(index)
+            print(f"Correct label is  \"{DifficultyLevels.get_label_for_encoding(correct_label)}\"")
+            print(f"Predicted label was \"{predicted_label}\" with a confidence of {100 * score[index]:.2f} %")
+
+            self.save_prediction_as_image(img_batch, i, correct_label, predicted_label, use_dataset=False)

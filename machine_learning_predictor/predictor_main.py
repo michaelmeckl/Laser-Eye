@@ -137,7 +137,7 @@ def configure_for_performance(ds, filename=None):
     return ds
 
 
-def get_train_val_images(images_path):
+def get_train_val_images():
     # without_participants = ["participant_1", "participant_5"]  # "participant_6"
     # for eye regions testing:
     # without_participants = ["participant_1", "participant_2", "participant_5", "participant_6",
@@ -158,8 +158,7 @@ def get_train_val_images(images_path):
 
 
 def setup_data_generation(show_examples=True):
-    images_path = pathlib.Path(__file__).parent.parent / "post_processing"
-    train_data, val_data = get_train_val_images(images_path)
+    train_data, val_data = get_train_val_images()
 
     # make sure we have the same number of images per difficulty level!
     for difficulty_level in train_data.difficulty.unique():
@@ -196,6 +195,7 @@ def setup_data_generation(show_examples=True):
                                              images_base_path=images_path, use_grayscale=use_gray, is_train_set=False)
 
     if show_examples:
+        # TODO print the image names as well from the dataframe!!
         # show some example train images to verify the generator is working correctly
         batch, batch_labels = train_generator.get_example_batch()
         show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
@@ -235,7 +235,7 @@ def prepare_dataset(train_generator, val_generator, batch_size, sample_size, ima
     return train_dataset, val_dataset
 
 
-def train_test_classifier(train_generator, val_generator, batch_size, sample_size, train_epochs=15):
+def train_classifier(train_generator, val_generator, batch_size, sample_size, train_epochs=15):
     image_shape = train_generator.get_image_shape()
     print("Image Shape: ", image_shape)
 
@@ -251,6 +251,38 @@ def train_test_classifier(train_generator, val_generator, batch_size, sample_siz
     else:
         classifier.train_classifier()
         classifier.evaluate_classifier()
+
+    return classifier
+
+
+def test_classifier(classifier, batch_size, sample_size):
+    # get the participants that weren't used for training or validation
+    test_participants = os.listdir(data_folder_path)[12:]
+    print(f"Found {len(test_participants)} participants for testing.")
+
+    random.shuffle(test_participants)
+    test_df = merge_participant_image_logs(test_participants, images_path)
+
+    for difficulty_level in test_df.difficulty.unique():
+        difficulty_level_df = test_df[test_df.difficulty == difficulty_level]
+        print(f"Found {len(difficulty_level_df)} test images for category \"{difficulty_level}\".")
+
+    for participant in test_df.participant.unique():
+        participant_df = test_df[test_df.participant == participant]
+        print(f"Found {len(participant_df)} test images for participant \"{participant}\".")
+
+    # batch_size = 3  # use a different batch size for prediction? Useful as sample size must be the same as in training
+    use_gray = False
+    test_generator = CustomImageDataGenerator(data_frame=test_df, x_col_name="image_path", y_col_name="difficulty",
+                                              sequence_length=sample_size, batch_size=batch_size,
+                                              images_base_path=images_path, use_grayscale=use_gray, is_train_set=False)
+
+    # classifier.predict_test_generator(test_generator)
+
+    for choice in random.sample(range(test_generator.__len__()), k=3):  # take 3 random generator outputs for prediction
+        test_image_batch, labels = test_generator.get_example_batch(idx=choice)
+        # show_generator_example_images(test_image_batch, labels, sample_size, gen_v2=use_gen_v2)
+        classifier.predict(test_image_batch, labels)
 
 
 if __name__ == "__main__":
@@ -288,5 +320,9 @@ if __name__ == "__main__":
     else:
         from machine_learning_predictor.custom_data_generator import CustomImageDataGenerator
 
-    train_gen, val_gen, num_batches, num_samples = setup_data_generation()
-    train_test_classifier(train_gen, val_gen, num_batches, num_samples)
+    images_path = pathlib.Path(__file__).parent.parent / "post_processing"
+
+    train_gen, val_gen, num_batches, num_samples = setup_data_generation(show_examples=False)
+    difficulty_classifier = train_classifier(train_gen, val_gen, num_batches, num_samples)
+
+    test_classifier(difficulty_classifier, num_batches, num_samples)
