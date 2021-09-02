@@ -129,9 +129,9 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
     def get_image_shape(self):
         return self.output_size
 
-    def get_example_batch(self):
+    def get_example_batch(self, idx=0):
         # we need to make a copy first so we don't actually change the list by taking an example
         indices_copy = self.indices_list.copy()
-        first_sample, labels = self.__getitem__(0)
+        first_sample, labels = self.__getitem__(idx)
         self.indices_list = indices_copy
         return first_sample, labels

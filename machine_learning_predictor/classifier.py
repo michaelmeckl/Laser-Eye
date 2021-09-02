@@ -2,13 +2,9 @@ import os
 import numpy as np
 import psutil
 import tensorflow as tf
-from tensorflow.python.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, LambdaCallback, EarlyStopping
 from machine_learning_predictor.machine_learning_constants import results_folder, NEW_IMAGE_SIZE
 from machine_learning_predictor.ml_utils import show_result_plot
-
-
-# TODO (val) loss on the first epoch should always be: -ln(1/n) with n = number_of_classes = 3
-#  -> 1.0986 here
 
 
 # noinspection PyAttributeOutsideInit
@@ -34,7 +30,6 @@ class DifficultyImageClassifier:
 
     # TODO: use keras.Tuner or Optuna for hyperparameter search!
     def build_model(self, input_shape: tuple) -> tf.keras.Model:
-        # TODO test with different architectures:
         self.sequential_model = tf.keras.Sequential(
             [
                 tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
@@ -46,8 +41,11 @@ class DifficultyImageClassifier:
 
                 tf.keras.layers.Flatten(),
                 # units in the last layer should be a power of two
-                tf.keras.layers.Dense(units=512, activation="relu"),
-                # tf.keras.layers.Dropout(0.3),  # TODO add BatchNormalization() Layers instead of Dropout ?
+                tf.keras.layers.Dense(units=256, activation="relu"),
+
+                # tf.keras.layers.Dropout(0.3),
+                # TODO add BatchNormalization() Layers instead of Dropout after every conv2d layer ?
+                # tf.keras.layers.BatchNormalization(),
 
                 # units must be the number of classes -> we want a vector that looks like this: [0.2, 0.5, 0.3]
                 tf.keras.layers.Dense(units=self.n_classes, activation="softmax")
@@ -57,9 +55,11 @@ class DifficultyImageClassifier:
         )
 
         self.sequential_model.summary()
+
+        opt = tf.keras.optimizers.Adam(learning_rate=0.001, epsilon=0.1)  # epsilon default: 1e-07
         # for the choice of last layer, activation and loss functions see
         # https://medium.com/deep-learning-with-keras/which-activation-loss-functions-in-multi-class-clasification-4cd599e4e61f
-        self.sequential_model.compile(optimizer="adam",
+        self.sequential_model.compile(optimizer=opt,
                                       loss="categorical_crossentropy",
                                       metrics=["categorical_accuracy"])
 
@@ -164,18 +164,21 @@ class DifficultyImageClassifier:
         # save checkpoints
         checkpoint_callback = ModelCheckpoint(checkpoint_path, monitor='val_categorical_accuracy', verbose=1,
                                               mode="max", save_best_only=True, save_weights_only=True)
-        lr_callback = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, verbose=1)
+        lr_callback = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, verbose=1)
 
         # log_dir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
         # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, update_freq='batch')
 
         # define a custom callback
-        custom_callback = tf.keras.callbacks.LambdaCallback(
+        custom_callback = LambdaCallback(
             on_batch_begin=self.log_custom_generator_info_before, on_batch_end=self.log_custom_generator_info_after)
 
+        # TODO (val) loss on the first epoch should always be: -ln(1/n) with n = number_of_classes = 3
+        #  -> 1.0986 here
         history = self.sequential_model.fit(self.train_generator,
                                             validation_data=self.validation_generator,
-                                            shuffle=False,   # VERY IMPORTANT even when used with custom data generator!
+                                            shuffle=False,   # VERY IMPORTANT even when used with custom data
+                                            # generator!
                                             # see https://github.com/keras-team/keras/issues/12082#issuecomment-455877627
                                             use_multiprocessing=False,
                                             workers=self.num_workers,
@@ -198,17 +201,19 @@ class DifficultyImageClassifier:
         # save checkpoints
         checkpoint_callback = ModelCheckpoint(checkpoint_path, monitor='val_categorical_accuracy', verbose=1,
                                               mode="max", save_best_only=True, save_weights_only=True)
-        lr_callback = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, verbose=1)
+        lr_callback = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, verbose=1)
 
         # early_callback = tf.keras.callbacks.EarlyStopping(monitor='val_categorical_accuracy', mode='max',
         #                                                  restore_best_weights=True, patience=5, verbose=1)
 
-        custom_callback = tf.keras.callbacks.LambdaCallback(
+        custom_callback = LambdaCallback(
             on_batch_begin=self.log_custom_generator_info_before, on_batch_end=self.log_custom_generator_info_after)
 
         history = self.sequential_model.fit(train_ds,
                                             validation_data=val_ds,
-                                            shuffle=False,
+                                            #shuffle=False,
+                                            use_multiprocessing=False,
+                                            workers=self.num_workers,
                                             epochs=self.n_epochs,
                                             callbacks=[checkpoint_callback, lr_callback],  # custom_callback],
                                             verbose=1)

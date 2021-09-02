@@ -8,8 +8,9 @@ from machine_learning_predictor.machine_learning_constants import RANDOM_SEED, r
 
 
 def set_random_seed(seed=RANDOM_SEED):
-    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
+    random.seed(seed)
     tf.random.set_seed(seed)
 
 

@@ -30,8 +30,9 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
         num_channels = 1 if self.use_grayscale else 3
         self.output_size = (*NEW_IMAGE_SIZE, num_channels)
-        # TODO stack horizontally instead of vertically?
-        self.new_image_shape = ((self.sequence_length * self.output_size[0]), self.output_size[1], self.output_size[2])
+
+        # self.new_image_shape = ((self.sequence_length * self.output_size[0]), self.output_size[1],self.output_size[2])
+        self.new_image_shape = (self.output_size[0], (self.sequence_length * self.output_size[1]), self.output_size[2])
 
         self.n = len(self.df)
         self.indices_list = self.generate_random_index_list()  # create a random order for the samples
@@ -59,7 +60,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
     def on_epoch_end(self):
         self.indices_list = self.generate_random_index_list()  # each epoch we generate a new indices order
-        print(f"\nEpoch finished! Generating new indices list: {self.indices_list}\n", flush=True)
+        # print(f"\nEpoch finished! Generating new indices list: {self.indices_list}\n", flush=True)
 
     def __getitem__(self, index):
         """
@@ -68,7 +69,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         Args:
             index: the number of the current sample from 0 to __len__() - 1
         """
-        X = np.empty((self.batch_size, *self.new_image_shape))
+        X = np.empty((self.batch_size, self.sequence_length, *self.output_size))
         y = np.empty((self.batch_size, self.n_classes))
 
         for i, batch in enumerate(range(self.batch_size)):
@@ -83,14 +84,16 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
             sample_rows = self.df[start_index:start_index + self.sequence_length]  # get the corresponding df rows
             image_sample, sample_label = self.__get_data(sample_rows)
-
-            # reshape sample into (sequence_length * img_height), img_width, num_channels
-            reshaped_image_sample = image_sample.reshape(self.new_image_shape)
-            X[i, ] = reshaped_image_sample
+            X[i, ] = image_sample
             y[i, ] = sample_label
 
+        # move the sequence length dim to the left of the width so the reshape works correctly
+        X = np.moveaxis(X, 1, 2)
+        # and reshape into (batch_size, img_height, (sequence_length * img_width), num_channels)
+        reshaped_X = X.reshape(self.batch_size, *self.new_image_shape)
+
         # y_new = np.repeat(y, self.output_size[0], axis=0)
-        return X, y
+        return reshaped_X, y
 
     def __get_data(self, sample):
         image_sample = np.empty((self.sequence_length, *self.output_size))
@@ -145,14 +148,11 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             return None
 
     def get_image_shape(self):
-        return self.output_size
-
-    def get_reshaped_image_shape(self):
         return self.new_image_shape
 
-    def get_example_batch(self):
+    def get_example_batch(self, idx=0):
         # we need to make a copy first so we don't actually change the list by taking an example
         indices_copy = self.indices_list.copy()
-        first_sample, labels = self.__getitem__(0)
+        first_sample, labels = self.__getitem__(idx)
         self.indices_list = indices_copy
         return first_sample, labels
