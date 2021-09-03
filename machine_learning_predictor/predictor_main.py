@@ -195,7 +195,6 @@ def setup_data_generation(show_examples=True):
                                              images_base_path=images_path, use_grayscale=use_gray, is_train_set=False)
 
     if show_examples:
-        # TODO print the image names as well from the dataframe!!
         # show some example train images to verify the generator is working correctly
         batch, batch_labels = train_generator.get_example_batch()
         show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
@@ -322,7 +321,7 @@ if __name__ == "__main__":
 
     images_path = pathlib.Path(__file__).parent.parent / "post_processing"
 
-    train_gen, val_gen, num_batches, num_samples = setup_data_generation(show_examples=False)
+    train_gen, val_gen, num_batches, num_samples = setup_data_generation(show_examples=True)
     difficulty_classifier = train_classifier(train_gen, val_gen, num_batches, num_samples)
 
     test_classifier(difficulty_classifier, num_batches, num_samples)
