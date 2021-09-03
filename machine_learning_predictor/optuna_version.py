@@ -88,7 +88,7 @@ def create_classifier(trial):
 
     # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
     # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
-    batch_size = trial.suggest_int("batch_size", 3, 12)
+    batch_size = trial.suggest_int("batch_size", 3, 4)
     train_epochs = 15  # TODO
     sample_size = trial.suggest_int("sample_size", 10, 20)
     print(f"Sample size: {sample_size} (Train data len: {len(train_data)}, val data len: {len(val_data)})")
@@ -103,7 +103,7 @@ def create_classifier(trial):
                                              sequence_length=sample_size, batch_size=batch_size,
                                              images_base_path=images_path, use_grayscale=use_gray, is_train_set=False)
 
-    image_shape = train_generator.get_reshaped_image_shape()
+    image_shape = train_generator.get_image_shape()
     print("Image Shape: ", image_shape)
 
     n_layers = trial.suggest_int("n_layers", 1, 3)
@@ -115,14 +115,15 @@ def create_classifier(trial):
         model.add(
             tf.keras.layers.Conv2D(
                 activation='relu',
-                filters=trial.suggest_categorical("filters", [32, 64, 128, 256]),
-                kernel_size=trial.suggest_categorical("kernel_size", [3, 5]),
-                padding=trial.suggest_categorical("padding", ["valid", "same"])
+                # use 'i' as the names should be unique!
+                filters=trial.suggest_categorical(f"filters-{i}", [32, 64, 128, 256]),
+                kernel_size=trial.suggest_categorical(f"kernel_size-{i}", [3, 5]),
+                padding=trial.suggest_categorical(f"padding-{i}", ["valid", "same"])
             )
         )
         model.add(
             tf.keras.layers.MaxPooling2D(
-                pool_size=trial.suggest_int("pool_size", 2, 3)
+                pool_size=trial.suggest_int(f"pool_size-{i}", 2, 3)
             )
         )
 
@@ -143,7 +144,7 @@ def create_classifier(trial):
                         epochs=train_epochs,
                         # shuffle=False,
                         workers=8,
-                        verbose=False)
+                        verbose=1)  # False)
 
     # Evaluate the model accuracy on the validation set.
     score = model.evaluate(val_generator, verbose=0)
@@ -170,8 +171,8 @@ if __name__ == "__main__":
         print("Name:", gpu.name, "  Type:", gpu.device_type)
     if len(gpus) == 0:
         print("No gpu found!")
-
-    tf.config.experimental.set_memory_growth(gpus[0], True)
+    else:
+        tf.config.experimental.set_memory_growth(gpus[0], True)
 
     # sampler = TPESampler(seed=10)  # Make the sampler behave in a deterministic way.
     # study = optuna.create_study(sampler=sampler)
@@ -182,7 +183,7 @@ if __name__ == "__main__":
         study = optuna.create_study(direction="maximize")
 
     # study.optimize(objective, n_trials=25, timeout=2500, gc_after_trial=True)
-    study.optimize(objective, timeout=2500, gc_after_trial=True)
+    study.optimize(objective, n_trials=25, gc_after_trial=True)
 
     print("Number of finished trials: ", len(study.trials))
 
@@ -198,5 +199,4 @@ if __name__ == "__main__":
     for key, value in trial.params.items():
         print("    {}: {}".format(key, value))
 
-    print("Best params:")
-    print(**study.best_params)
+    print(f"Best params:\n{study.best_params}")

@@ -69,7 +69,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         Args:
             index: the number of the current sample from 0 to __len__() - 1
         """
-        X = np.empty((self.batch_size, self.sequence_length, *self.output_size))
+        X = np.empty((self.batch_size, self.sequence_length, *self.output_size), dtype=np.float32)
         y = np.empty((self.batch_size, self.n_classes))
 
         for i, batch in enumerate(range(self.batch_size)):
@@ -96,7 +96,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         return reshaped_X, y
 
     def __get_data(self, sample):
-        image_sample = np.empty((self.sequence_length, *self.output_size))
+        image_sample = np.empty((self.sequence_length, *self.output_size), dtype=np.float32)
 
         # Load and preprocess the images for the current sample
         i = 0
