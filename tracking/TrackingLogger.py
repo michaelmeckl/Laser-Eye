@@ -515,13 +515,28 @@ class Logger(QtWidgets.QWidget):
         loop.exec_()
 
     def __cleanup(self):
+        parent_folder = self.__log_folder_path.parent
+
         if len(self.__failed_uploads) == 0:
-            # Remove the whole local dir after uploading everything if there were no errors.
-            # This actually removes itself (i.e. this program) too!
-            shutil.rmtree(self.__log_folder_path.parent, ignore_errors=True)
+            # If there were no errors remove the game and the game logs as well as everything in the local dir that was
+            # created while tracking (this doesn't remove this .exe however)
+            # We specify everything manually instead of simply deleting the whole folder to prevent any permanent
+            # loss of user data if this is, for example, extracted to the desktop or somewhere else on the user system
+            known_names = ["Game_Data", "MonoBleedingEdge", "Game.exe", "Leitfaden.pdf", "UnityCrashHandler32.exe",
+                           "UnityPlayer.dll", "game_log.7z", "error_log.txt"]
+            to_delete = [self.__log_folder_path]
+            [to_delete.append(parent_folder / name) for name in known_names]  # add the complete path for all names
+
+            for item in parent_folder.iterdir():
+                if item not in to_delete:  # skip contents of the current folder that we don't know
+                    continue
+
+                if item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+                elif item.is_file():
+                    item.unlink()
         else:
             # if some things weren't uploaded correctly we cannot remove everything!
-            parent_folder = self.__log_folder_path.parent
             # move the unity folder to the top so we can easily delete everything else there
             shutil.move(self.__unity_log_folder, parent_folder)
 
