@@ -31,6 +31,7 @@ import cv2  # pip install opencv-python
 import numpy as np
 import psutil
 import pyautogui
+import keyboard
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton
@@ -42,12 +43,11 @@ from TrackingLogger import Logger as TrackingLogger
 from TrackingLogger import TrackingData, get_timestamp
 from tracking_service.face_detector import MxnetDetectionModel
 from tracking_utils import find_face_mxnet_resized
-# import keyboard  # for hotkeys
 
 
 class TrackingSystem(QtWidgets.QWidget):
 
-    def __init__(self, debug_active=False):
+    def __init__(self, debug_active=True):  # TODO set to False later
         super(TrackingSystem, self).__init__()
         self.__tracking_active = False
         self.__progress = None  # the upload progress
@@ -315,9 +315,9 @@ class TrackingSystem(QtWidgets.QWidget):
         self.__tracked_data = {key.name: None for key in TrackingData}
 
     # The following could be used instead of the buttons to automatically start and stop tracking via hotkeys:
-    # def listen_for_hotkey(self, hotkey_start="ctrl+a", hotkey_stop="ctrl+q"):
-    #     keyboard.add_hotkey(hotkey_start, self.__show_start_info_box, suppress=False, trigger_on_release=False)
-    #     keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
+    def listen_for_hotkey(self, hotkey_start="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
+        keyboard.add_hotkey(hotkey_start, self.__show_start_info_box, suppress=False, trigger_on_release=False)
+        keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
 
     def __activate_tracking(self):
         if not self.__tracking_active:
@@ -331,7 +331,8 @@ class TrackingSystem(QtWidgets.QWidget):
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
 
-            notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
+            # TODO
+            # notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
 
             # start tracking on a background thread
             self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
@@ -456,7 +457,8 @@ class TrackingSystem(QtWidgets.QWidget):
         Also stop the logging by setting a boolean flag to False.
         """
         if self.__tracking_active:
-            notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
+            # TODO
+            # notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
             # disable stop button but don't enable start button (not implemented to restart tracking!)
@@ -464,7 +466,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
             # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
             # the program itself
-            # keyboard.remove_all_hotkeys()
+            # TODO keyboard.remove_all_hotkeys()
 
             # get fps info and log them
             self.fps_measurer.stop()
@@ -482,13 +484,9 @@ class TrackingSystem(QtWidgets.QWidget):
 
     def __stop_study(self):
         """
-        Called when the user clicks on the stop button or presses the stop hotkey to stop recording new frames and
-        also upload the game data if started as exe.
+        Called when the user clicks on the stop button or presses the stop hotkey to stop recording new frames.
         """
         self.__stop_tracking()
-        # upload the log folders from the unity game when tracking has finished
-        game_data_thread = threading.Thread(target=self.logger.upload_game_data, name="GameDataUpload", daemon=True)
-        game_data_thread.start()
 
     def __finish_tracking_system(self):
         """
@@ -553,7 +551,7 @@ def main():
     app = QApplication(sys.argv)
     tracking_system = TrackingSystem()
     tracking_system.show()
-    # tracking_system.listen_for_hotkey()
+    tracking_system.listen_for_hotkey()
     sys.exit(app.exec_())
 
 
