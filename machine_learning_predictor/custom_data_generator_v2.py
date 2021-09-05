@@ -62,13 +62,8 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         self.indices_list = self.generate_random_index_list()  # each epoch we generate a new indices order
         # print(f"\nEpoch finished! Generating new indices list: {self.indices_list}\n", flush=True)
 
+    """
     def __getitem__(self, index):
-        """
-        Return a new sample in the form (X, y) where X is a batch of image samples and y the corresponding labels.
-
-        Args:
-            index: the number of the current sample from 0 to __len__() - 1
-        """
         X = np.empty((self.batch_size, self.sequence_length, *self.output_size), dtype=np.float32)
         y = np.empty((self.batch_size, self.n_classes))
 
@@ -82,6 +77,35 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             # and remove this index from the list so it won't be used more than once per epoch
             self.indices_list.remove(start_index)
 
+            sample_rows = self.df[start_index:start_index + self.sequence_length]  # get the corresponding df rows
+            image_sample, sample_label = self.__get_data(sample_rows)
+            X[i, ] = image_sample
+            y[i, ] = sample_label
+
+        # move the sequence length dim to the left of the width so the reshape works correctly
+        X = np.moveaxis(X, 1, 2)
+        # and reshape into (batch_size, img_height, (sequence_length * img_width), num_channels)
+        reshaped_X = X.reshape(self.batch_size, *self.new_image_shape)
+
+        # y_new = np.repeat(y, self.output_size[0], axis=0)
+        return reshaped_X, y
+    """
+
+    def __getitem__(self, index):
+        """
+        Return a new sample in the form (X, y) where X is a batch of image samples and y the corresponding labels.
+
+        Args:
+            index: the number of the current sample from 0 to __len__() - 1
+        """
+        X = np.empty((self.batch_size, self.sequence_length, *self.output_size), dtype=np.float32)
+        y = np.empty((self.batch_size, self.n_classes))
+
+        # start from the current batch and take the next 'batch_size' indices
+        current_index = index * self.batch_size
+        indices = self.indices_list[current_index:current_index + self.batch_size]
+
+        for i, start_index in enumerate(indices):
             sample_rows = self.df[start_index:start_index + self.sequence_length]  # get the corresponding df rows
             image_sample, sample_label = self.__get_data(sample_rows)
             X[i, ] = image_sample

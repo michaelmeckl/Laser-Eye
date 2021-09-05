@@ -324,4 +324,4 @@ if __name__ == "__main__":
     train_gen, val_gen, num_batches, num_samples = setup_data_generation(show_examples=True)
     difficulty_classifier = train_classifier(train_gen, val_gen, num_batches, num_samples)
 
-    test_classifier(difficulty_classifier, num_batches, num_samples)
+    # test_classifier(difficulty_classifier, num_batches, num_samples)
