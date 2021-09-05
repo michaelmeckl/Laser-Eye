@@ -47,7 +47,7 @@ def get_server_credentials(credentials_file_path="sftp_credentials.properties") 
     sftp_password = password
     sftp_port = port
     """
-    credentials_file = credentials_file_path
+    credentials_file = pathlib.Path(__file__).parent.parent / credentials_file_path
     credentials_section = "dev.sftp"
 
     if os.path.exists(credentials_file):
