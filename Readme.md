@@ -6,6 +6,13 @@ user's workload while playing a video game.
 ### Requirements:
 Python 3.9 is recommended, but 3.8 and 3.7 should also work fine.
 
+This version uses d3dshot to capture screenshots. d3dshot tries to install pillow from source when installing with pip
+which might lead to some errors (about missing zlib headers).
+Because of this d3dshot needs to be installed manually:
+- download / clone the repo for d3dshot (https://github.com/SerpentAI/D3DShot)
+- change the pillow version in the pyproject.toml-file in the repo to the one that is currently installed on the system
+- then run `python -m pip install .` in the root folder of the downloaded repo to install d3dshot correctly
+
 For other requirements have a look at the [requirements.txt](requirements.txt).
 
 ### Generating an exe file for the tracking system:

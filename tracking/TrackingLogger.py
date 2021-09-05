@@ -19,7 +19,7 @@ from PyQt5.QtCore import pyqtSignal, QThreadPool, QTimer, QEventLoop
 from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
-# from tracking.retry import retry
+import d3dshot  # might be necessary to install this manually; see Readme for more information
 
 
 # whitespaces at the end are necessary!!
@@ -47,7 +47,7 @@ def get_server_credentials(credentials_file_path="sftp_credentials.properties") 
     sftp_password = password
     sftp_port = port
     """
-    credentials_file = credentials_file_path
+    credentials_file = pathlib.Path(__file__).parent.parent / credentials_file_path
     credentials_section = "dev.sftp"
 
     if os.path.exists(credentials_file):
@@ -136,12 +136,6 @@ class Logger(QtWidgets.QWidget):
         self.__images_path = self.__log_folder_path / "images"  # tracking/tracking_data/images/
         self.__images_zipped_path = self.__log_folder_path / "images_zipped"  # tracking/tracking_data/images_zipped/
         self.__error_log_path = self.__log_folder_path.parent / "error_log.txt"  # ./error_log.txt
-
-        if self.__is_exe:
-            # If we are starting this as exe, we also have a folder with the unity logs that need to be uploaded as well
-            # The python exe needs to be in the same folder as the game is!
-            self.__unity_log_folder = self.__log_folder_path.parent / "Game_Data" / "StudyLogs"
-            self.__uploading_game_data = False
 
     def __init_log(self):
         """
@@ -240,38 +234,6 @@ class Logger(QtWidgets.QWidget):
         except Exception as e:
             sys.stderr.write(f"Exception during quit too early upload occurred: {e}")
 
-    def upload_game_data(self):
-        """
-        If this was started as an exe file upload the folder with the game study logs to the server.
-        """
-        if not self.__is_exe or not self.__unity_log_folder.exists():
-            # only upload game data if this is actually running as an exe, otherwise we don't have game data!
-            return
-        self.__uploading_game_data = True
-
-        # zip the game data folder first
-        file_name = "game_log.7z"
-        zipped_location = self.__log_folder_path.parent / file_name
-        with SevenZipFile(f"{zipped_location}", 'w') as archive:
-            archive.writeall(self.__unity_log_folder)
-
-        try:
-            self.__upload_game_study_data(zipped_location, file_name)
-        except Exception as e:
-            self.log_error(f"Fehler beim Hochladen der Spiele-Logs: {e}")
-            self.__failed_uploads.add(file_name)
-            self.signal_connection_loss.emit(False)
-
-        self.__uploading_game_data = False
-
-    # @retry(Exception, total_tries=3, initial_wait=0.5, backoff_factor=2)
-    def __upload_game_study_data(self, zipped_location, file_name):
-        # we need a new pysftp connection to not get in conflict with the existing image upload on the other thread!
-        with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
-                               port=self.__port, cnopts=self.__cnopts) as sftp_connection:
-            # on remote server we always have a POSIX-like path system so there is no need for pathlib in remotepath
-            sftp_connection.put(localpath=f"{zipped_location}", remotepath=f"{self.__user_dir}/{file_name}")
-
     def add_image_to_queue(self, filename: str, image: np.ndarray, timestamp: float):
         self.image_queue.put((filename, image, timestamp))
 
@@ -308,19 +270,6 @@ class Logger(QtWidgets.QWidget):
             # TODO: this can actually cause huge memory problems if waiting too long as the queue will expand rapidly!
             time.sleep(0.01)
 
-    """
-    one thread (100 batch size):
-        Time needed to upload 100 images: 9.868 seconds
-        Time needed to upload 500 images: 28.478 seconds
-        Time needed to upload 1200 images: 62.630 seconds
-    
-    with thread pool (100 batch size):
-        Time needed to upload 100 images: 10.751 seconds
-        Time needed to upload 500 images: 24.482 seconds
-        Time needed to upload 1200 images: 47.043 seconds
-    
-    (both with ~12 mbit upload speed)
-    """
     def start_async_upload(self):
         # connect the custom signal to the callback function to update the gui (updating the gui MUST be done from the
         # main thread and not from a background thread, otherwise it would just randomly crash after some time!!)
@@ -479,12 +428,6 @@ class Logger(QtWidgets.QWidget):
         """
         self.__tracking_active = False
 
-        if self.__is_exe:
-            # if uploading the game data hasn't finished yet, wait for it first!
-            while self.__uploading_game_data:
-                time.sleep(0.1)  # wait for 100 ms, then try again
-                self.stop_upload()
-
         # upload error_log at the end
         self.__upload_error_log()
 
@@ -516,17 +459,15 @@ class Logger(QtWidgets.QWidget):
 
     def __cleanup(self):
         parent_folder = self.__log_folder_path.parent
+        # We specify everything manually instead of simply deleting the whole folder to prevent any permanent
+        # loss of user data if this is, for example, extracted to the desktop or somewhere else on the user system
+        known_names = ["Leitfaden.pdf", "error_log.txt"]
+        to_delete = [self.__log_folder_path]
+        [to_delete.append(parent_folder / name) for name in known_names]  # add the complete path for all names
 
         if len(self.__failed_uploads) == 0:
             # If there were no errors remove the game and the game logs as well as everything in the local dir that was
             # created while tracking (this doesn't remove this .exe however)
-            # We specify everything manually instead of simply deleting the whole folder to prevent any permanent
-            # loss of user data if this is, for example, extracted to the desktop or somewhere else on the user system
-            known_names = ["Game_Data", "MonoBleedingEdge", "Game.exe", "Leitfaden.pdf", "UnityCrashHandler32.exe",
-                           "UnityPlayer.dll", "game_log.7z", "error_log.txt"]
-            to_delete = [self.__log_folder_path]
-            [to_delete.append(parent_folder / name) for name in known_names]  # add the complete path for all names
-
             for item in parent_folder.iterdir():
                 if item not in to_delete:  # skip contents of the current folder that we don't know
                     continue
@@ -537,15 +478,16 @@ class Logger(QtWidgets.QWidget):
                     item.unlink()
         else:
             # if some things weren't uploaded correctly we cannot remove everything!
-            # move the unity folder to the top so we can easily delete everything else there
-            shutil.move(self.__unity_log_folder, parent_folder)
-
             # recursively delete everything that doesn't contain useful log information
             for item in parent_folder.iterdir():
-                if item not in [parent_folder / "StudyLogs", parent_folder / "game_log.7z",
-                                parent_folder / "error_log.txt", self.__log_folder_path]:
+                # TODO fix this on the other branch as well here: this would also delete everything!!!
+                #  -> remove log_folder_path in first list
+                if item not in to_delete:  # skip contents of the current folder that we don't know
+                    continue
+
+                if item not in [parent_folder / "error_log.txt"]:
                     if item.is_dir():
-                        shutil.rmtree(item)
+                        shutil.rmtree(item, ignore_errors=True)
                     elif item.is_file():
                         item.unlink()
 
