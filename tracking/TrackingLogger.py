@@ -516,17 +516,16 @@ class Logger(QtWidgets.QWidget):
 
     def __cleanup(self):
         parent_folder = self.__log_folder_path.parent
+        # We specify everything manually instead of simply deleting the whole folder to prevent any permanent
+        # loss of user data if this is, for example, extracted to the desktop or somewhere else on the user system
+        known_names = ["Game_Data", "MonoBleedingEdge", "Game.exe", "Leitfaden.pdf", "UnityCrashHandler32.exe",
+                       "UnityPlayer.dll", "game_log.7z", "error_log.txt"]
+        to_delete = [self.__log_folder_path]
+        [to_delete.append(parent_folder / name) for name in known_names]  # add the complete path for all names
 
         if len(self.__failed_uploads) == 0:
             # If there were no errors remove the game and the game logs as well as everything in the local dir that was
             # created while tracking (this doesn't remove this .exe however)
-            # We specify everything manually instead of simply deleting the whole folder to prevent any permanent
-            # loss of user data if this is, for example, extracted to the desktop or somewhere else on the user system
-            known_names = ["Game_Data", "MonoBleedingEdge", "Game.exe", "Leitfaden.pdf", "UnityCrashHandler32.exe",
-                           "UnityPlayer.dll", "game_log.7z", "error_log.txt"]
-            to_delete = [self.__log_folder_path]
-            [to_delete.append(parent_folder / name) for name in known_names]  # add the complete path for all names
-
             for item in parent_folder.iterdir():
                 if item not in to_delete:  # skip contents of the current folder that we don't know
                     continue
@@ -542,10 +541,14 @@ class Logger(QtWidgets.QWidget):
 
             # recursively delete everything that doesn't contain useful log information
             for item in parent_folder.iterdir():
+                if item not in to_delete:  # skip contents of the current folder that we don't know
+                    continue
+
+                # we want to keep the game data and error logs as well as all tracking logs and images
                 if item not in [parent_folder / "StudyLogs", parent_folder / "game_log.7z",
                                 parent_folder / "error_log.txt", self.__log_folder_path]:
                     if item.is_dir():
-                        shutil.rmtree(item)
+                        shutil.rmtree(item, ignore_errors=True)
                     elif item.is_file():
                         item.unlink()
 
