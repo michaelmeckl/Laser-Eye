@@ -19,7 +19,7 @@ from PyQt5.QtCore import pyqtSignal, QThreadPool, QTimer, QEventLoop
 from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
-import d3dshot  # might be necessary to install this manually; see Readme for more information
+import d3dshot  # might be necessary to install this manually; see Readme for more information; also needs PIL installed
 
 
 # whitespaces at the end are necessary!!
@@ -110,9 +110,12 @@ class Logger(QtWidgets.QWidget):
         self.__log_folder = default_log_folder
         self.__log_file = default_log_file
 
+        self.screen_capture = d3dshot.create(capture_output="numpy")
+
         # upload error handling
         self.signal_connection_loss.connect(self.__on_connection_lost)
-        self.__scheduler_tag = "tracking_logger"
+        self.__connection_scheduler_tag = "tracking_logger_connection_retry"
+        self.__screenshot_job_tag = "screenshot_capture"
         self.__loss_signal_sent = False
         self.__pause_tracking = False
         self.__failed_uploads = set()
@@ -135,6 +138,7 @@ class Logger(QtWidgets.QWidget):
         self.__log_file_path = self.__log_folder_path / self.__log_file  # tracking/tracking_data/file.csv
         self.__images_path = self.__log_folder_path / "images"  # tracking/tracking_data/images/
         self.__images_zipped_path = self.__log_folder_path / "images_zipped"  # tracking/tracking_data/images_zipped/
+        self.__screenshots_path = self.__log_folder_path / "screenshots"  # tracking/tracking_data/screenshots/
         self.__error_log_path = self.__log_folder_path.parent / "error_log.txt"  # ./error_log.txt
 
     def __init_log(self):
@@ -148,6 +152,7 @@ class Logger(QtWidgets.QWidget):
         self.__log_folder_path.mkdir()
         self.__images_path.mkdir()
         self.__images_zipped_path.mkdir()
+        self.__screenshots_path.mkdir()
 
         self.__folder_count = 1
         # create the first subfolder for the first image batch
@@ -198,6 +203,9 @@ class Logger(QtWidgets.QWidget):
             self.__user_dir = f"{self.__user_dir}_1"  # append '_1' to the directory name
             self.sftp.makedirs(f"{self.__user_dir}/images")
 
+        # create a directory for the screenshots on the server
+        self.sftp.mkdir(f"{self.__user_dir}/screenshots")
+
     def log_error(self, error_msg: str):
         with open(self.__error_log_path, "a") as error_log:  # the file is automatically created if it does not exist
             error_log.write(error_msg + "\n")
@@ -241,6 +249,32 @@ class Logger(QtWidgets.QWidget):
         self.__tracking_active = True
         self.image_save_thread = threading.Thread(target=self.__save_images, name="SaveToDisk", daemon=True)
         self.image_save_thread.start()
+
+        # screenshot_interval = 10  # make a screenshot every 10 seconds
+        # self.screen_capture.screenshot_to_disk_every(screenshot_interval, directory=str(self.__screenshots_path))
+
+        # schedule a job that takes a screenshot every 10 seconds
+        schedule_interval = 10
+        schedule.every(schedule_interval).seconds.do(self.__make_screenshot).tag(self.__screenshot_job_tag)
+        self.__screenshot_job = run_continuously()
+
+    def __make_screenshot(self):
+        screenshot = self.screen_capture.screenshot()
+        # scale down screenshot so it can be uploaded faster (as it is only used manually a low-res image is fine)
+        scale_factor = 0.2
+        screenshot = cv2.resize(screenshot, (0, 0), fx=scale_factor, fy=scale_factor)
+        # screenshot = cv2.cvtColor(screenshot, cv2.COLOR_BGR2RGB)  # needs to be converted to RGB for correct coloring
+
+        screenshot_name = f"screenshot__{get_timestamp()}.jpg"
+        cv2.imwrite(str(self.__screenshots_path / screenshot_name), screenshot)
+        try:
+            with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
+                                   port=self.__port, cnopts=self.__cnopts) as sftp_connection:
+                # upload screenshot to server
+                sftp_connection.put(localpath=f"{self.__screenshots_path / screenshot_name}",
+                                    remotepath=f"{self.__user_dir}/screenshots/{screenshot_name}")
+        except Exception as e:
+            sys.stderr.write(f"Exception during screenshot upload occurred: {e}")
 
     def __save_images(self, img_format="png"):
         while self.__tracking_active:
@@ -346,8 +380,8 @@ class Logger(QtWidgets.QWidget):
         self.__error_callback()  # update ui in main thread
         if check:
             schedule_interval = 5  # schedule repeatedly checking for a connection all 5 seconds
-            schedule.every(schedule_interval).seconds.do(self.__check_connection).tag(self.__scheduler_tag)
-            self.__job = run_continuously()
+            schedule.every(schedule_interval).seconds.do(self.__check_connection).tag(self.__connection_scheduler_tag)
+            self.__retry_connection_job = run_continuously()
 
     def __check_connection(self):
         try:
@@ -367,11 +401,11 @@ class Logger(QtWidgets.QWidget):
     def __stop_connection_check(self):
         if self.__loss_signal_sent:
             # cancel current scheduling job
-            active_jobs = schedule.get_jobs(self.__scheduler_tag)
+            active_jobs = schedule.get_jobs(self.__connection_scheduler_tag)
             if len(active_jobs) > 0:
                 schedule.cancel_job(active_jobs[0])
             # Stop the background thread on the next schedule interval
-            self.__job.set()
+            self.__retry_connection_job.set()
             self.__loss_signal_sent = False  # reset flag in case there is another connection loss later
 
     def get_failed_uploads(self):
@@ -390,10 +424,20 @@ class Logger(QtWidgets.QWidget):
             self.__failed_uploads.add("error_log.txt")
             self.signal_connection_loss.emit(False)
 
+    def __stop_screenshot_capturing(self):
+        self.screen_capture.stop()  # stop d3dshot capturing
+
+        active_jobs = schedule.get_jobs(self.__screenshot_job_tag)
+        if len(active_jobs) > 0:
+            schedule.cancel_job(active_jobs[0])
+        self.__screenshot_job.set()
+
     def finish_logging(self, fps_values, elapsed_time, avg_fps, frame_count):
         # when tracking is stopped the last batch of images will never reach the
         # upload condition (as it won't be a full batch), so we set it manually
         self.upload_queue.put(str(self.__folder_count))
+
+        self.__stop_screenshot_capturing()
 
         # only take every "avg_fps-nth" element to get the actual fps values per second (and not per frame)
         subsampled_fps_vals = fps_values[::int(avg_fps)]
