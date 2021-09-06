@@ -314,9 +314,10 @@ class TrackingSystem(QtWidgets.QWidget):
         self.logger = TrackingLogger(self.__on_upload_progress, self.__on_error)
         self.__tracked_data = {key.name: None for key in TrackingData}
 
-    # The following could be used instead of the buttons to automatically start and stop tracking via hotkeys:
-    def listen_for_hotkey(self, hotkey_start="ctrl+shift+a", hotkey_stop="ctrl+shift+q"):
-        keyboard.add_hotkey(hotkey_start, self.__show_start_info_box, suppress=False, trigger_on_release=False)
+    # automatically start and stop tracking via hotkeys:
+    def listen_for_hotkey(self, hotkey_start="ctrl+shift+s", hotkey_stop="ctrl+shift+q"):
+        # info box and webcam preview are not working correctly with hotkeys so we skip them (they aren't needed anyway)
+        keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
         keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
 
     def __activate_tracking(self):

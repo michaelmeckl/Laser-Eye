@@ -250,9 +250,6 @@ class Logger(QtWidgets.QWidget):
         self.image_save_thread = threading.Thread(target=self.__save_images, name="SaveToDisk", daemon=True)
         self.image_save_thread.start()
 
-        # screenshot_interval = 10  # make a screenshot every 10 seconds
-        # self.screen_capture.screenshot_to_disk_every(screenshot_interval, directory=str(self.__screenshots_path))
-
         # schedule a job that takes a screenshot every 10 seconds
         schedule_interval = 10
         schedule.every(schedule_interval).seconds.do(self.__make_screenshot).tag(self.__screenshot_job_tag)
@@ -524,8 +521,6 @@ class Logger(QtWidgets.QWidget):
             # if some things weren't uploaded correctly we cannot remove everything!
             # recursively delete everything that doesn't contain useful log information
             for item in parent_folder.iterdir():
-                # TODO fix this on the other branch as well here: this would also delete everything!!!
-                #  -> remove log_folder_path in first list
                 if item not in to_delete:  # skip contents of the current folder that we don't know
                     continue
 
