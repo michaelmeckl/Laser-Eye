@@ -93,8 +93,8 @@ def show_generator_example_images(batch, labels, sample_size, gen_v2=False):
     if gen_v2:
         plt.figure(figsize=(10, 10))
         for i in range(length):
-            # plt.subplot(1, 5, i + 1)  # if vertically stacked
-            plt.subplot(5, 1, i + 1)  # if horizontally stacked
+            # plt.subplot(1, batch_len, i + 1)  # if vertically stacked
+            plt.subplot(batch_len, 1, i + 1)  # if horizontally stacked
             plt.grid(False)
             plt.xticks([])
             plt.yticks([])
@@ -180,7 +180,7 @@ def setup_data_generation(show_examples=True):
 
     # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
     # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
-    batch_size = 4
+    batch_size = 5
 
     sample_size = get_suitable_sample_size(difficulty_category_size)
     print(f"Sample size: {sample_size} (Train data len: {len(train_data)}, val data len: {len(val_data)})")
@@ -198,6 +198,19 @@ def setup_data_generation(show_examples=True):
         # show some example train images to verify the generator is working correctly
         batch, batch_labels = train_generator.get_example_batch()
         show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
+        """
+        batch, batch_labels = train_generator.get_example_batch(2)
+        show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
+
+        batch, batch_labels = train_generator.get_example_batch(3)
+        show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
+
+        batch, batch_labels = train_generator.get_example_batch(4)
+        show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
+
+        batch, batch_labels = train_generator.get_example_batch(idx=5)
+        show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
+        """
 
     print("Len train generator: ", train_generator.__len__())
     print("Len val generator: ", val_generator.__len__())
@@ -240,7 +253,8 @@ def train_classifier(train_generator, val_generator, batch_size, sample_size, tr
 
     classifier = DifficultyImageClassifier(train_generator, val_generator, num_classes=NUMBER_OF_CLASSES,
                                            num_epochs=train_epochs)
-    classifier.build_model(input_shape=image_shape)
+    batch, batch_labels = train_generator.get_example_batch()
+    classifier.build_model(input_shape=image_shape, img_batch=batch)
 
     if use_dataset_version:
         train_dataset, val_dataset = prepare_dataset(train_generator, val_generator, batch_size, sample_size,

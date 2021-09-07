@@ -1,7 +1,6 @@
 import os
 import random
 import sys
-import cv2
 import numpy as np
 import tensorflow as tf
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
@@ -111,15 +110,17 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
         return image_sample, sample_label
 
-    # TODO use this instead?  -> looks good as well; simply compare resulting accuracy!
     def crop_center_square(self, frame):
         y, x = frame.shape[0:2]
         min_dim = min(y, x)
         start_x = (x // 2) - (min_dim // 2)
         start_y = (y // 2) - (min_dim // 2)
+        # crop image first to prevent distortions when resizing
         cropped_frame = frame[start_y: start_y + min_dim, start_x: start_x + min_dim]
-        frame = cv2.resize(cropped_frame, NEW_IMAGE_SIZE)
-        return frame
+        resized_img = tf.image.resize_with_pad(cropped_frame,
+                                               target_height=NEW_IMAGE_SIZE[0],
+                                               target_width=NEW_IMAGE_SIZE[1])
+        return resized_img
 
     def __scale_and_convert_image(self, image_path):
         try:
@@ -128,19 +129,22 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             image = tf.keras.preprocessing.image.load_img(image_path, color_mode=color_mode)
             image_arr = tf.keras.preprocessing.image.img_to_array(image)
             # crop or pad image depending on it's size
+            """
             resized_img = tf.image.resize_with_crop_or_pad(image_arr,
                                                            target_height=NEW_IMAGE_SIZE[0],
                                                            target_width=NEW_IMAGE_SIZE[1])
-            # resized_img = self.crop_center_square(image_arr)
+            """
+            resized_img = self.crop_center_square(image_arr)
 
             # TODO different image adjustments?
-            # resized_img = tf.image.adjust_hue(resized_img, 0.5)  # must be in [-1, 1]
-            # resized_img = tf.image.adjust_contrast(resized_img, 2)
-            # resized_img = tf.image.adjust_brightness(resized_img, -0.2)
-            # resized_img = tf.image.adjust_saturation(resized_img, 0.5)
+            # resized_img = tf.image.adjust_hue(resized_img, -0.8)  # must be in [-1, 1]
+            # resized_img = tf.image.adjust_contrast(resized_img, 1.2)
+            # resized_img = tf.image.adjust_brightness(resized_img, -0.5)
+            # resized_img = tf.image.adjust_saturation(resized_img, -0.5)  # TODO aus irgendeinem grund nahezu 70% manchmal (mit batchsize 12 und sample size 10); aber nur 31 auf val_data
 
             # normalize pixel values to [0, 1] so the CNN can work with smaller values
-            scaled_img = resized_img.numpy() / 255.0
+            # scaled_img = resized_img.numpy() / 255.0
+            scaled_img = resized_img / 255.0
             return scaled_img
 
         except Exception as e:

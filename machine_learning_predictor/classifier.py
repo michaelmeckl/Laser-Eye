@@ -31,22 +31,22 @@ class DifficultyImageClassifier:
     # TODO try VGG-16 and check if it changes something if a different architecture is used, see
     #  https://medium.com/deep-learning-with-keras/tf-data-build-efficient-tensorflow-input-pipelines-for-image-datasets-47010d2e4330
 
-    # TODO: use keras.Tuner or Optuna for hyperparameter search!
-    def build_model(self, input_shape: tuple) -> tf.keras.Model:
+    def build_model(self, input_shape: tuple, img_batch) -> tf.keras.Model:
         self.sequential_model = tf.keras.Sequential(
             [
-                tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
+                tf.keras.layers.Conv2D(64, kernel_size=3, activation='relu', padding="same", input_shape=input_shape),
+                tf.keras.layers.MaxPooling2D(pool_size=(3, 3)),
+                tf.keras.layers.Conv2D(128, kernel_size=5, padding="same", activation='relu'),
                 tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-                tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),  # TODO use padding='same' ?
-                tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-                tf.keras.layers.Conv2D(128, (3, 3), activation='relu'),
+                tf.keras.layers.Conv2D(256, kernel_size=3, padding="same", activation='relu'),
                 tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
 
                 tf.keras.layers.Flatten(),
                 # units in the last layer should be a power of two
-                tf.keras.layers.Dense(units=256, activation="relu"),
+                tf.keras.layers.Dense(units=512, activation="relu"),
+                tf.keras.layers.Dense(units=126, activation="relu"),
 
-                # tf.keras.layers.Dropout(0.3),
+                tf.keras.layers.Dropout(0.2),
                 # TODO add BatchNormalization() Layers instead of Dropout after every conv2d layer ?
                 # tf.keras.layers.BatchNormalization(),
 
@@ -59,7 +59,7 @@ class DifficultyImageClassifier:
 
         self.sequential_model.summary()
 
-        opt = tf.keras.optimizers.Adam(learning_rate=0.001, epsilon=0.1)  # epsilon default: 1e-07
+        opt = tf.keras.optimizers.Adam(learning_rate=0.0001)  # TODO epsilon=0.1)  # epsilon default: 1e-07
         # for the choice of last layer, activation and loss functions see
         # https://medium.com/deep-learning-with-keras/which-activation-loss-functions-in-multi-class-clasification-4cd599e4e61f
         self.sequential_model.compile(optimizer=opt,
@@ -70,7 +70,58 @@ class DifficultyImageClassifier:
         # self.sequential_model.compile(optimizer='adam', loss=tf.losses.SparseCategoricalCrossentropy(
         # from_logits=True), metrics=['accuracy'])
 
-        tf.keras.utils.plot_model(self.sequential_model, "sequential_model_graph.png")
+        show_conv_output = False
+        if show_conv_output:
+            # see https://github.com/bnsreenu/python_for_microscopists/blob/master/152-visualizing_conv_layer_outputs.py
+
+            # Understand the filters in the model
+            # Let us pick the first hidden layer as the layer of interest.
+            layer = self.sequential_model.layers  # Conv layers at 1, 3, 6, 8, 11, 13, 15
+            filters, biases = self.sequential_model.layers[0].get_weights()
+            print(layer[0].name, filters.shape)
+
+            # plot filters
+            """
+            fig1 = plt.figure(figsize=(8, 12))
+            columns = 8
+            rows = 8
+            n_filters = columns * rows
+            for i in range(1, n_filters + 1):
+                f = filters[:, :, :, i - 1]
+                fig1 = plt.subplot(rows, columns, i)
+                fig1.set_xticks([])  # Turn off axis
+                fig1.set_yticks([])
+                plt.imshow(f[:, :, 0], cmap='gray')  # Show only the filters from 0th channel (R)
+                # ix += 1
+            plt.show()
+            """
+
+            # Define a new truncated model to only include the conv layers of interest
+            # conv_layer_index = [1, 3, 6, 8, 11, 13, 15]
+            conv_layer_index = [0, 2, 4]  # TO define a shorter model
+            outputs = [self.sequential_model.layers[i].output for i in conv_layer_index]
+            model_short = tf.keras.Model(inputs=self.sequential_model.inputs, outputs=outputs)
+            print(model_short.summary())
+
+            # Generate feature output by predicting on the input image
+            feature_output = model_short.predict(img_batch)
+
+            columns = 6  # max: np.sqrt(smallest filter size), here 8*8
+            rows = 6
+            for j, ftr in enumerate(feature_output):
+                # pos = 1
+                fig = plt.figure(figsize=(12, 12))
+                fig.suptitle(f"feature output - {j}")
+                for i in range(1, columns * rows + 1):
+                    fig = plt.subplot(rows, columns, i)
+                    fig.set_xticks([])  # Turn off axis
+                    fig.set_yticks([])
+                    plt.imshow(ftr[0, :, :, i - 1], cmap='gray')
+                    # pos += 1
+                plt.savefig(f"feature output - {j}")
+                plt.show()
+
+        # tf.keras.utils.plot_model(self.sequential_model, "sequential_model_graph.png")
         return self.sequential_model
 
     def build_model_functional_version(self, input_shape: tuple) -> tf.keras.Model:
@@ -180,7 +231,7 @@ class DifficultyImageClassifier:
         #  -> 1.0986 here
         history = self.sequential_model.fit(self.train_generator,
                                             validation_data=self.validation_generator,
-                                            shuffle=False,   # VERY IMPORTANT even when used with custom data
+                                            # shuffle=False,   # VERY IMPORTANT even when used with custom data
                                             # generator!
                                             # see https://github.com/keras-team/keras/issues/12082#issuecomment-455877627
                                             use_multiprocessing=False,
@@ -214,7 +265,7 @@ class DifficultyImageClassifier:
 
         history = self.sequential_model.fit(train_ds,
                                             validation_data=val_ds,
-                                            #shuffle=False,
+                                            # shuffle=False,
                                             use_multiprocessing=False,
                                             workers=self.num_workers,
                                             epochs=self.n_epochs,
@@ -229,7 +280,7 @@ class DifficultyImageClassifier:
 
     def evaluate_classifier(self):
         val_loss, val_acc = self.sequential_model.evaluate(self.validation_generator,
-                                                           steps=self.step_size_val,
+                                                           # steps=self.step_size_val,
                                                            verbose=1)
         print("Validation loss: ", val_loss)
         print("Validation accuracy: ", val_acc * 100)
@@ -294,6 +345,18 @@ class DifficultyImageClassifier:
         return DifficultyLevels.get_label_for_encoding(mask_array)
 
     def predict(self, img_batch, correct_labels):
+        """
+        # load latest (i.e. the best) checkpoint
+        loaded_model = self.load_saved_model(dataset_version=False)  # re-create the model first!
+        # checkpoint_folder = os.path.join(results_folder, "checkpoints_generator")  # "checkpoints_dataset"
+
+        # latest = tf.train.latest_checkpoint(checkpoint_folder)
+        # loaded_model.load_weights(latest)
+        """
+
+        # or like this:
+        # loaded_model.load_weights("Difficulty-CNN-TimeSeries-ConvLSTM.h5")
+
         predictions = self.sequential_model.predict(img_batch)
 
         for i, (prediction, correct_label) in enumerate(zip(predictions, correct_labels)):
