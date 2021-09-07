@@ -20,8 +20,6 @@ from PyQt5.QtCore import pyqtSignal, QThreadPool, QTimer, QEventLoop
 from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
-# import d3dshot  # might be necessary to install this manually; see Readme for more information; also needs PIL
-# installed
 
 
 # whitespaces at the end are necessary!!

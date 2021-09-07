@@ -5,14 +5,6 @@ user's workload while playing a video game.
 
 ### Requirements:
 Python 3.9 is recommended, but 3.8 and 3.7 should also work fine.
-
-This version uses d3dshot to capture screenshots. d3dshot tries to install pillow from source when installing with pip
-which might lead to some errors (about missing zlib headers).
-Because of this d3dshot needs to be installed manually:
-- download / clone the repo for d3dshot (https://github.com/SerpentAI/D3DShot)
-- change the pillow version in the pyproject.toml-file in the repo to the one that is currently installed on the system
-- then run `python -m pip install .` in the root folder of the downloaded repo to install d3dshot correctly
-
 For other requirements have a look at the [requirements.txt](requirements.txt).
 
 ### Generating an exe file for the tracking system:
@@ -21,17 +13,15 @@ the code.
 
 2. For creating exe with auto-py-to-exe:
 * select --onefile and window mode
-* add-data: ```C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights```
-* add-data: ```C:/Users/[user]/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet``` (or wherever mxnet 
-  has been installed)
-* add-data: ```C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service```
+* add-data: ```C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/weights```
+* add-data: ```C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/venv/Lib/site-packages/mxnet``` (or wherever mxnet has been installed)
+* add-data: ```C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/tracking_service```
 * add hidden-imports: ```pandas```, ```pysftp```, ```requests``` and ```plyer.platforms.win.notification```
   (for plyer import see https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a-executable-using-pyinstaller)
-* exclude module: matplotlib
 
 3. Pyinstaller command for the above:
 ```shell
-pyinstaller --noconfirm --onefile --windowed --add-data "C:/Users/[user]/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" --add-data "C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests" --exclude-module "matplotlib" "C:/Users/[user]/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
+pyinstaller --noconfirm --onefile --windowed --add-data "C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/venv/Lib/site-packages/mxnet;mxnet/" --add-data "C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests" -n "evaluation_tracker" "C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
 ```
 
 # Original Documentation below:

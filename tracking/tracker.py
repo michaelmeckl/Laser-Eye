@@ -6,19 +6,17 @@ Creating an exe file:
 1. Comment out the config parsing in the logger ('get_server_credentials()') and add server credentials directly in
 the code.
 
-For creating exe with auto-py-to-exe: select --onefile and window based
-add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights
-add-data C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet
-add-data C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service
+For creating exe with auto-py-to-exe: select --onefile and window based (and optionally set --name)
+add-data C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/weights
+add-data C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/venv/Lib/site-packages/mxnet
+add-data C:/[path_to_repository]/Praxisseminar-Webcam-Tracking-System/tracking_service
 add hidden-imports: pandas, pysftp, plyer.platforms.win.notification and requests
 # for plyer import see
 https://stackoverflow.com/questions/56281839/issue-with-plyer-library-of-python-when-creating-a-executable-using-pyinstaller
-and
-exclude-module matplotlib
 
 2. Pyinstaller command for the above:
 (add --debug "all" to the command below if things go wrong...)
-pyinstaller --noconfirm --onefile --windowed --add-data "C:/Users/Michael/AppData/Local/Programs/Python/Python39/Lib/site-packages/mxnet;mxnet/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests" --exclude-module "matplotlib"  "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
+pyinstaller --noconfirm --onefile --windowed --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/venv/Lib/site-packages/mxnet;mxnet/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/weights;weights/" --add-data "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking_service;tracking_service/" --hidden-import "plyer.platforms.win.notification" --hidden-import "pandas" --hidden-import "pysftp" --hidden-import "requests" -n "evaluation_tracker" "C:/Users/Michael/Documents/GitHub/Praxisseminar-Webcam-Tracking-System/tracking/tracker.py"
 """
 
 import math
