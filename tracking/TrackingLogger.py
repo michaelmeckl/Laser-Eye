@@ -175,7 +175,7 @@ class Logger(QtWidgets.QWidget):
         self.__cnopts = pysftp.CnOpts()
         self.__cnopts.hostkeys = None
 
-    def init_server_connection(self):
+    def init_server_connection(self, user_id=None):
         try:
             self.sftp = pysftp.Connection(host=self.__hostname, username=self.__username,
                                           password=self.__password, port=self.__port, cnopts=self.__cnopts)
@@ -187,13 +187,11 @@ class Logger(QtWidgets.QWidget):
             self.log_error(f"Die initale Verbindung zum Server konnte nicht hergestellt werden! Fehler: {e}")
             sys.exit(1)
 
-        # we use the timestamp in ms at the init of the tracking system as the user id as we don't have access to the
-        # participant_id from the unity application (this should be fine as it is highly unlikely that 2 people start
-        # at the exact same millisecond)
-        self.__user_id = get_timestamp()
+        # we use the timestamp in ms at the init of the tracking system as the user id if no other id was given
+        self.__user_id = user_id if user_id else get_timestamp()
 
         # create a directory for this user on the sftp server
-        self.__user_dir = f"/home/evaluation_study/{self.__log_folder}__{self.__user_id}"
+        self.__user_dir = f"/home/evaluation_study/{self.__log_folder}__user_{self.__user_id}"
         if not self.sftp.exists(self.__user_dir):
             self.sftp.makedirs(f"{self.__user_dir}/images")  # this automatically creates the parent user dir as well
         else:

@@ -32,7 +32,8 @@ import pyautogui
 import keyboard
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton
+from PyQt5.QtGui import QIntValidator
+from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton, QStackedLayout
 from gpuinfo.windows import get_gpus as get_amd  # pip install gpu-info
 from gpuinfo.nvidia import get_gpus as get_nvidia
 from plyer import notification
@@ -43,6 +44,7 @@ from tracking_service.face_detector import MxnetDetectionModel
 from tracking_utils import find_face_mxnet_resized
 
 
+# noinspection PyAttributeOutsideInit
 class TrackingSystem(QtWidgets.QWidget):
 
     def __init__(self, debug_active=True):  # TODO set to False later
@@ -52,11 +54,239 @@ class TrackingSystem(QtWidgets.QWidget):
         self.__debug = debug_active
         self.__selected_camera = 0  # use the in-built camera (index 0) per default
 
+        self.__id_given = False
+        self.build_layout()
+
+    def build_layout(self):
+        self.layout = QStackedLayout()
+        # set base layouts for the gui pages (vertically aligned boxes)
+        self.user_id_layout = QtWidgets.QVBoxLayout()
+        self.user_id_layout.setAlignment(Qt.AlignCenter)
+        self.main_page_layout = QtWidgets.QVBoxLayout()
+
+        first_page = QtWidgets.QWidget()
+        first_page.setLayout(self.user_id_layout)  # add layout for first page
+        second_page = QtWidgets.QWidget()
+        second_page.setLayout(self.main_page_layout)  # add layout for second page
+        self.layout.addWidget(first_page)
+        self.layout.addWidget(second_page)
+
+        self.__build_user_id_page()
+        self.__build_main_page()
+
+        self.layout.setContentsMargins(10, 10, 10, 10)
+        self.setLayout(self.layout)
+        self.setGeometry(100, 50, 1200, 950)  # set initial size of gui window (top left and bottom right positions)
+        self.setWindowTitle("Tracking System")
+
+    def __build_user_id_page(self):
+        # prompt user to enter the user_id first before showing the actual tracking gui
+        self.__user_id = None
+
+        user_id_label = QtWidgets.QLabel(self)
+        user_id_label.setText("Bitte geben Sie Ihre NutzerID ein:")
+        user_id_label.setStyleSheet("QLabel {font-size: 10pt;}")
+        user_id_label.setContentsMargins(0, 0, 0, 25)
+        self.user_id_layout.addWidget(user_id_label)
+
+        user_id_input = QtWidgets.QLineEdit(self)
+        # create a validator to check if the input was an integer number between 1 and 20 (i.e a valid ID)
+        self.int_validator = QIntValidator(1, 20)
+        user_id_input.setValidator(self.int_validator)
+        user_id_input.setMaxLength(2)
+        user_id_input.setAlignment(Qt.AlignCenter)
+        user_id_input.setContentsMargins(0, 0, 0, 25)
+        user_id_input.textEdited.connect(self.__on_user_id_entered)
+        self.user_id_layout.addWidget(user_id_input, alignment=Qt.AlignCenter)
+
+        self.continue_button = QtWidgets.QPushButton(self)
+        self.continue_button.setText("Weiter")
+        self.continue_button.setStyleSheet("QPushButton {font: 16px; padding: 12px; min-width: 10em; border-radius: "
+                                           "6px;} :disabled {background-color: lightGray; color: gray;} "
+                                           ":enabled {background-color: rgb(87, 205, 0); color: black;}")
+        self.continue_button.clicked.connect(self.__go_to_main_page)
+        self.continue_button.setEnabled(False)  # disable continue button until an id has been entered
+        self.user_id_layout.addWidget(self.continue_button, alignment=Qt.AlignCenter)
+
+        self.init_tracking_label = QtWidgets.QLabel(self)
+        self.init_tracking_label.setText("Das Tracking-System wird vorbereitet ...")
+        self.init_tracking_label.setStyleSheet("QLabel {font-size: 8pt;}")
+        self.init_tracking_label.setContentsMargins(0, 25, 0, 0)
+        self.init_tracking_label.hide()  # hide label at the beginning, only show it while preparing main tracking page
+        self.user_id_layout.addWidget(self.init_tracking_label)
+
+    def __on_user_id_entered(self, text):
+        # TODO check for "." or other non-int chars as well?
+        if text == "":
+            self.continue_button.setEnabled(False)
+            self.__id_given = False
+        else:
+            self.continue_button.setEnabled(True)
+            self.__id_given = True
+
+    def __go_to_main_page(self):
+        # show a message as it might take a few seconds until the main page is shown
+        self.init_tracking_label.setHidden(False)  # TODO wird nicht mehr angezeigt; main thread blockiert?
+
+        # switch widget index to the next element in the stack (i.e. move to the next page)
+        self.layout.setCurrentIndex(self.layout.currentIndex() + 1)
+        self.__init_tracking_system()
+
+    def __build_main_page(self):
+        # show status of tracking
+        self.tracking_status = QtWidgets.QLabel(self)
+        self.tracking_status.setContentsMargins(0, 10, 0, 10)
+        self.tracking_status.setAlignment(Qt.AlignCenter)
+        self.main_page_layout.addWidget(self.tracking_status)
+
+        start_hotkey = "Strg + Shift + s"
+        stop_hotkey = "Strg + Shift + q"
+        # show some usage notes
+        usage_label = QtWidgets.QLabel(self)
+        usage_label.setText(
+            "Verwendung:\n\nMit den Buttons unten kann das Tracking gestartet und wieder "
+            f"gestoppt werden. Alternativ können auch die Hotkeys \"{start_hotkey}\" zum Starten und \"{stop_hotkey}\" "
+            "zum Stoppen verwendet werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, "
+            "bis der Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken unterhalb). "
+            "Abhängig von der Internetgeschwindigkeit und Leistung des Rechners kann dies einige Zeit in "
+            "Anspruch nehmen. Während dieser Zeit muss der Rechner eingeschaltet bleiben!"
+        )
+        usage_label.setContentsMargins(10, 10, 10, 10)
+        usage_label.setWordWrap(True)
+        usage_label.setStyleSheet("QLabel {font-size: 9pt;}")
+        self.main_page_layout.addWidget(usage_label)
+
+        self.__setup_progress_bar()  # show a progress bar for the upload
+        self.__show_instructions()
+        # self.__setup_camera_selection()
+
+        self.error_label = QtWidgets.QLabel(self)
+        self.error_label.setAlignment(Qt.AlignCenter)
+        self.error_label.setStyleSheet("QLabel {color: rgba(255, 0, 0);}")
+        self.main_page_layout.addWidget(self.error_label)
+
+        self.__setup_button_layout()  # add buttons to start and stop tracking
+        self.__set_tracking_status_ui()
+
+    def __show_instructions(self):
+        label_general = QtWidgets.QLabel(self)
+        label_general.setText("Hinweise:")
+        label_general.setStyleSheet("QLabel {font-size: 10pt; margin-top: 40px;}")
+        self.main_page_layout.addWidget(label_general)
+
+        general_instructions = QtWidgets.QTextEdit(self)
+        general_instructions.setStyleSheet("QTextEdit {font-size: 9pt; background-color : rgba(0, 0, 0, 0%); "
+                                           "border: 0; margin-top: 20px}")
+        general_instructions.setReadOnly(True)  # don't let user edit this text field
+        general_instructions.setHtml(
+            "<ul>"
+            "<li>Bitte versuchen Sie während das Tracking aktiv ist, <b>möglichst ruhig zu sitzen</b> und den Kopf "
+            "nicht zu viel oder zu schnell zu bewegen (normale Kopfbewegungen sind selbstverständlich in Ordnung).</li>"
+            "<li>Bitte tragen Sie während des Trackings <b>keine Brille</b>, da die dabei auftretenden Reflexionen "
+            "ein Problem bei der Verarbeitung der Daten darstellen.</li>"
+            "<li>Versuchen Sie <b>nicht zu weit weg von der Kamera</b> zu sein. Der Abstand zwischen Kamera und "
+            "Gesicht sollte nicht mehr als maximal 50-60 cm betragen.</li>"
+            "<li>Die <b>Kamera</b> sollte beim Tracking möglichst <b>gerade und frontal zum Gesicht positioniert</b> "
+            "sein, sodass das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
+            "<li>Bitte achten Sie auf <b>gute Lichtverhältnisse</b> während der Studie. Der von der Webcam "
+            "sichtbare Bereich sollte gut ausgeleuchtet sein.</li>"
+            "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen.</li>"
+            "<li>Die Buttons zum Starten und Stoppen funktionieren nur einmal pro Anwendung. Nach Stoppen des "
+            "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten.</li>"
+            "<li>Bei Beenden dieser Anwendung werden <b>automatisch</b> alle für die Studie nicht mehr benötigten "
+            "<b>Dateien in diesem Ordner gelöscht</b>. Bitte verschieben Sie diese Datei deshalb in keinen anderen "
+            "Ordner!</li>"
+            "</ul>"
+        )
+        self.main_page_layout.addWidget(general_instructions)
+
+    def __setup_camera_selection(self):
+        """
+        Show a dropdown menu to choose between all available cameras for tracking.
+        """
+        camera_select_label = QtWidgets.QLabel(self)
+        camera_select_label.setStyleSheet("QLabel {font-size: 9pt;")
+        camera_select_label.setText("Kamera-Auswahl für Tracking (0 sollte i.d.R. die Richtige sein):")
+        self.camera_selection = QtWidgets.QComboBox(self)
+        self.camera_selection.setStyleSheet("QComboBox {min-width: 1em; border: 1px solid gray; border-radius: 2px; "
+                                            "padding: 1px 18px 1px 3px;}")
+        self.camera_selection.currentIndexChanged.connect(self.__selected_cam_changed)
+
+        dropdown_layout = QtWidgets.QHBoxLayout()
+        dropdown_layout.addWidget(camera_select_label)
+        dropdown_layout.addWidget(self.camera_selection, alignment=Qt.AlignLeft)
+        dropdown_layout.setContentsMargins(0, 0, 0, 15)
+        dropdown_layout.setAlignment(Qt.AlignCenter)
+        self.main_page_layout.addLayout(dropdown_layout)
+
+    def __selected_cam_changed(self, index):
+        self.__selected_camera = index
+
+    def __setup_button_layout(self):
+        button_common_style = "QPushButton {font: 16px; padding: 12px; min-width: 10em; border-radius: 6px;} " \
+                              ":disabled {background-color: lightGray; color: gray;}"
+        self.start_button = QtWidgets.QPushButton(self)
+        self.start_button.setText("Starte Tracking")
+        self.start_button.setStyleSheet(f"{button_common_style}"
+                                        ":enabled {background-color: rgb(87, 205, 0); color: black;}"
+                                        ":pressed {background-color: rgb(47, 165, 0);}")
+        self.start_button.clicked.connect(self.__show_start_info_box)  # connect start method to this button
+
+        self.stop_button = QtWidgets.QPushButton(self)
+        self.stop_button.setText("Tracking stoppen")
+        self.stop_button.setStyleSheet(f"{button_common_style}"
+                                       ":enabled {background-color: rgb(153, 25, 25); color: white;}"
+                                       ":pressed {background-color: rgb(141, 12, 12);}")
+        self.stop_button.clicked.connect(self.__stop_study)  # connect stop method to this button
+        self.stop_button.setEnabled(False)  # disable stop button at the start
+
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addWidget(self.start_button, alignment=Qt.AlignLeft)
+        button_layout.addWidget(self.stop_button, alignment=Qt.AlignRight)
+        button_layout.setContentsMargins(20, 10, 20, 10)
+        self.main_page_layout.addLayout(button_layout)
+
+    def __setup_progress_bar(self):
+        # show a progressbar for the upload
+        self.progress_bar = QtWidgets.QProgressBar(self)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setAlignment(Qt.AlignCenter)
+        progress_bar_layout = QtWidgets.QHBoxLayout()
+        progress_bar_layout.addStretch(1)
+        progress_bar_layout.addWidget(self.progress_bar, stretch=7)
+        progress_bar_layout.addStretch(1)
+        progress_bar_layout.setContentsMargins(0, 20, 0, 0)
+        self.main_page_layout.addLayout(progress_bar_layout)
+
+        # show how much files have been uploaded
+        self.label_current = QtWidgets.QLabel(self)
+        self.label_all = QtWidgets.QLabel(self)
+        hbox = QtWidgets.QHBoxLayout()
+        hbox.addWidget(self.label_current)
+        hbox.addWidget(self.label_all)
+        hbox.setAlignment(Qt.AlignCenter)
+        hbox.setSpacing(5)
+        self.main_page_layout.addLayout(hbox)
+
+        # show approximate time for the upload
+        self.label_eta = QtWidgets.QLabel(self)
+        self.label_eta.setAlignment(Qt.AlignCenter)
+        self.label_eta.setStyleSheet("font-weight: bold")
+        self.main_page_layout.addWidget(self.label_eta)
+
+    def __set_tracking_status_ui(self):
+        if self.__tracking_active:
+            self.tracking_status.setText("Tracking aktiv")
+            self.tracking_status.setStyleSheet("QLabel {color: green; font-size: 10pt;}")
+        else:
+            self.tracking_status.setText("Tracking nicht aktiv")
+            self.tracking_status.setStyleSheet("QLabel {color: red; font-size: 10pt;}")
+
+    def __init_tracking_system(self):
         self.__load_face_detection_model()
-        self.__setup_gui()
         self.__init_logger()
 
-        self.logger.init_server_connection()
+        self.logger.init_server_connection(user_id=self.__user_id)
         self.fps_measurer = FpsMeasurer()
         """
         available_indexes = find_attached_cameras()
@@ -87,159 +317,9 @@ class TrackingSystem(QtWidgets.QWidget):
 
         self.face_detector = MxnetDetectionModel(data_path, 0, .6, gpu=-1)
 
-    def __setup_gui(self):
-        self.layout = QtWidgets.QVBoxLayout()  # set base layout (vertically aligned box)
-
-        # show status of tracking
-        self.tracking_status = QtWidgets.QLabel(self)
-        self.tracking_status.setContentsMargins(0, 10, 0, 10)
-        self.tracking_status.setAlignment(Qt.AlignCenter)
-        self.layout.addWidget(self.tracking_status)
-
-        # show some usage notes
-        usage_label = QtWidgets.QLabel(self)
-        usage_label.setText(
-            "Verwendung:\n\nMit den Buttons unten kann das Tracking gestartet und wieder "
-            "gestoppt werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, bis der "
-            "Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken unterhalb). "
-            "Abhängig von der Internetgeschwindigkeit und Leistung des Rechners kann dies einige Zeit in "
-            "Anspruch nehmen. Während dieser Zeit muss der Rechner eingeschaltet bleiben!"
-        )
-        usage_label.setContentsMargins(10, 10, 10, 10)
-        usage_label.setWordWrap(True)
-        usage_label.setStyleSheet("QLabel {font-size: 9pt;}")
-        self.layout.addWidget(usage_label)
-
-        self.__setup_progress_bar()  # show a progress bar for the upload
-        self.__show_instructions()
-        # self.__setup_camera_selection()
-
-        self.error_label = QtWidgets.QLabel(self)
-        self.error_label.setAlignment(Qt.AlignCenter)
-        self.error_label.setStyleSheet("QLabel {color: rgba(255, 0, 0);}")
-        self.layout.addWidget(self.error_label)
-
-        self.__setup_button_layout()  # add buttons to start and stop tracking
-        self.__set_tracking_status_ui()
-
-        self.layout.setContentsMargins(10, 10, 10, 10)
-        self.setLayout(self.layout)
-        self.setGeometry(100, 50, 1200, 950)  # set initial size of gui window (top left and bottom right positions)
-        self.setWindowTitle("Tracking System")
-
-    def __show_instructions(self):
-        label_general = QtWidgets.QLabel(self)
-        label_general.setText("Hinweise:")
-        label_general.setStyleSheet("QLabel {font-size: 10pt; margin-top: 40px;}")
-        self.layout.addWidget(label_general)
-
-        general_instructions = QtWidgets.QTextEdit(self)
-        general_instructions.setStyleSheet("QTextEdit {font-size: 9pt; background-color : rgba(0, 0, 0, 0%); "
-                                           "border: 0; margin-top: 20px}")
-        general_instructions.setReadOnly(True)  # don't let user edit this text field
-        general_instructions.setHtml(
-            "<ul>"
-            "<li>Bitte versuchen Sie während das Tracking aktiv ist, <b>möglichst ruhig zu sitzen</b> und den Kopf "
-            "nicht zu viel oder zu schnell zu bewegen (normale Kopfbewegungen sind selbstverständlich in Ordnung).</li>"
-            "<li>Bitte tragen Sie während des Trackings <b>keine Brille</b>, da die dabei auftretenden Reflexionen "
-            "ein Problem bei der Verarbeitung der Daten darstellen.</li>"
-            "<li>Versuchen Sie <b>nicht zu weit weg von der Kamera</b> zu sein. Der Abstand zwischen Kamera und "
-            "Gesicht sollte nicht mehr als maximal 50-60 cm betragen.</li>"
-            "<li>Die <b>Kamera</b> sollte beim Tracking möglichst <b>gerade und frontal zum Gesicht positioniert</b> "
-            "sein, sodass das gesamte Gesicht von der Kamera erfasst werden kann.</li>"
-            "<li>Bitte achten Sie auf <b>gute Lichtverhältnisse</b> während der Studie. Der von der Webcam "
-            "sichtbare Bereich sollte gut ausgeleuchtet sein.</li>"
-            "<li>Entfernen Sie vor Beginn des Trackings bitte etwaige Webcam Abdeckungen.</li>"
-            "<li>Die Buttons zum Starten und Stoppen funktionieren nur einmal. Nach Stoppen des "
-            "Trackings muss das Programm erneut gestartet werden, um das Tracking wieder zu starten.</li>"
-            "<li>Bei Beenden dieser Anwendung werden <b>automatisch</b> alle für die Studie nicht mehr benötigten "
-            "<b>Dateien in diesem Ordner gelöscht</b>. Bitte verschieben Sie diese Datei deshalb in keinen anderen "
-            "Ordner!</li>"
-            "</ul>"
-        )
-        self.layout.addWidget(general_instructions)
-
-    def __setup_camera_selection(self):
-        """
-        Show a dropdown menu to choose between all available cameras for tracking.
-        """
-        camera_select_label = QtWidgets.QLabel(self)
-        camera_select_label.setStyleSheet("QLabel {font-size: 9pt;")
-        camera_select_label.setText("Kamera-Auswahl für Tracking (0 sollte i.d.R. die Richtige sein):")
-        self.camera_selection = QtWidgets.QComboBox(self)
-        self.camera_selection.setStyleSheet("QComboBox {min-width: 1em; border: 1px solid gray; border-radius: 2px; "
-                                            "padding: 1px 18px 1px 3px;}")
-        self.camera_selection.currentIndexChanged.connect(self.__selected_cam_changed)
-
-        dropdown_layout = QtWidgets.QHBoxLayout()
-        dropdown_layout.addWidget(camera_select_label)
-        dropdown_layout.addWidget(self.camera_selection, alignment=Qt.AlignLeft)
-        dropdown_layout.setContentsMargins(0, 0, 0, 15)
-        dropdown_layout.setAlignment(Qt.AlignCenter)
-        self.layout.addLayout(dropdown_layout)
-
-    def __selected_cam_changed(self, index):
-        self.__selected_camera = index
-
-    def __setup_button_layout(self):
-        button_common_style = "QPushButton {font: 16px; padding: 12px; min-width: 10em; border-radius: 6px;} " \
-                              ":disabled {background-color: lightGray; color: gray;}"
-        self.start_button = QtWidgets.QPushButton(self)
-        self.start_button.setText("Starte Tracking")
-        self.start_button.setStyleSheet(f"{button_common_style}"
-                                        ":enabled {background-color: rgb(87, 205, 0); color: black;}"
-                                        ":pressed {background-color: rgb(47, 165, 0);}")
-        self.start_button.clicked.connect(self.__show_start_info_box)  # connect start method to this button
-
-        self.stop_button = QtWidgets.QPushButton(self)
-        self.stop_button.setText("Tracking stoppen")
-        self.stop_button.setStyleSheet(f"{button_common_style}"
-                                       ":enabled {background-color: rgb(153, 25, 25); color: white;}"
-                                       ":pressed {background-color: rgb(141, 12, 12);}")
-        self.stop_button.clicked.connect(self.__stop_study)  # connect stop method to this button
-        self.stop_button.setEnabled(False)  # disable stop button at the start
-
-        button_layout = QtWidgets.QHBoxLayout()
-        button_layout.addWidget(self.start_button, alignment=Qt.AlignLeft)
-        button_layout.addWidget(self.stop_button, alignment=Qt.AlignRight)
-        button_layout.setContentsMargins(20, 10, 20, 10)
-        self.layout.addLayout(button_layout)
-
-    def __setup_progress_bar(self):
-        # show a progressbar for the upload
-        self.progress_bar = QtWidgets.QProgressBar(self)
-        self.progress_bar.setMaximum(100)
-        self.progress_bar.setAlignment(Qt.AlignCenter)
-        progress_bar_layout = QtWidgets.QHBoxLayout()
-        progress_bar_layout.addStretch(1)
-        progress_bar_layout.addWidget(self.progress_bar, stretch=7)
-        progress_bar_layout.addStretch(1)
-        progress_bar_layout.setContentsMargins(0, 20, 0, 0)
-        self.layout.addLayout(progress_bar_layout)
-
-        # show how much files have been uploaded
-        self.label_current = QtWidgets.QLabel(self)
-        self.label_all = QtWidgets.QLabel(self)
-        hbox = QtWidgets.QHBoxLayout()
-        hbox.addWidget(self.label_current)
-        hbox.addWidget(self.label_all)
-        hbox.setAlignment(Qt.AlignCenter)
-        hbox.setSpacing(5)
-        self.layout.addLayout(hbox)
-
-        # show approximate time for the upload
-        self.label_eta = QtWidgets.QLabel(self)
-        self.label_eta.setAlignment(Qt.AlignCenter)
-        self.label_eta.setStyleSheet("font-weight: bold")
-        self.layout.addWidget(self.label_eta)
-
-    def __set_tracking_status_ui(self):
-        if self.__tracking_active:
-            self.tracking_status.setText("Tracking aktiv")
-            self.tracking_status.setStyleSheet("QLabel {color: green; font-size: 10pt;}")
-        else:
-            self.tracking_status.setText("Tracking nicht aktiv")
-            self.tracking_status.setStyleSheet("QLabel {color: red; font-size: 10pt;}")
+    def __init_logger(self):
+        self.logger = TrackingLogger(self.__on_upload_progress, self.__on_error)
+        self.__tracked_data = {key.name: None for key in TrackingData}
 
     def __show_start_info_box(self):
         self.__preview_box_is_showing = True
@@ -307,10 +387,6 @@ class TrackingSystem(QtWidgets.QWidget):
             self.error_label.setText("Bei der Verbindung ist ein Fehler aufgetreten! Folgende Dateien konnten deshalb "
                                      "nicht übertragen werden und müssen nach Ende der Studie selbst an die "
                                      "Versuchsleiter übermittelt werden:\n" + failed_list_string)
-
-    def __init_logger(self):
-        self.logger = TrackingLogger(self.__on_upload_progress, self.__on_error)
-        self.__tracked_data = {key.name: None for key in TrackingData}
 
     # automatically start and stop tracking via hotkeys:
     def listen_for_hotkey(self, hotkey_start="ctrl+shift+s", hotkey_stop="ctrl+shift+q"):
@@ -465,7 +541,8 @@ class TrackingSystem(QtWidgets.QWidget):
 
             # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
             # the program itself
-            # TODO keyboard.remove_all_hotkeys()
+            # TODO
+            keyboard.remove_all_hotkeys()
 
             # get fps info and log them
             self.fps_measurer.stop()
@@ -499,7 +576,10 @@ class TrackingSystem(QtWidgets.QWidget):
         """
         Overwrite `closeEvent()` to be able to react to presses on the 'x' in the top-right corner of the window.
         """
-        if self.__progress == 100 or self.__progress is None:
+        if not self.__id_given:
+            # if the user hasn't entered the id yet, we don't need to check for anything
+            event.accept()
+        elif self.__progress == 100 or self.__progress is None:
             self.__finish_tracking_system()
             event.accept()
         else:
@@ -550,6 +630,7 @@ def main():
     app = QApplication(sys.argv)
     tracking_system = TrackingSystem()
     tracking_system.show()
+    # TODO read in hotkeys from a config - file so the user can change them?
     tracking_system.listen_for_hotkey()
     sys.exit(app.exec_())
 
