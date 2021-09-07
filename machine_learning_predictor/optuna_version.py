@@ -4,13 +4,15 @@
 import os
 import pathlib
 import random
+import optuna
 import joblib
 import pandas as pd
 import tensorflow as tf
 from machine_learning_predictor.custom_data_generator_v2 import CustomImageDataGenerator
+# from machine_learning_predictor.custom_data_generator import CustomImageDataGenerator
 from machine_learning_predictor.machine_learning_constants import NUMBER_OF_CLASSES, data_folder_path
+from machine_learning_predictor.ml_utils import set_random_seed
 from post_processing.post_processing_constants import download_folder
-import optuna
 
 
 def merge_participant_image_logs(participant_list):
@@ -89,8 +91,8 @@ def create_classifier(trial):
     # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
     # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
     batch_size = trial.suggest_int("batch_size", 3, 4)
-    train_epochs = 15  # TODO
-    sample_size = trial.suggest_int("sample_size", 10, 20)
+    train_epochs = 20  # TODO
+    sample_size = trial.suggest_int("sample_size", 10, 20, 2)  # step_size 2: 10, 12, ..., 20
     print(f"Sample size: {sample_size} (Train data len: {len(train_data)}, val data len: {len(val_data)})")
 
     images_path = pathlib.Path(__file__).parent.parent / "post_processing"
@@ -106,19 +108,21 @@ def create_classifier(trial):
     image_shape = train_generator.get_image_shape()
     print("Image Shape: ", image_shape)
 
-    n_layers = trial.suggest_int("n_layers", 1, 3)
+    n_conv_layers = trial.suggest_int("n_conv_layers", 2, 4)  # suggest_int between 2 and 4 (both included)
 
     model = tf.keras.Sequential()
     model.add(tf.keras.layers.InputLayer(input_shape=image_shape))
 
-    for i in range(n_layers):
+    padding_type = trial.suggest_categorical(f"padding", ["valid", "same"])
+    for i in range(n_conv_layers):
         model.add(
             tf.keras.layers.Conv2D(
                 activation='relu',
                 # use 'i' as the names should be unique!
                 filters=trial.suggest_categorical(f"filters-{i}", [32, 64, 128, 256]),
-                kernel_size=trial.suggest_categorical(f"kernel_size-{i}", [3, 5]),
-                padding=trial.suggest_categorical(f"padding-{i}", ["valid", "same"])
+                kernel_size=3,
+                # kernel_size=trial.suggest_categorical(f"kernel_size-{i}", [3, 5]),
+                padding=padding_type
             )
         )
         model.add(
@@ -128,23 +132,24 @@ def create_classifier(trial):
         )
 
     model.add(tf.keras.layers.Flatten())
-    # num_hidden = trial.suggest_categorical("units", [32, 64, 128, 512])
-    num_hidden = int(trial.suggest_loguniform("units", 4, 128))
-    model.add(tf.keras.layers.Dense(num_hidden, activation='relu'))
+
+    n_hidden_layers = trial.suggest_int("n_hidden_layers", 1, 2)
+    for i in range(n_hidden_layers):
+        model.add(tf.keras.layers.Dense(units=trial.suggest_categorical(f"hidden_units_{i}", [64, 128, 256, 512]),
+                                        activation='relu'))
+
     model.add(tf.keras.layers.Dense(NUMBER_OF_CLASSES, activation='softmax'))
 
     print(model.summary())
-
     optimizer = create_optimizer(trial)
-    metric = trial.suggest_categorical("metrics", ['categorical_accuracy', 'accuracy'])  # TODO
-    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=metric)
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics='categorical_accuracy')
 
     history = model.fit(train_generator,
                         validation_data=val_generator,
                         epochs=train_epochs,
                         # shuffle=False,
                         workers=8,
-                        verbose=1)  # False)
+                        verbose=False)
 
     # Evaluate the model accuracy on the validation set.
     score = model.evaluate(val_generator, verbose=0)
@@ -157,7 +162,7 @@ def objective(trial):
 
     joblib.dump(study, 'study.pkl')
 
-    # set_random_seed()  # set seed for reproducibility  # TODO seed useful?
+    set_random_seed()  # set seed for reproducibility  # TODO seed useful?
     acc_score = create_classifier(trial)
     print("\nacc score: ", acc_score)
     return acc_score
@@ -179,11 +184,12 @@ if __name__ == "__main__":
 
     if os.path.isfile('study.pkl'):
         study = joblib.load('study.pkl')
+        print("Loaded existing study")
     else:
         study = optuna.create_study(direction="maximize")
 
     # study.optimize(objective, n_trials=25, timeout=2500, gc_after_trial=True)
-    study.optimize(objective, n_trials=25, gc_after_trial=True)
+    study.optimize(objective, n_trials=35, gc_after_trial=True)
 
     print("Number of finished trials: ", len(study.trials))
 
@@ -191,7 +197,7 @@ if __name__ == "__main__":
     trial = study.best_trial
 
     trial_df = study.trials_dataframe()
-    print(trial_df.head(12))
+    print(trial_df.head(25))
 
     print("  Value: ", trial.value)
 
@@ -199,4 +205,64 @@ if __name__ == "__main__":
     for key, value in trial.params.items():
         print("    {}: {}".format(key, value))
 
-    print(f"Best params:\n{study.best_params}")
+    # TODO Best result for generator v2 after 25 trials:
+    """
+  Value:  0.437  => 43 %
+  Params: 
+    batch_size: 3
+    sample_size: 10
+    n_layers: 3
+    filters-0: 256
+    kernel_size-0: 3
+    padding-0: same
+    pool_size-0: 3
+    filters-1: 128
+    kernel_size-1: 5
+    padding-1: same
+    pool_size-1: 2
+    filters-2: 32
+    kernel_size-2: 3
+    padding-2: valid
+    pool_size-2: 2
+    units: 126.48551119189564
+    adam_lr: 0.00011964249525505591
+    metrics: categorical_accuracy
+    """
+    # 64 * 64 size gen v2
+    """
+    Value:  0.3958333432674408
+  Params: 
+    batch_size: 4
+    sample_size: 14
+    n_conv_layers: 4
+    padding: valid
+    filters-0: 64
+    filters-1: 128
+    filters-2: 64
+    filters-3: 64
+    n_hidden_layers: 1
+    hidden_units_0: 512
+    adam_lr: 5.261634111281119e-05
+    """
+
+    # TODO Best result for generator v1 after 35 trials:
+    """
+    Value:  0.4285714328289032 => 42,8 %
+    Params: 
+        batch_size: 4
+        sample_size: 16
+        n_conv_layers: 3
+        padding: valid
+        filters-0: 256
+        kernel_size-0: 3
+        pool_size-0: 2
+        filters-1: 64
+        kernel_size-1: 3
+        pool_size-1: 2
+        filters-2: 256
+        kernel_size-2: 3
+        pool_size-2: 3
+        n_hidden_layers: 1
+        hidden_units_0: 128
+        adam_lr: 0.0003058776164601131
+    """
