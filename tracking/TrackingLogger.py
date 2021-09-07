@@ -12,6 +12,7 @@ from typing import Any, Optional
 import cv2
 import numpy as np
 import pandas as pd
+import pyautogui
 import pysftp
 import schedule
 from PyQt5 import QtWidgets
@@ -19,7 +20,8 @@ from PyQt5.QtCore import pyqtSignal, QThreadPool, QTimer, QEventLoop
 from paramiko.ssh_exception import SSHException
 from plyer import notification
 from py7zr import FILTER_BROTLI, SevenZipFile
-import d3dshot  # might be necessary to install this manually; see Readme for more information; also needs PIL installed
+# import d3dshot  # might be necessary to install this manually; see Readme for more information; also needs PIL
+# installed
 
 
 # whitespaces at the end are necessary!!
@@ -110,8 +112,6 @@ class Logger(QtWidgets.QWidget):
         self.__log_folder = default_log_folder
         self.__log_file = default_log_file
 
-        self.screen_capture = d3dshot.create(capture_output="numpy")
-
         # upload error handling
         self.signal_connection_loss.connect(self.__on_connection_lost)
         self.__connection_scheduler_tag = "tracking_logger_connection_retry"
@@ -195,7 +195,7 @@ class Logger(QtWidgets.QWidget):
         self.__user_id = get_timestamp()
 
         # create a directory for this user on the sftp server
-        self.__user_dir = f"/home/{self.__log_folder}__{self.__user_id}"
+        self.__user_dir = f"/home/evaluation_study/{self.__log_folder}__{self.__user_id}"
         if not self.sftp.exists(self.__user_dir):
             self.sftp.makedirs(f"{self.__user_dir}/images")  # this automatically creates the parent user dir as well
         else:
@@ -256,7 +256,9 @@ class Logger(QtWidgets.QWidget):
         self.__screenshot_job = run_continuously()
 
     def __make_screenshot(self):
-        screenshot = self.screen_capture.screenshot()
+        screenshot_image = pyautogui.screenshot()
+        screenshot = np.asarray(screenshot_image)  # convert pil image to numpy
+
         # scale down screenshot so it can be uploaded faster (as it is only used manually a low-res image is fine)
         scale_factor = 0.2
         screenshot = cv2.resize(screenshot, (0, 0), fx=scale_factor, fy=scale_factor)
@@ -422,8 +424,6 @@ class Logger(QtWidgets.QWidget):
             self.signal_connection_loss.emit(False)
 
     def __stop_screenshot_capturing(self):
-        self.screen_capture.stop()  # stop d3dshot capturing
-
         active_jobs = schedule.get_jobs(self.__screenshot_job_tag)
         if len(active_jobs) > 0:
             schedule.cancel_job(active_jobs[0])
@@ -524,7 +524,7 @@ class Logger(QtWidgets.QWidget):
                 if item not in to_delete:  # skip contents of the current folder that we don't know
                     continue
 
-                if item not in [parent_folder / "error_log.txt"]:
+                if item not in [parent_folder / "error_log.txt", self.__log_folder_path]:
                     if item.is_dir():
                         shutil.rmtree(item, ignore_errors=True)
                     elif item.is_file():
