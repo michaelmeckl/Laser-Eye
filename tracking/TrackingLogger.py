@@ -117,6 +117,7 @@ class Logger(QtWidgets.QWidget):
         self.__loss_signal_sent = False
         self.__pause_tracking = False
         self.__failed_uploads = set()
+        self.__not_uploaded_screenshots = set()
 
         self.__init_paths()
         self.__init_log()
@@ -257,12 +258,15 @@ class Logger(QtWidgets.QWidget):
         screenshot = np.asarray(screenshot_image)  # convert pil image to numpy
 
         # scale down screenshot so it can be uploaded faster (as it is only used manually a low-res image is fine)
-        scale_factor = 0.1
+        scale_factor = 0.08
         screenshot = cv2.resize(screenshot, (0, 0), fx=scale_factor, fy=scale_factor)
         # screenshot = cv2.cvtColor(screenshot, cv2.COLOR_BGR2RGB)  # needs to be converted to RGB for correct coloring
 
         screenshot_name = f"screenshot__{get_timestamp()}.jpg"
         cv2.imwrite(str(self.__screenshots_path / screenshot_name), screenshot)
+        self.__upload_screenshot(screenshot_name)
+
+    def __upload_screenshot(self, screenshot_name):
         try:
             with pysftp.Connection(host=self.__hostname, username=self.__username, password=self.__password,
                                    port=self.__port, cnopts=self.__cnopts) as sftp_connection:
@@ -270,7 +274,9 @@ class Logger(QtWidgets.QWidget):
                 sftp_connection.put(localpath=f"{self.__screenshots_path / screenshot_name}",
                                     remotepath=f"{self.__user_dir}/screenshots/{screenshot_name}")
         except Exception as e:
-            sys.stderr.write(f"Exception during screenshot upload occurred: {e}")
+            self.log_error(f"Fehler beim Hochladen der Screenshots: {e} (Dateiname: {screenshot_name})")
+            self.__failed_uploads.add("screenshots/")
+            self.__not_uploaded_screenshots.add(screenshot_name)
 
     def __save_images(self, img_format="png"):
         while self.__tracking_active:
@@ -391,12 +397,20 @@ class Logger(QtWidgets.QWidget):
             self.sftp = connection
 
             self.__stop_connection_check()
+
+            # check if there are screenshots that couldn't be uploaded during the connection loss and upload them now
+            if len(self.__not_uploaded_screenshots) != 0:
+                for screenshot in self.__not_uploaded_screenshots:
+                    self.__upload_screenshot(screenshot)
+                    self.__not_uploaded_screenshots.discard(screenshot)
+
+                self.__failed_uploads.discard("screenshots")
         except Exception:
             return
 
     def __stop_connection_check(self):
         if self.__loss_signal_sent:
-            # cancel current scheduling job
+            # cancel connection check job
             active_jobs = schedule.get_jobs(self.__connection_scheduler_tag)
             if len(active_jobs) > 0:
                 schedule.cancel_job(active_jobs[0])
@@ -499,7 +513,7 @@ class Logger(QtWidgets.QWidget):
         parent_folder = self.__log_folder_path.parent
         # We specify everything manually instead of simply deleting the whole folder to prevent any permanent
         # loss of user data if this is, for example, extracted to the desktop or somewhere else on the user system
-        known_names = ["Leitfaden.pdf", "error_log.txt"]
+        known_names = ["error_log.txt"]
         to_delete = [self.__log_folder_path]
         [to_delete.append(parent_folder / name) for name in known_names]  # add the complete path for all names
 

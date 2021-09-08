@@ -31,7 +31,7 @@ import psutil
 import pyautogui
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import Qt, QRegExp
-from PyQt5.QtGui import QIntValidator, QValidator, QRegExpValidator
+from PyQt5.QtGui import QRegExpValidator
 from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton, QStackedLayout
 from gpuinfo.windows import get_gpus as get_amd  # pip install gpu-info
 from gpuinfo.nvidia import get_gpus as get_nvidia
@@ -47,7 +47,7 @@ from tracking_utils import find_face_mxnet_resized
 # noinspection PyAttributeOutsideInit
 class TrackingSystem(QtWidgets.QWidget):
 
-    def __init__(self, debug_active=True):  # TODO set to False later
+    def __init__(self, debug_active=False):
         super(TrackingSystem, self).__init__()
         self.__tracking_active = False
         self.__progress = None  # the upload progress
@@ -144,14 +144,11 @@ class TrackingSystem(QtWidgets.QWidget):
         self.tracking_status.setAlignment(Qt.AlignCenter)
         self.main_page_layout.addWidget(self.tracking_status)
 
-        start_hotkey = "Strg + Shift + s"
-        stop_hotkey = "Strg + Shift + q"
         # show some usage notes
         usage_label = QtWidgets.QLabel(self)
         usage_label.setText(
             "Verwendung:\n\nMit den Buttons unten kann das Tracking gestartet und wieder "
-            f"gestoppt werden. Alternativ können auch die Hotkeys \"{start_hotkey}\" zum Starten und \"{stop_hotkey}\" "
-            "zum Stoppen verwendet werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, "
+            "gestoppt werden.\n\nDieses Fenster muss nach Beginn der Studie solange geöffnet bleiben, "
             "bis der Hochladevorgang beendet ist (100% auf dem Fortschrittsbalken unterhalb). "
             "Abhängig von der Internetgeschwindigkeit und Leistung des Rechners kann dies einige Zeit in "
             "Anspruch nehmen. Während dieser Zeit muss der Rechner eingeschaltet bleiben!"
@@ -405,15 +402,14 @@ class TrackingSystem(QtWidgets.QWidget):
             self.__tracking_active = True
 
             self.__set_tracking_status_ui()
-            self.label_eta.setText(f"Mehr Daten werden benötigt ...")
+            self.label_eta.setText("Mehr Daten werden benötigt ...")
             # disable camera selection after tracking has started
             # self.camera_selection.setEnabled(False)
             # toggle button active status
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
 
-            # TODO
-            # notification.notify(title="Tracking aktiv", message="Das Tracking wurde gestartet!", timeout=1)
+            notification.notify(title="Tracking aktiv", message="Tracking wurde gestartet!", timeout=1)
 
             # start tracking on a background thread
             self.tracking_thread = threading.Thread(target=self.__start_tracking, name="TrackingThread", daemon=True)
@@ -538,8 +534,7 @@ class TrackingSystem(QtWidgets.QWidget):
         Also stop the logging by setting a boolean flag to False.
         """
         if self.__tracking_active:
-            # TODO
-            # notification.notify(title="Tracking nicht mehr aktiv", message="Das Tracking wurde gestoppt!", timeout=1)
+            notification.notify(title="Tracking nicht mehr aktiv", message="Tracking wurde gestoppt!", timeout=1)
             self.__tracking_active = False
             self.__set_tracking_status_ui()
             # disable stop button but don't enable start button (not implemented to restart tracking!)
@@ -557,11 +552,6 @@ class TrackingSystem(QtWidgets.QWidget):
             frame_count = self.fps_measurer.get_frames_count()
 
             self.logger.finish_logging(fps_values, elapsed_time, avg_fps_overall, frame_count)
-            """
-            print(f"[INFO] elapsed time: {elapsed_time:.2f} seconds")
-            print(f"[INFO] approx. FPS on background thread: {avg_fps_overall:.2f}")
-            print(f"[INFO] frame count on background thread: {frame_count}")
-            """
 
     def __stop_study(self):
         """
