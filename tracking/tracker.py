@@ -29,10 +29,9 @@ import cv2  # pip install opencv-python
 import numpy as np
 import psutil
 import pyautogui
-import keyboard
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIntValidator
+from PyQt5.QtCore import Qt, QRegExp
+from PyQt5.QtGui import QIntValidator, QValidator, QRegExpValidator
 from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton, QStackedLayout
 from gpuinfo.windows import get_gpus as get_amd  # pip install gpu-info
 from gpuinfo.nvidia import get_gpus as get_nvidia
@@ -42,6 +41,7 @@ from TrackingLogger import Logger as TrackingLogger
 from TrackingLogger import TrackingData, get_timestamp
 from tracking_service.face_detector import MxnetDetectionModel
 from tracking_utils import find_face_mxnet_resized
+# import keyboard
 
 
 # noinspection PyAttributeOutsideInit
@@ -53,11 +53,13 @@ class TrackingSystem(QtWidgets.QWidget):
         self.__progress = None  # the upload progress
         self.__debug = debug_active
         self.__selected_camera = 0  # use the in-built camera (index 0) per default
-
         self.__id_given = False
-        self.build_layout()
 
-    def build_layout(self):
+        self.__load_face_detection_model()
+        self.__init_logger()
+        self.__build_layout()
+
+    def __build_layout(self):
         self.layout = QStackedLayout()
         # set base layouts for the gui pages (vertically aligned boxes)
         self.user_id_layout = QtWidgets.QVBoxLayout()
@@ -90,47 +92,50 @@ class TrackingSystem(QtWidgets.QWidget):
         self.user_id_layout.addWidget(user_id_label)
 
         user_id_input = QtWidgets.QLineEdit(self)
-        # create a validator to check if the input was an integer number between 1 and 20 (i.e a valid ID)
-        self.int_validator = QIntValidator(1, 20)
-        user_id_input.setValidator(self.int_validator)
         user_id_input.setMaxLength(2)
         user_id_input.setAlignment(Qt.AlignCenter)
         user_id_input.setContentsMargins(0, 0, 0, 25)
         user_id_input.textEdited.connect(self.__on_user_id_entered)
         self.user_id_layout.addWidget(user_id_input, alignment=Qt.AlignCenter)
 
+        # create a validator to check if the input was an integer number
+        id_regex = QRegExp(r"\d+")
+        user_id_input.setValidator(QRegExpValidator(id_regex))
+
         self.continue_button = QtWidgets.QPushButton(self)
         self.continue_button.setText("Weiter")
         self.continue_button.setStyleSheet("QPushButton {font: 16px; padding: 12px; min-width: 10em; border-radius: "
                                            "6px;} :disabled {background-color: lightGray; color: gray;} "
-                                           ":enabled {background-color: rgb(87, 205, 0); color: black;}")
+                                           ":enabled {background-color: rgb(87, 205, 0); color: black;} :pressed {"
+                                           "background-color: rgb(47, 165, 0);}")
         self.continue_button.clicked.connect(self.__go_to_main_page)
         self.continue_button.setEnabled(False)  # disable continue button until an id has been entered
         self.user_id_layout.addWidget(self.continue_button, alignment=Qt.AlignCenter)
 
         self.init_tracking_label = QtWidgets.QLabel(self)
-        self.init_tracking_label.setText("Das Tracking-System wird vorbereitet ...")
+        self.init_tracking_label.setText("Verbindung zum Server wird hergestellt ...")
         self.init_tracking_label.setStyleSheet("QLabel {font-size: 8pt;}")
         self.init_tracking_label.setContentsMargins(0, 25, 0, 0)
         self.init_tracking_label.hide()  # hide label at the beginning, only show it while preparing main tracking page
         self.user_id_layout.addWidget(self.init_tracking_label)
 
     def __on_user_id_entered(self, text):
-        # TODO check for "." or other non-int chars as well?
-        if text == "":
-            self.continue_button.setEnabled(False)
-            self.__id_given = False
-        else:
+        if text != "":
+            self.__user_id = int(text)  # save the text as the userId; safe cast because of the QRegex validator
             self.continue_button.setEnabled(True)
             self.__id_given = True
+        else:
+            self.continue_button.setEnabled(False)
+            self.__id_given = False
 
     def __go_to_main_page(self):
-        # show a message as it might take a few seconds until the main page is shown
-        self.init_tracking_label.setHidden(False)  # TODO wird nicht mehr angezeigt; main thread blockiert?
+        # show a message as it might take a few seconds until the main page is shown (or if the connection doesn't work)
+        self.init_tracking_label.setHidden(False)
 
-        # switch widget index to the next element in the stack (i.e. move to the next page)
-        self.layout.setCurrentIndex(self.layout.currentIndex() + 1)
-        self.__init_tracking_system()
+        success = self.__init_tracking_system()
+        if success:
+            # switch widget index to the next element in the stack (i.e. move to the next page)
+            self.layout.setCurrentIndex(self.layout.currentIndex() + 1)
 
     def __build_main_page(self):
         # show status of tracking
@@ -283,10 +288,10 @@ class TrackingSystem(QtWidgets.QWidget):
             self.tracking_status.setStyleSheet("QLabel {color: red; font-size: 10pt;}")
 
     def __init_tracking_system(self):
-        self.__load_face_detection_model()
-        self.__init_logger()
+        connection_status = self.logger.init_server_connection(user_id=self.__user_id)
+        if not connection_status:
+            return False
 
-        self.logger.init_server_connection(user_id=self.__user_id)
         self.fps_measurer = FpsMeasurer()
         """
         available_indexes = find_attached_cameras()
@@ -303,6 +308,7 @@ class TrackingSystem(QtWidgets.QWidget):
                                      "starten Sie dann das Programm erneut!")
             self.logger.log_error("Keine verfügbare Kamera gefunden!")
         """
+        return True
 
     def __load_face_detection_model(self):
         # necessary for building the exe file with pyinstaller with the --one-file option as the path changes;
@@ -389,10 +395,10 @@ class TrackingSystem(QtWidgets.QWidget):
                                      "Versuchsleiter übermittelt werden:\n" + failed_list_string)
 
     # automatically start and stop tracking via hotkeys:
-    def listen_for_hotkey(self, hotkey_start="ctrl+shift+s", hotkey_stop="ctrl+shift+q"):
-        # info box and webcam preview are not working correctly with hotkeys so we skip them (they aren't needed anyway)
-        keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
-        keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
+    # def listen_for_hotkey(self, hotkey_start="ctrl+shift+s", hotkey_stop="ctrl+shift+q"):
+    #     # info box and webcam preview are not working correctly with hotkeys so we skip them
+    #     keyboard.add_hotkey(hotkey_start, self.__activate_tracking, suppress=False, trigger_on_release=False)
+    #     keyboard.add_hotkey(hotkey_stop, self.__stop_study, suppress=False, trigger_on_release=False)
 
     def __activate_tracking(self):
         if not self.__tracking_active:
@@ -541,8 +547,7 @@ class TrackingSystem(QtWidgets.QWidget):
 
             # remove and disconnect all hotkeys and signals to prevent user from starting again without restarting
             # the program itself
-            # TODO
-            keyboard.remove_all_hotkeys()
+            # keyboard.remove_all_hotkeys()
 
             # get fps info and log them
             self.fps_measurer.stop()
@@ -630,8 +635,7 @@ def main():
     app = QApplication(sys.argv)
     tracking_system = TrackingSystem()
     tracking_system.show()
-    # TODO read in hotkeys from a config - file so the user can change them?
-    tracking_system.listen_for_hotkey()
+    # tracking_system.listen_for_hotkey()
     sys.exit(app.exec_())
 
 

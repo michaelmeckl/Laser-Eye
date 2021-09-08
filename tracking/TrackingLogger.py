@@ -184,8 +184,8 @@ class Logger(QtWidgets.QWidget):
                                 message="Die Verbindung zum Server konnte nicht hergestellt werden! Bitte stellen Sie "
                                         "sicher, dass sie während des Trackings eine stabile Internetverbindung haben!",
                                 timeout=5)
-            self.log_error(f"Die initale Verbindung zum Server konnte nicht hergestellt werden! Fehler: {e}")
-            sys.exit(1)
+            self.log_error(f"Die Verbindung zum Server konnte nicht hergestellt werden! Fehler: {e}")
+            return False
 
         # we use the timestamp in ms at the init of the tracking system as the user id if no other id was given
         self.__user_id = user_id if user_id else get_timestamp()
@@ -201,6 +201,7 @@ class Logger(QtWidgets.QWidget):
 
         # create a directory for the screenshots on the server
         self.sftp.mkdir(f"{self.__user_dir}/screenshots")
+        return True
 
     def log_error(self, error_msg: str):
         with open(self.__error_log_path, "a") as error_log:  # the file is automatically created if it does not exist
@@ -246,8 +247,8 @@ class Logger(QtWidgets.QWidget):
         self.image_save_thread = threading.Thread(target=self.__save_images, name="SaveToDisk", daemon=True)
         self.image_save_thread.start()
 
-        # schedule a job that takes a screenshot every 10 seconds
-        schedule_interval = 10
+        # schedule a job that takes a screenshot every 5 seconds
+        schedule_interval = 5
         schedule.every(schedule_interval).seconds.do(self.__make_screenshot).tag(self.__screenshot_job_tag)
         self.__screenshot_job = run_continuously()
 
@@ -256,7 +257,7 @@ class Logger(QtWidgets.QWidget):
         screenshot = np.asarray(screenshot_image)  # convert pil image to numpy
 
         # scale down screenshot so it can be uploaded faster (as it is only used manually a low-res image is fine)
-        scale_factor = 0.2
+        scale_factor = 0.1
         screenshot = cv2.resize(screenshot, (0, 0), fx=scale_factor, fy=scale_factor)
         # screenshot = cv2.cvtColor(screenshot, cv2.COLOR_BGR2RGB)  # needs to be converted to RGB for correct coloring
 
