@@ -358,6 +358,8 @@ class TrackingSystem(QtWidgets.QWidget):
             return_val, frame = self.capture.read()
             if not return_val:
                 self.logger.log_error("Couldn't get frame from webcam in preview!")
+                notification.notify(title="Fehler bei Kamerapreview", message="Es konnte nicht auf die Webcam des "
+                                    "Rechners zugegriffen werden!", timeout=1)
                 break
             cv2.imshow("Webcam Vorschau", frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
