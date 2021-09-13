@@ -4,11 +4,14 @@ from post_processing.post_processing_constants import download_folder
 
 RANDOM_SEED = 432
 NUMBER_OF_CLASSES = 3
-# TODO or try to keep the ratio of the images
-NEW_IMAGE_SIZE = (128, 128)  # (32, 128)  # (256, 256)  # format: (height, width)
-# NEW_IMAGE_SIZE = (64, 64)
 
-TRAIN_SUBSET_SIZE = 450
+# NEW_IMAGE_SIZE = (128, 128)
+NEW_IMAGE_SIZE = (150, 150)
+
+# for VGG16, Resnet50 and EfficientNetB0:
+# NEW_IMAGE_SIZE = (224, 224)  # format: (height, width)
+# for Inception_v3 and Xception:
+# NEW_IMAGE_SIZE = (299, 299)
 
 results_folder = "ml_results"
 data_folder_path = os.path.join(os.path.dirname(__file__), "..", "post_processing", download_folder)

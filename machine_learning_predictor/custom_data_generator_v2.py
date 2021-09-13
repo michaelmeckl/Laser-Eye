@@ -131,7 +131,16 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
         label = sample[self.y_col].iloc[0]  # take the label of the first element in the sample
         sample_label = DifficultyLevels.get_one_hot_encoding(label)  # convert string label to one-hot-vector
+        # print("Before: ", image_sample[0][0][0])
 
+        # efficientNet doesn't need preprocess_input, only input values between [0, 255]
+        # TODO
+        # image_sample = tf.keras.applications.resnet50.preprocess_input(image_sample)
+        # image_sample = tf.keras.applications.vgg16.preprocess_input(image_sample)
+        # image_sample = tf.keras.applications.inception_v3.preprocess_input(image_sample)
+        # image_sample = tf.keras.applications.xception.preprocess_input(image_sample)
+
+        # print("After: ", image_sample[0][0][0])
         return image_sample, sample_label
 
     def crop_center_square(self, frame):
@@ -152,12 +161,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
             image = tf.keras.preprocessing.image.load_img(image_path, color_mode=color_mode)
             image_arr = tf.keras.preprocessing.image.img_to_array(image)
-            # crop or pad image depending on it's size
-            """
-            resized_img = tf.image.resize_with_crop_or_pad(image_arr,
-                                                           target_height=NEW_IMAGE_SIZE[0],
-                                                           target_width=NEW_IMAGE_SIZE[1])
-            """
             resized_img = self.crop_center_square(image_arr)
 
             # TODO different image adjustments?
@@ -167,9 +170,8 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             # resized_img = tf.image.adjust_saturation(resized_img, -0.5)  # TODO aus irgendeinem grund nahezu 70% manchmal (mit batchsize 12 und sample size 10); aber nur 31 auf val_data
 
             # normalize pixel values to [0, 1] so the CNN can work with smaller values
-            # scaled_img = resized_img.numpy() / 255.0
-            scaled_img = resized_img / 255.0
-            return scaled_img
+            # scaled_img = resized_img / 255.0
+            return resized_img
 
         except Exception as e:
             sys.stderr.write(f"\nError in processing image '{image_path}': {e}")

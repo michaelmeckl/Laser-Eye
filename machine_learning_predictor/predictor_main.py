@@ -31,7 +31,7 @@ def merge_participant_image_logs(participant_list, images_path, test_mode=True):
 
         if test_mode:
             # for faster testing take only the first 150 rows for each difficulty level per participant
-            test_subset_size = 150
+            test_subset_size = 250
 
             difficulty_level_df = pd.DataFrame()
             for difficulty_level in labeled_images_df.difficulty.unique():
@@ -254,16 +254,17 @@ def train_classifier(train_generator, val_generator, batch_size, sample_size, tr
     classifier = DifficultyImageClassifier(train_generator, val_generator, num_classes=NUMBER_OF_CLASSES,
                                            num_epochs=train_epochs)
     batch, batch_labels = train_generator.get_example_batch()
-    classifier.build_model(input_shape=image_shape, img_batch=batch)
-
-    if use_dataset_version:
-        train_dataset, val_dataset = prepare_dataset(train_generator, val_generator, batch_size, sample_size,
-                                                     image_shape)
-        classifier.train_classifier_dataset_version(train_dataset, val_dataset)
-        classifier.evaluate_classifier_dataset_version(val_dataset)
-    else:
-        classifier.train_classifier()
-        classifier.evaluate_classifier()
+    # classifier.build_model(input_shape=image_shape, img_batch=batch)
+    #
+    # if use_dataset_version:
+    #     train_dataset, val_dataset = prepare_dataset(train_generator, val_generator, batch_size, sample_size,
+    #                                                  image_shape)
+    #     classifier.train_classifier_dataset_version(train_dataset, val_dataset)
+    #     classifier.evaluate_classifier_dataset_version(val_dataset)
+    # else:
+    #     classifier.train_classifier()
+    #     classifier.evaluate_classifier()
+    classifier.try_transfer(input_shape=image_shape)
 
     return classifier
 
@@ -335,7 +336,7 @@ if __name__ == "__main__":
 
     images_path = pathlib.Path(__file__).parent.parent / "post_processing"
 
-    train_gen, val_gen, num_batches, num_samples = setup_data_generation(show_examples=True)
+    train_gen, val_gen, num_batches, num_samples = setup_data_generation(show_examples=False)
     difficulty_classifier = train_classifier(train_gen, val_gen, num_batches, num_samples)
 
     # test_classifier(difficulty_classifier, num_batches, num_samples)

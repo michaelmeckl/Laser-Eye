@@ -28,8 +28,74 @@ class DifficultyImageClassifier:
         print("CPU Count available", cpu_count_available)
         self.num_workers = cpu_count_available[0] if cpu_count_available[0] else 1
 
-    # TODO try VGG-16 and check if it changes something if a different architecture is used, see
-    #  https://medium.com/deep-learning-with-keras/tf-data-build-efficient-tensorflow-input-pipelines-for-image-datasets-47010d2e4330
+    # TODO: wie transfer learning mit generator; in welcher form geb ich die bilder rein?
+    def try_transfer(self, input_shape):
+        # see https://keras.io/guides/transfer_learning/
+
+        # TODO , pooling="avg" ?
+        # base_model = tf.keras.applications.resnet50.ResNet50(weights="imagenet", include_top=False)
+        # base_model = tf.keras.applications.Xception(weights="imagenet", include_top=False)
+        # base_model = tf.keras.applications.inception_v3.InceptionV3(weights="imagenet", include_top=False)
+        base_model = tf.keras.applications.efficientnet.EfficientNetB0(weights="imagenet", include_top=False)
+        # base_model = tf.keras.applications.vgg16.VGG16(weights="imagenet", include_top=False)
+
+        base_model.trainable = False
+
+        inputs = tf.keras.Input(shape=input_shape)
+        # scale_layer = tf.keras.layers.Rescaling(scale=1/127.5, offset=-1)
+        # x = scale_layer(inputs)
+        x = base_model(inputs, training=False)
+        x = tf.keras.layers.GlobalAveragePooling2D()(x)
+        # x = tf.keras.layers.Flatten()(x)
+        # x = tf.keras.layers.Dense(512, activation="relu")(x)
+        x = tf.keras.layers.Dropout(0.2)(x)
+        outputs = tf.keras.layers.Dense(self.n_classes, activation="softmax")(x)
+        model = tf.keras.Model(inputs, outputs)
+
+        model.summary()
+
+        # opt = tf.keras.optimizers.Adam(learning_rate=0.0001)
+        model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["categorical_accuracy"])
+
+        history = model.fit(self.train_generator,
+                            validation_data=self.validation_generator,
+                            # shuffle=False,   # VERY IMPORTANT even when used with custom data
+                            # generator!
+                            # see https://github.com/keras-team/keras/issues/12082#issuecomment-455877627
+                            use_multiprocessing=False,
+                            workers=self.num_workers,
+                            epochs=self.n_epochs,
+                            verbose=1)
+
+        # show_result_plot(history, self.n_epochs, metric="categorical_accuracy",
+        #                  output_name="train_history_transfer.png")
+
+        val_loss, val_acc = model.evaluate(self.validation_generator, verbose=1)
+        print("Validation loss: ", val_loss)
+        print("Validation accuracy: ", val_acc * 100)
+
+        # do fine-tuning
+        print("\nFine-tuning base model ...\n")
+        base_model.trainable = True
+        opt = tf.keras.optimizers.Adam(learning_rate=1e-7)  # set to very low learning rate
+        model.compile(optimizer=opt, loss="categorical_crossentropy", metrics=["categorical_accuracy"])
+
+        history = model.fit(self.train_generator,
+                            validation_data=self.validation_generator,
+                            # shuffle=False,   # VERY IMPORTANT even when used with custom data
+                            # generator!
+                            # see https://github.com/keras-team/keras/issues/12082#issuecomment-455877627
+                            use_multiprocessing=False,
+                            workers=self.num_workers,
+                            epochs=self.n_epochs,
+                            verbose=1)
+
+        show_result_plot(history, self.n_epochs, metric="categorical_accuracy",
+                         output_name="train_history_transfer_fine_tuned.png")
+
+        val_loss, val_acc = model.evaluate(self.validation_generator, verbose=1)
+        print("Validation loss: ", val_loss)
+        print("Validation accuracy: ", val_acc * 100)
 
     def build_model(self, input_shape: tuple, img_batch) -> tf.keras.Model:
         self.sequential_model = tf.keras.Sequential(
