@@ -58,7 +58,8 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         return length
 
     def on_epoch_end(self):
-        self.indices_list = self.generate_random_index_list()  # each epoch we generate a new indices order
+        # self.indices_list = self.generate_random_index_list()  # each epoch we generate a new indices order
+        random.shuffle(self.indices_list)
         # print(f"\nEpoch finished! Generating new indices list: {self.indices_list}\n", flush=True)
 
     """
@@ -99,6 +100,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         """
         X = np.empty((self.batch_size, self.sequence_length, *self.output_size), dtype=np.float32)
         y = np.empty((self.batch_size, self.n_classes))
+        batch_img_names = []
 
         # start from the current batch and take the next 'batch_size' indices
         current_index = index * self.batch_size
@@ -106,9 +108,10 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
         for i, start_index in enumerate(indices):
             sample_rows = self.df[start_index:start_index + self.sequence_length]  # get the corresponding df rows
-            image_sample, sample_label = self.__get_data(sample_rows)
+            image_sample, sample_label, sample_names = self.__get_data(sample_rows)
             X[i, ] = image_sample
             y[i, ] = sample_label
+            batch_img_names.append(sample_names)
 
         # move the sequence length dim to the left of the width so the reshape works correctly
         X = np.moveaxis(X, 1, 2)
@@ -116,10 +119,13 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         reshaped_X = X.reshape(self.batch_size, *self.new_image_shape)
 
         # y_new = np.repeat(y, self.output_size[0], axis=0)
+
+        # print("Img names in this batch: ", batch_img_names)  # TODO save as dict: {index: batch_img_names} ?
         return reshaped_X, y
 
     def __get_data(self, sample):
         image_sample = np.empty((self.sequence_length, *self.output_size), dtype=np.float32)
+        img_names = []
 
         # Load and preprocess the images for the current sample
         i = 0
@@ -127,6 +133,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             img_path = row[self.X_col]
             image_path = os.path.join(self.images_base_path, img_path)
             image_sample[i, ] = self.__scale_and_convert_image(image_path)  # load image and resize and scale it
+            img_names.append(img_path)
             i += 1
 
         label = sample[self.y_col].iloc[0]  # take the label of the first element in the sample
@@ -141,7 +148,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         # image_sample = tf.keras.applications.xception.preprocess_input(image_sample)
 
         # print("After: ", image_sample[0][0][0])
-        return image_sample, sample_label
+        return image_sample, sample_label, img_names
 
     def crop_center_square(self, frame):
         y, x = frame.shape[0:2]

@@ -13,6 +13,9 @@ import pathlib
 import random
 import pandas as pd
 import tensorflow as tf
+import numpy as np
+import itertools
+from sklearn import metrics
 from matplotlib import pyplot as plt
 from machine_learning_predictor.classifier import DifficultyImageClassifier
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
@@ -269,6 +272,41 @@ def train_classifier(train_generator, val_generator, batch_size, sample_size, tr
     return classifier
 
 
+def plot_confusion_matrix(cm, class_names):
+    """
+    Returns a matplotlib figure containing the plotted confusion matrix.
+    Taken from https://www.tensorflow.org/tensorboard/image_summaries#building_an_image_classifier and slightly adjusted
+
+    Args:
+    cm (array, shape = [n, n]): a confusion matrix of integer classes
+    class_names (array, shape = [n]): String names of the integer classes
+    """
+    figure = plt.figure(figsize=(10, 8))
+    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+    plt.title("Confusion matrix")
+    plt.colorbar()
+    tick_marks = np.arange(len(class_names))
+    plt.xticks(tick_marks, class_names, rotation=45)
+    plt.yticks(tick_marks, class_names)
+
+    # Compute the labels from the normalized confusion matrix.
+    # row_sum = cm.sum(axis=1)[:, np.newaxis] if all(cm.sum(axis=1)) != 0 else [1, np.newaxis]
+    # labels = np.around((cm.astype('float') / row_sum) if all(cm.sum(axis=1)) != 0 else cm.astype('float'), decimals=2)
+    labels = np.around(cm.astype('float'), decimals=2)
+
+    # Use white text if squares are dark; otherwise black.
+    threshold = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        color = "white" if cm[i, j] > threshold else "black"
+        plt.text(j, i, labels[i, j], horizontalalignment="center", color=color)
+
+    # plt.tight_layout()
+    plt.ylabel("True label")
+    plt.xlabel("Predicted label")
+    plt.savefig(os.path.join(results_folder, "confusion_matrix.png"))
+    plt.show()
+
+
 def test_classifier(classifier, batch_size, sample_size):
     # get the participants that weren't used for training or validation
     test_participants = os.listdir(data_folder_path)[12:]
@@ -293,10 +331,34 @@ def test_classifier(classifier, batch_size, sample_size):
 
     # classifier.predict_test_generator(test_generator)
 
-    for choice in random.sample(range(test_generator.__len__()), k=3):  # take 3 random generator outputs for prediction
-        test_image_batch, labels = test_generator.get_example_batch(idx=choice)
+    all_predictions = np.array([])
+    all_labels = np.array([])
+    # take 3 random generator outputs for prediction
+    # for choice in random.sample(range(test_generator.__len__()), k=3):
+    for i in range(test_generator.__len__()):
+        test_image_batch, labels = test_generator.get_example_batch(idx=i)
         # show_generator_example_images(test_image_batch, labels, sample_size, gen_v2=use_gen_v2)
-        classifier.predict(test_image_batch, labels)
+        predictions = classifier.predict(test_image_batch, labels)
+
+        predictions_results = np.argmax(predictions, axis=1)
+        all_predictions = np.concatenate([all_predictions, predictions_results])
+        actual_labels = np.argmax(labels, axis=1)
+        all_labels = np.concatenate([all_labels, actual_labels])
+
+    # show some result metrics
+    label_names = DifficultyLevels.values()
+    print(f"\nAccuracy score on test data: {metrics.accuracy_score(all_labels, all_predictions) * 100:.2f} %")
+    print(f"Bal. accuracy score on test data: {metrics.balanced_accuracy_score(all_labels, all_predictions):.2f}")
+    print(f"Precision score on test data: "
+          f"{metrics.precision_score(all_labels, all_predictions, average='weighted')}:.2f")
+    print(f"F1 score on test data: {metrics.f1_score(all_labels, all_predictions, average='weighted'):.2f}")
+    print(f"\nClassification Report:\n"
+          f"{metrics.classification_report(all_labels, all_predictions, target_names=label_names)}")
+
+    # compute and show the confusion matrix
+    conf_matrix = metrics.confusion_matrix(all_predictions, all_labels, normalize="all")
+    print(f"Confusion Matrix:\n{conf_matrix}")
+    plot_confusion_matrix(conf_matrix, label_names)
 
 
 if __name__ == "__main__":
