@@ -5,9 +5,9 @@ import numpy as np
 
 
 class DifficultyLevels(Enum):
-    HARD = "hard"
-    MEDIUM = "medium"
     EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
 
     @classmethod
     def values(cls):

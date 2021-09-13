@@ -360,11 +360,12 @@ class DifficultyImageClassifier:
         predictions = self.sequential_model.predict(img_batch)
 
         for i, (prediction, correct_label) in enumerate(zip(predictions, correct_labels)):
-            score = tf.nn.softmax(prediction)  # TODO use this or prediction?
+            score = tf.nn.softmax(prediction)
             print(f"\nPrediction for sequence {i}: {prediction}\nScore: {score})")
             index = np.argmax(score)
             predicted_label = self.get_label_name_for_index_pos(index)
             print(f"Correct label is  \"{DifficultyLevels.get_label_for_encoding(correct_label)}\"")
             print(f"Predicted label was \"{predicted_label}\" with a confidence of {100 * score[index]:.2f} %")
+            # self.save_prediction_as_image(img_batch, i, correct_label, predicted_label, use_dataset=False)
 
-            self.save_prediction_as_image(img_batch, i, correct_label, predicted_label, use_dataset=False)
+        return predictions
