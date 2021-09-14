@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
 from machine_learning_predictor.machine_learning_constants import NEW_IMAGE_SIZE, NUMBER_OF_CLASSES
+from machine_learning_predictor.ml_utils import crop_center_square
 
 
 class CustomImageDataGenerator(tf.keras.utils.Sequence):
@@ -104,6 +105,8 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         label = sample[self.y_col].iloc[0]  # take the label of the first element in the sample
         sample_label = DifficultyLevels.get_one_hot_encoding(label)  # convert string label to one-hot-vector
 
+        image_sample = tf.keras.applications.resnet50.preprocess_input(image_sample)
+        # image_sample = tf.keras.applications.vgg16.preprocess_input(image_sample)
         return image_sample, sample_label
 
     def __scale_and_convert_image(self, image_path):
@@ -112,15 +115,16 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
             image = tf.keras.preprocessing.image.load_img(image_path, color_mode=color_mode)
             image_arr = tf.keras.preprocessing.image.img_to_array(image)
+            resized_img = crop_center_square(image_arr)
 
             # crop or pad image depending on it's size
-            resized_img = tf.image.resize_with_crop_or_pad(image_arr,
-                                                           target_height=NEW_IMAGE_SIZE[0],
-                                                           target_width=NEW_IMAGE_SIZE[1])
+            # resized_img = tf.image.resize_with_crop_or_pad(image_arr,
+            #                                                target_height=NEW_IMAGE_SIZE[0],
+            #                                                target_width=NEW_IMAGE_SIZE[1])
 
             # normalize pixel values to [0, 1] so the ml model can work with smaller values
-            scaled_img = resized_img.numpy() / 255.0
-            return scaled_img
+            # scaled_img = resized_img.numpy() / 255.0
+            return resized_img
 
         except Exception as e:
             sys.stderr.write(f"\nError in processing image '{image_path}': {e}")

@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
 from machine_learning_predictor.machine_learning_constants import NEW_IMAGE_SIZE, NUMBER_OF_CLASSES
+from machine_learning_predictor.ml_utils import crop_center_square
 
 
 class CustomImageDataGenerator(tf.keras.utils.Sequence):
@@ -142,7 +143,7 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
         # efficientNet doesn't need preprocess_input, only input values between [0, 255]
         # TODO
-        # image_sample = tf.keras.applications.resnet50.preprocess_input(image_sample)
+        image_sample = tf.keras.applications.resnet50.preprocess_input(image_sample)
         # image_sample = tf.keras.applications.vgg16.preprocess_input(image_sample)
         # image_sample = tf.keras.applications.inception_v3.preprocess_input(image_sample)
         # image_sample = tf.keras.applications.xception.preprocess_input(image_sample)
@@ -150,25 +151,13 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         # print("After: ", image_sample[0][0][0])
         return image_sample, sample_label, img_names
 
-    def crop_center_square(self, frame):
-        y, x = frame.shape[0:2]
-        min_dim = min(y, x)
-        start_x = (x // 2) - (min_dim // 2)
-        start_y = (y // 2) - (min_dim // 2)
-        # crop image first to prevent distortions when resizing
-        cropped_frame = frame[start_y: start_y + min_dim, start_x: start_x + min_dim]
-        resized_img = tf.image.resize_with_pad(cropped_frame,
-                                               target_height=NEW_IMAGE_SIZE[0],
-                                               target_width=NEW_IMAGE_SIZE[1])
-        return resized_img
-
     def __scale_and_convert_image(self, image_path):
         try:
             color_mode = "grayscale" if self.use_grayscale else "rgb"
 
             image = tf.keras.preprocessing.image.load_img(image_path, color_mode=color_mode)
             image_arr = tf.keras.preprocessing.image.img_to_array(image)
-            resized_img = self.crop_center_square(image_arr)
+            resized_img = crop_center_square(image_arr)
 
             # TODO different image adjustments?
             # resized_img = tf.image.adjust_hue(resized_img, -0.8)  # must be in [-1, 1]

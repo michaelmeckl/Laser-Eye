@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
-from machine_learning_predictor.machine_learning_constants import RANDOM_SEED, results_folder
+from machine_learning_predictor.machine_learning_constants import RANDOM_SEED, results_folder, NEW_IMAGE_SIZE
 
 
 def set_random_seed(seed=RANDOM_SEED):
@@ -12,6 +12,19 @@ def set_random_seed(seed=RANDOM_SEED):
     np.random.seed(seed)
     random.seed(seed)
     tf.random.set_seed(seed)
+
+
+def crop_center_square(frame):
+    y, x = frame.shape[0:2]
+    min_dim = min(y, x)
+    start_x = (x // 2) - (min_dim // 2)
+    start_y = (y // 2) - (min_dim // 2)
+    # crop image first to prevent distortions when resizing
+    cropped_frame = frame[start_y: start_y + min_dim, start_x: start_x + min_dim]
+    resized_img = tf.image.resize_with_pad(cropped_frame,
+                                           target_height=NEW_IMAGE_SIZE[0],
+                                           target_width=NEW_IMAGE_SIZE[1])
+    return resized_img
 
 
 def show_sample_images(images, labels, num_images=25):
@@ -41,7 +54,7 @@ def show_image(image, label=None):
     plt.show()
 
 
-def show_result_plot(train_history, epochs, metric="categorical_accuracy", output_folder=results_folder,
+def show_result_plot(train_history, metric="categorical_accuracy", output_folder=results_folder,
                      output_name="train_history.png"):
 
     acc = train_history.history[f"{metric}"]
@@ -49,17 +62,16 @@ def show_result_plot(train_history, epochs, metric="categorical_accuracy", outpu
     loss = train_history.history["loss"]
     val_loss = train_history.history["val_loss"]
 
-    epochs_range = range(epochs)
     plt.figure(figsize=(8, 8))
     plt.subplot(1, 2, 1)
-    plt.plot(epochs_range, acc, label='Training Accuracy')
-    plt.plot(epochs_range, val_acc, label='Validation Accuracy')
+    plt.plot(acc, label='Training Accuracy')
+    plt.plot(val_acc, label='Validation Accuracy')
     plt.legend(loc='lower right')
     plt.title('Training and Validation Accuracy')
 
     plt.subplot(1, 2, 2)
-    plt.plot(epochs_range, loss, label='Training Loss')
-    plt.plot(epochs_range, val_loss, label='Validation Loss')
+    plt.plot(loss, label='Training Loss')
+    plt.plot(val_loss, label='Validation Loss')
     plt.legend(loc='upper right')
     plt.title('Training and Validation Loss')
 

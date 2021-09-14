@@ -29,12 +29,12 @@ def merge_participant_image_logs(participant_list, images_path, test_mode=True):
 
     for participant in participant_list:
         images_label_log = images_path / download_folder / participant / "labeled_images.csv"
-        # images_label_log = post_processing_folder_path / download_folder / participant / "labeled_eye_regions.csv"
+        # images_label_log = images_path / download_folder / participant / "labeled_eye_regions.csv"
         labeled_images_df = pd.read_csv(images_label_log)
 
         if test_mode:
             # for faster testing take only the first 150 rows for each difficulty level per participant
-            test_subset_size = 250
+            test_subset_size = 150
 
             difficulty_level_df = pd.DataFrame()
             for difficulty_level in labeled_images_df.difficulty.unique():
@@ -116,7 +116,7 @@ def show_generator_example_images(batch, labels, sample_size, gen_v2=False):
             plt.xticks([])
             plt.yticks([])
             plt.imshow(batch[i])
-            # plt.title(DifficultyLevels.get_label_for_encoding(labels[i]))
+            plt.title(DifficultyLevels.get_label_for_encoding(labels[i]))
 
     if not os.path.exists(results_folder):
         os.mkdir(results_folder)
@@ -183,9 +183,9 @@ def setup_data_generation(show_examples=True):
 
     # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
     # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
-    batch_size = 5
+    batch_size = 3
 
-    sample_size = get_suitable_sample_size(difficulty_category_size)
+    sample_size = 30  # get_suitable_sample_size(difficulty_category_size)
     print(f"Sample size: {sample_size} (Train data len: {len(train_data)}, val data len: {len(val_data)})")
 
     use_gray = False  # TODO use grayscale images instead?
@@ -386,7 +386,7 @@ if __name__ == "__main__":
     set_random_seed()  # set seed for reproducibility
 
     # TODO:
-    use_gen_v2 = True
+    use_gen_v2 = False
     use_dataset_version = False
     print(f"[INFO] Using custom generator version_2: {use_gen_v2}\n"
           f"[INFO] Using dataset version: {use_dataset_version}\n")
