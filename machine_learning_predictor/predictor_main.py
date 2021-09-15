@@ -21,7 +21,7 @@ from machine_learning_predictor.classifier import DifficultyImageClassifier
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
 from machine_learning_predictor.ml_utils import set_random_seed
 from post_processing.post_processing_constants import download_folder
-from post_processing.process_downloaded_data import get_smallest_fps
+from post_processing.extract_downloaded_data import get_smallest_fps
 
 
 def merge_participant_image_logs(participant_list, images_path, test_mode=True):
@@ -223,13 +223,13 @@ def setup_data_generation(show_examples=True):
 def prepare_dataset(train_generator, val_generator, batch_size, sample_size, image_shape):
     if use_gen_v2:
         ds_output_signature = (
-            tf.TensorSpec(shape=(batch_size, *image_shape), dtype=tf.float64),
-            tf.TensorSpec(shape=(batch_size, NUMBER_OF_CLASSES), dtype=tf.float64),
+            tf.TensorSpec(shape=(batch_size, *image_shape), dtype=tf.float32),
+            tf.TensorSpec(shape=(batch_size, NUMBER_OF_CLASSES), dtype=tf.float32),
         )
     else:
         ds_output_signature = (
-            tf.TensorSpec(shape=((sample_size * batch_size), *image_shape), dtype=tf.float64),
-            tf.TensorSpec(shape=((sample_size * batch_size), NUMBER_OF_CLASSES), dtype=tf.float64),
+            tf.TensorSpec(shape=((sample_size * batch_size), *image_shape), dtype=tf.float32),
+            tf.TensorSpec(shape=((sample_size * batch_size), NUMBER_OF_CLASSES), dtype=tf.float32),
         )
 
     # make sure all the dataset preprocessing is done on the CPU so the GPU can fully be used for training
@@ -241,6 +241,7 @@ def prepare_dataset(train_generator, val_generator, batch_size, sample_size, ima
                                                      output_signature=ds_output_signature)
 
         # add caching and prefetching to speed up the process
+        print("Configuring dataset for performance ...")
         train_dataset = configure_for_performance(train_dataset)
         val_dataset = configure_for_performance(val_dataset)
         """
@@ -267,8 +268,11 @@ def train_classifier(train_generator, val_generator, batch_size, sample_size, tr
     # else:
     #     classifier.train_classifier()
     #     classifier.evaluate_classifier()
-    classifier.try_transfer(input_shape=image_shape)
 
+    train_dataset, val_dataset = prepare_dataset(train_generator, val_generator, batch_size, sample_size, image_shape)
+    classifier.try_transfer_ds_version(image_shape, train_dataset, val_dataset)
+
+    # classifier.try_transfer(image_shape)
     return classifier
 
 
@@ -385,8 +389,7 @@ if __name__ == "__main__":
 
     set_random_seed()  # set seed for reproducibility
 
-    # TODO:
-    use_gen_v2 = False
+    use_gen_v2 = True
     use_dataset_version = False
     print(f"[INFO] Using custom generator version_2: {use_gen_v2}\n"
           f"[INFO] Using dataset version: {use_dataset_version}\n")

@@ -15,6 +15,7 @@ def set_random_seed(seed=RANDOM_SEED):
 
 
 def crop_center_square(frame):
+    # taken from https://www.tensorflow.org/hub/tutorials/action_recognition_with_tf_hub
     y, x = frame.shape[0:2]
     min_dim = min(y, x)
     start_x = (x // 2) - (min_dim // 2)
@@ -77,4 +78,4 @@ def show_result_plot(train_history, metric="categorical_accuracy", output_folder
 
     # save plot to file and show in a new window
     plt.savefig(os.path.join(output_folder, output_name))
-    plt.show()
+    # plt.show()

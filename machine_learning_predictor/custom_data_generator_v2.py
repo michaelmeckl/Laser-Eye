@@ -139,16 +139,14 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
 
         label = sample[self.y_col].iloc[0]  # take the label of the first element in the sample
         sample_label = DifficultyLevels.get_one_hot_encoding(label)  # convert string label to one-hot-vector
-        # print("Before: ", image_sample[0][0][0])
 
         # efficientNet doesn't need preprocess_input, only input values between [0, 255]
-        # TODO
-        image_sample = tf.keras.applications.resnet50.preprocess_input(image_sample)
+        # TODO use tf.keras.applications.resnet_v2.preprocess_input() instead ?
+        # image_sample = tf.keras.applications.resnet50.preprocess_input(image_sample)
         # image_sample = tf.keras.applications.vgg16.preprocess_input(image_sample)
         # image_sample = tf.keras.applications.inception_v3.preprocess_input(image_sample)
         # image_sample = tf.keras.applications.xception.preprocess_input(image_sample)
 
-        # print("After: ", image_sample[0][0][0])
         return image_sample, sample_label, img_names
 
     def __scale_and_convert_image(self, image_path):
