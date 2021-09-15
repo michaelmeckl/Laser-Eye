@@ -13,7 +13,7 @@ import pandas as pd
 from post_processing.eye_tracking.eye_tracker import EyeTracker
 from post_processing.eye_tracking.image_utils import show_image_window
 from post_processing.post_processing_constants import download_folder, labeled_images_folder, post_processing_log_folder
-from post_processing.process_downloaded_data import get_fps_info
+from post_processing.extract_downloaded_data import get_fps_info
 
 
 def debug_postprocess(enable_annotation, video_file_path):
@@ -59,7 +59,7 @@ def debug_postprocess(enable_annotation, video_file_path):
             break
 
 
-def create_eye_region_csv(participant_folder):
+def create_eye_region_csv(participant_folder, image_folder_name):
     post_processing_path = os.path.join(download_folder, participant_folder, post_processing_log_folder)
     csv_file_path = os.path.join(download_folder, participant_folder, "labeled_eye_regions.csv")
 
@@ -70,7 +70,7 @@ def create_eye_region_csv(participant_folder):
         writer.writerow(["image_path", "participant", "difficulty"])  # write header row first
 
         for difficulty_sub_dir in os.listdir(post_processing_path):
-            eye_region_dir_path = os.path.join(post_processing_path, difficulty_sub_dir, "eye_regions")
+            eye_region_dir_path = os.path.join(post_processing_path, difficulty_sub_dir, image_folder_name)
             start_time = time.time()
             for idx, image_file in enumerate(os.listdir(eye_region_dir_path)):
                 full_image_path = os.path.join(eye_region_dir_path, image_file)
@@ -83,15 +83,12 @@ def create_eye_region_csv(participant_folder):
     print(f"Finished writing eye region csv file for {participant_folder}.")
 
 
-def process_images(eye_tracker, use_folder=False):
-    # for easier debugging; select the participants that should be processed; pass empty list to process all
-    participants = ["participant_15", "participant_16"]
-
+def process_images(eye_tracker, participants_folders=list[str], use_folder=False):
     frame_count = 0
     start_time = time.time()
     # iterate over and process all images in the labeled images subfolders (easy, medium and hard)
     for sub_folder in os.listdir(download_folder):
-        if len(participants) > 0 and sub_folder not in participants:
+        if len(participants_folders) > 0 and sub_folder not in participants_folders:
             print(f"\nSkipping folder '{sub_folder}' as it is not in the specified folder names.\n")
             continue
 
@@ -147,15 +144,6 @@ def process_images(eye_tracker, use_folder=False):
                 for idx, row in sub_df.iterrows():
                     image_path = row["image_path"]
                     current_image = cv2.imread(image_path)
-
-                    # TODO resizing needs to be done later in the process as it causes problems in correctly finding
-                    #  faces and pupils for some participants
-                    """
-                    # crop or pad image depending on it's size
-                    current_image = tf.image.resize_with_crop_or_pad(current_image,
-                                                                   target_height=NEW_IMAGE_SIZE[1],
-                                                                   target_width=NEW_IMAGE_SIZE[0]).numpy()
-                    """
                     processed_frame = eye_tracker.process_current_frame(current_image)
 
                     frame_count += 1
@@ -172,7 +160,7 @@ def process_images(eye_tracker, use_folder=False):
         # after we finished one participant folder, create a csv file with the paths to the new eye region images so
         # they can be easily found by the machine learning model
         print("Creating csv file for eye regions ...")
-        create_eye_region_csv(sub_folder)
+        create_eye_region_csv(sub_folder, image_folder_name="eye_regions")
 
     duration = time.time() - start_time
     print(f"[INFO]: Frame Count: {frame_count}")
@@ -184,17 +172,17 @@ def process_images(eye_tracker, use_folder=False):
     sys.exit(0)
 
 
-def start_extracting_features(debug=False, enable_annotation=False, video_file_path=None):
+def start_extracting_eye_features(participant_list=list[str], debug=False, enable_annotation=False, video_file_path=None):
     if debug:
         debug_postprocess(enable_annotation, video_file_path)
     else:
         eye_tracker = EyeTracker(enable_annotation, debug_active=False)
-        process_images(eye_tracker)
+        process_images(eye_tracker, participant_list)
 
 
 if __name__ == "__main__":
     """
-    Takes around 2h 45min to run for the first 13 participants.
+    Takes around 4 hours to run for all 18 participants.
     """
 
     # setup an argument parser to enable command line parameters
@@ -207,4 +195,7 @@ if __name__ == "__main__":
     annotation_enabled = args.enable_annotation
     video_file = args.video_file
 
-    start_extracting_features(debug=False, enable_annotation=annotation_enabled, video_file_path=video_file)
+    # for easier debugging; select the participants that should be processed; pass empty list to process all
+    participants = ["participant_18"]
+    start_extracting_eye_features(debug=False, participant_list=participants, enable_annotation=annotation_enabled,
+                                  video_file_path=video_file)

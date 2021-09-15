@@ -109,24 +109,14 @@ class EyeTracker:
 
             self.__left_pupil_diameter, self.__right_pupil_diameter = detect_pupils(left_eye_bbox, right_eye_bbox,
                                                                                     self.__annotation_enabled)
-            self.__log(eye_region_bbox, left_eye_bbox, right_eye_bbox, left_eye_bbox_small, right_eye_bbox_small)
+            self.__log(eye_region_bbox)
 
             # new_eye_region = improve_image(eye_region_bbox)
             # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
 
         return self.__current_frame
 
-    """
-    def show_face_region(self, bboxes):
-        for face in bboxes:
-            face_region = extract_image_region(self.__current_frame, face[0], face[1], face[2], face[3])
-            cv2.rectangle(self.__current_frame, (int(face[0]), int(face[1])), (int(face[2]), int(face[3])),
-                          color=(0, 0, 255))
-            cv2.imshow("extracted", face_region)
-            break  # break to take only the first face (in most cases there should be only one anyway)
-    """
-
-    def __log(self, eye_region_bbox, left_eye_bbox, right_eye_bbox, left_eye_bbox_small, right_eye_bbox_small):
+    def __log(self, eye_region_bbox):
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
             ProcessingData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
@@ -140,9 +130,7 @@ class EyeTracker:
             ProcessingData.RIGHT_PUPIL_POS.name: self.__pupils[1],
             ProcessingData.LEFT_PUPIL_DIAMETER.name: self.__left_pupil_diameter,
             ProcessingData.RIGHT_PUPIL_DIAMETER.name: self.__right_pupil_diameter,
-            # ProcessingData.LEFT_EYE.name: self.__left_eye,
-            # ProcessingData.RIGHT_EYE.name: self.__right_eye,
-            # ProcessingData.FACE_LANDMARKS.name: self.__landmarks,  # .tolist(),
+            # ProcessingData.FACE_LANDMARKS.name: self.__landmarks,
         })
 
         # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
@@ -151,10 +139,6 @@ class EyeTracker:
         self.__logger.log_frame_data(frame_id=log_timestamp, data=self.__tracked_data)
 
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
-        # self.__logger.log_image("eyes", "left_eye", left_eye_bbox, log_timestamp)
-        # self.__logger.log_image("eyes", "right_eye", right_eye_bbox, log_timestamp)
-        # self.__logger.log_image("eyes_small", "left_eye_small", left_eye_bbox_small, log_timestamp)
-        # self.__logger.log_image("eyes_small", "right_eye_small", right_eye_bbox_small, log_timestamp)
 
     def log_information(self):
         print("Saving log data ...")
@@ -225,7 +209,7 @@ class EyeTracker:
 
     def __extract_eye_region(self):
         """
-        Get the smallest frame that encompasses the whole eye region.
+        Get the smallest squared frame that encompasses the whole eye region.
         """
         # find the outermost eye markers: i.e. the smallest and largest x and y values in the matrix
         min_vals = np.amin(self.__eye_markers, axis=1)
@@ -242,12 +226,14 @@ class EyeTracker:
         if self.__debug:
             print(f"Eye region center is at {region_center}")
 
-        min_y_rect = int(round(min_y))
-        max_y_rect = int(round(max_y))
-        min_x_rect = int(round(min_x))
-        max_x_rect = int(round(max_x))
-        # a little bit of padding is necessary
-        eye_ROI = extract_image_region(self.__current_frame, min_x_rect, min_y_rect, max_x_rect, max_y_rect, padding=10)
+        # calculate a squared bbox around the eye region as we need square images later for our CNN;
+        # we consider only the region width as eyes are usually far wider than large
+        center_y = int(region_center[1])
+        eye_region_width = max_x - min_x
+        min_y_rect = int(round(center_y - eye_region_width / 2))
+        max_y_rect = int(round(center_y + eye_region_width / 2))
+
+        eye_ROI = extract_image_region(self.__current_frame, min_x, min_y_rect, max_x, max_y_rect, padding=5)
         return eye_ROI
 
     def __extract_eyes(self):

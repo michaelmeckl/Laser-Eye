@@ -10,7 +10,7 @@ import pandas as pd
 from collections import defaultdict
 from bisect import bisect_left
 from post_processing.post_processing_constants import download_folder, image_folder, logs_folder, blur_threshold
-from post_processing.process_downloaded_data import get_smallest_fps
+from post_processing.extract_downloaded_data import get_smallest_fps
 
 
 data_folder = download_folder
@@ -247,7 +247,7 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=False
                 print(f"Folder {difficulty_folder} already exists. Skipping...")
 
 
-def assign_load(participant_list=list[str]):
+def assign_labels(participant_list=list[str]):
     smallest_fps_val = get_smallest_fps()
 
     smallest_difficulty_list_len = None  # length of the list with the least entries over all participants
@@ -322,4 +322,4 @@ def assign_load(participant_list=list[str]):
 
 
 if __name__ == "__main__":
-    assign_load(participant_list=["participant_15", "participant_16"])
+    assign_labels(participant_list=["participant_18"])
