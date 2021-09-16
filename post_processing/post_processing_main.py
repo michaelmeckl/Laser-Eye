@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
+from post_processing.convlstm_eye_region_classifier import start_training_and_testing_convlstm
 from post_processing.download_data import download_data_from_server
+from post_processing.efficient_net_classifier import start_training_and_testing
 from post_processing.extract_downloaded_data import extract_data
 from post_processing.assign_load_classes import assign_labels
 from post_processing.extract_eye_features import start_extracting_eye_features
@@ -17,6 +19,10 @@ def main():
     extract_data(participant_list=[])
     assign_labels(participant_list=[])
     start_extracting_eye_features(participant_list=[], debug=False, enable_annotation=False)
+
+    start_training_and_testing(use_eye_regions=True)  # Option 1
+    # start_training_and_testing(use_eye_regions=True)  # Option 2
+    # start_training_and_testing_convlstm()  # Option 3
 
 
 if __name__ == "__main__":
