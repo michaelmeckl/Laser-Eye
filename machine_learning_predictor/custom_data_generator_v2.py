@@ -119,8 +119,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         # and reshape into (batch_size, img_height, (sequence_length * img_width), num_channels)
         reshaped_X = X.reshape(self.batch_size, *self.new_image_shape)
 
-        # y_new = np.repeat(y, self.output_size[0], axis=0)
-
         # print("Img names in this batch: ", batch_img_names)  # TODO save as dict: {index: batch_img_names} ?
         return reshaped_X, y
 
@@ -157,11 +155,9 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             image_arr = tf.keras.preprocessing.image.img_to_array(image)
             resized_img = crop_center_square(image_arr)
 
-            # TODO different image adjustments?
-            # resized_img = tf.image.adjust_hue(resized_img, -0.8)  # must be in [-1, 1]
+            # TODO ?
             # resized_img = tf.image.adjust_contrast(resized_img, 1.2)
-            # resized_img = tf.image.adjust_brightness(resized_img, -0.5)
-            # resized_img = tf.image.adjust_saturation(resized_img, -0.5)  # TODO aus irgendeinem grund nahezu 70% manchmal (mit batchsize 12 und sample size 10); aber nur 31 auf val_data
+            # resized_img = tf.image.adjust_saturation(resized_img, -0.5)
 
             # normalize pixel values to [0, 1] so the CNN can work with smaller values
             # scaled_img = resized_img / 255.0

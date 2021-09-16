@@ -14,34 +14,20 @@ import pandas as pd
 import tensorflow as tf
 import numpy as np
 from machine_learning_predictor.ml_utils import set_random_seed, split_train_test, show_generator_example_images, \
-    configure_dataset_for_performance, calculate_prediction_results
+    calculate_prediction_results, get_suitable_sample_size
 from post_processing.post_processing_constants import download_folder
+from matplotlib import pyplot as plt
 
-
-#################### Global settings #################
-use_gen_v2 = True
-use_dataset_version = False
-
-if use_gen_v2:
-    from machine_learning_predictor.custom_data_generator_v2 import CustomImageDataGenerator
-else:
-    from machine_learning_predictor.custom_data_generator import CustomImageDataGenerator
-
-use_transfer_learning = True
-if use_transfer_learning:
-    from machine_learning_predictor.transfer_learning_classifier import DifficultyImageClassifier
-else:
-    from machine_learning_predictor.classifier import DifficultyImageClassifier
-
-####################################
+from machine_learning_predictor.time_series_generator import CustomImageDataGenerator
+from machine_learning_predictor.time_series_classifier import DifficultyImageClassifier
 
 
 def merge_participant_image_logs(participant_list, test_mode=True):  # TODO False
     image_data_frame = pd.DataFrame()
 
     for participant in participant_list:
-        images_label_log = images_path / download_folder / participant / "labeled_images.csv"
-        # images_label_log = images_path / download_folder / participant / "labeled_eye_regions.csv"
+        # images_label_log = images_path / download_folder / participant / "labeled_images.csv"
+        images_label_log = images_path / download_folder / participant / "labeled_eye_regions.csv"
         labeled_images_df = pd.read_csv(images_label_log)
 
         if test_mode:
@@ -107,7 +93,7 @@ def setup_data_generation(show_examples=True):
     # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
     batch_size = 4
 
-    sample_size = 30  # get_suitable_sample_size(difficulty_category_size)  # TODO
+    sample_size = get_suitable_sample_size(difficulty_category_size)
     print(f"Sample size: {sample_size} (Train data len: {len(train_data)}, val data len: {len(val_data)})")
 
     use_gray = False
@@ -121,56 +107,25 @@ def setup_data_generation(show_examples=True):
 
     if show_examples:
         # show some example train images to verify the generator is working correctly
-        batch, batch_labels = train_generator.get_example_batch()
-        show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
-        """
-        batch, batch_labels = train_generator.get_example_batch(2)
-        show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
+        batch, labels = train_generator.get_example_batch()
 
-        batch, batch_labels = train_generator.get_example_batch(3)
-        show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
+        for j, image in enumerate(range(len(batch))):
+            batch_len = len(batch[j])
+            length = min(100, batch_len)
 
-        batch, batch_labels = train_generator.get_example_batch(4)
-        show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
-
-        batch, batch_labels = train_generator.get_example_batch(idx=5)
-        show_generator_example_images(batch, batch_labels, sample_size, gen_v2=use_gen_v2)
-        """
+            plt.figure(figsize=(15, 10))
+            for i in range(length):
+                plt.subplot(10, 10, i + 1)
+                plt.grid(False)
+                plt.imshow(batch[j][i])
+                plt.xlabel(labels[j])
+                plt.xticks([])
+                plt.yticks([])
+            plt.show()
 
     print("Len train generator: ", train_generator.__len__())
     print("Len val generator: ", val_generator.__len__())
     return train_generator, val_generator, batch_size, sample_size
-
-
-def prepare_dataset(train_generator, val_generator, batch_size, sample_size, image_shape):
-    if use_gen_v2:
-        ds_output_signature = (
-            tf.TensorSpec(shape=(batch_size, *image_shape), dtype=tf.float32),
-            tf.TensorSpec(shape=(batch_size, NUMBER_OF_CLASSES), dtype=tf.float32),
-        )
-    else:
-        ds_output_signature = (
-            tf.TensorSpec(shape=((sample_size * batch_size), *image_shape), dtype=tf.float32),
-            tf.TensorSpec(shape=((sample_size * batch_size), NUMBER_OF_CLASSES), dtype=tf.float32),
-        )
-
-    # make sure all the dataset preprocessing is done on the CPU so the GPU can fully be used for training
-    # see https://cs230.stanford.edu/blog/datapipeline/#best-practices
-    with tf.device('/cpu:0'):
-        train_dataset = tf.data.Dataset.from_generator(lambda: train_generator,
-                                                       output_signature=ds_output_signature)
-        val_dataset = tf.data.Dataset.from_generator(lambda: val_generator,
-                                                     output_signature=ds_output_signature)
-
-        # add caching and prefetching to speed up the process
-        print("Configuring dataset for performance ...")
-        train_dataset = configure_dataset_for_performance(train_dataset)
-        val_dataset = configure_dataset_for_performance(val_dataset)
-        """
-        train_dataset = configure_for_performance(train_dataset, filename="train_cache")
-        val_dataset = configure_for_performance(val_dataset, filename="val_cache")
-        """
-    return train_dataset, val_dataset
 
 
 def train_classifier(train_generator, val_generator, batch_size, sample_size, train_epochs=TRAIN_EPOCHS):
@@ -179,22 +134,9 @@ def train_classifier(train_generator, val_generator, batch_size, sample_size, tr
 
     classifier = DifficultyImageClassifier(train_generator, val_generator, num_classes=NUMBER_OF_CLASSES,
                                            num_epochs=train_epochs)
-    # batch, batch_labels = train_generator.get_example_batch()
-    # classifier.build_model(input_shape=image_shape, img_batch=batch)
-    #
-    # if use_dataset_version:
-    #     train_dataset, val_dataset = prepare_dataset(train_generator, val_generator, batch_size, sample_size,
-    #                                                  image_shape)
-    #     classifier.train_classifier_dataset_version(train_dataset, val_dataset)
-    #     classifier.evaluate_classifier_dataset_version(val_dataset)
-    # else:
-    #     classifier.train_classifier()
-    #     classifier.evaluate_classifier()
-
-    # train_dataset, val_dataset = prepare_dataset(train_generator, val_generator, batch_size, sample_size, image_shape)
-    # classifier.try_transfer_ds_version(image_shape, train_dataset, val_dataset)
-
-    classifier.train_transfer_model(image_shape)
+    classifier.build_model(input_shape=image_shape)
+    classifier.train_classifier()
+    classifier.evaluate_classifier()
     return classifier
 
 
@@ -238,7 +180,7 @@ def test_classifier(classifier, batch_size, sample_size):
     calculate_prediction_results(all_labels, all_predictions)
 
 
-def start_training_and_testing():
+def start_training_and_testing_convlstm():
     # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # uncomment this to always use the CPU instead of a GPU
 
     gpus = tf.config.list_physical_devices('GPU')
@@ -262,16 +204,11 @@ def start_training_and_testing():
 
     set_random_seed()  # set seed for reproducibility
 
-    print(f"[INFO] Using custom generator version_2: {use_gen_v2}\n"
-          f"[INFO] Using dataset version: {use_dataset_version}\n")
-
-    print(f"[INFO] Using transfer learning: {use_transfer_learning}\n")
-
     train_gen, val_gen, num_batches, num_samples = setup_data_generation(show_examples=False)
     difficulty_classifier = train_classifier(train_gen, val_gen, num_batches, num_samples)
 
-    # test_classifier(difficulty_classifier, num_batches, num_samples)
+    test_classifier(difficulty_classifier, num_batches, num_samples)
 
 
 if __name__ == "__main__":
-    start_training_and_testing()
+    start_training_and_testing_convlstm()
