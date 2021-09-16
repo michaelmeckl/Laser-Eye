@@ -36,7 +36,6 @@ class DifficultyImageClassifier:
         # see https://keras.io/guides/transfer_learning/
         inputs = tf.keras.Input(shape=input_shape)
 
-        # TODO use resnet_v2.ResNet50V2 instead ?
         # base_model = tf.keras.applications.resnet50.ResNet50(weights="imagenet", include_top=False)
         # base_model = tf.keras.applications.Xception(weights="imagenet", input_tensor=inputs, include_top=False)
         # base_model = tf.keras.applications.inception_v3.InceptionV3(weights="imagenet", input_tensor=inputs, include_top=False)
@@ -56,17 +55,6 @@ class DifficultyImageClassifier:
 
         # TODO add timeDistributed as well?
         # see https://stackoverflow.com/questions/61431708/transfer-learning-for-video-classification
-        """
-        base_model = tf.keras.applications.resnet50.ResNet50(include_top=False, weights='imagenet', pooling='max')
-        for layer in base_model.layers:
-            layer.trainable = False
-
-        model = tf.keras.Sequential()
-        model.add(tf.keras.layers.InputLayer(input_shape=input_shape))
-        model.add(base_model)
-        model.add(tf.keras.layers.Flatten())
-        model.add(tf.keras.layers.Dense(self.n_classes, activation="softmax"))
-        """
 
         self.model.summary()
 

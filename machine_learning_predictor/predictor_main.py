@@ -36,7 +36,7 @@ else:
 ####################################
 
 
-def merge_participant_image_logs(participant_list, test_mode=True):  # TODO False
+def merge_participant_image_logs(participant_list, test_mode=True):
     image_data_frame = pd.DataFrame()
 
     for participant in participant_list:
@@ -46,7 +46,7 @@ def merge_participant_image_logs(participant_list, test_mode=True):  # TODO Fals
 
         if test_mode:
             # for faster testing take only the first 150 rows for each difficulty level per participant
-            test_subset_size = 150
+            test_subset_size = 250
 
             difficulty_level_df = pd.DataFrame()
             for difficulty_level in labeled_images_df.difficulty.unique():
@@ -68,9 +68,9 @@ def merge_participant_image_logs(participant_list, test_mode=True):  # TODO Fals
 
 def get_train_val_images():
     # without_participants = ["participant_1", "participant_5"]
-    without_participants = ["participant_18"]  # TODO
+    without_participants = []
 
-    all_participants = os.listdir(data_folder_path)[:17]  # only take 12 or 18 so the counterbalancing works
+    all_participants = os.listdir(data_folder_path)[:18]  # only take 12 or 18 so the counterbalancing works
     # remove some participants for testing
     all_participants = [p for p in all_participants if p not in set(without_participants)]
 
@@ -90,6 +90,10 @@ def setup_data_generation(show_examples=True):
         difficulty_level_df = train_data[train_data.difficulty == difficulty_level]
         print(f"Found {len(difficulty_level_df)} train images for category \"{difficulty_level}\".")
 
+    for difficulty_level in val_data.difficulty.unique():
+        difficulty_level_df = val_data[val_data.difficulty == difficulty_level]
+        print(f"Found {len(difficulty_level_df)} val images for category \"{difficulty_level}\".")
+
     difficulty_category_size = None  # the amount of entries per difficulty category in the dataframe (the same for all)
     # make sure we have the same number of images per participant!
     for participant in train_data.participant.unique():
@@ -103,11 +107,15 @@ def setup_data_generation(show_examples=True):
                 difficulty_category_size = len(difficulty_level_df)
                 break
 
+    for participant in val_data.participant.unique():
+        participant_df = val_data[val_data.participant == participant]
+        print(f"Found {len(participant_df)} val images for participant \"{participant}\".")
+
     # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
     # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
     batch_size = 4
 
-    sample_size = 30  # get_suitable_sample_size(difficulty_category_size)  # TODO
+    sample_size = 25  # get_suitable_sample_size(difficulty_category_size)  # TODO
     print(f"Sample size: {sample_size} (Train data len: {len(train_data)}, val data len: {len(val_data)})")
 
     use_gray = False
