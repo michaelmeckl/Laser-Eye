@@ -21,10 +21,10 @@ from post_processing_service.iris_localization import IrisLocalizationModel
 """
 - webcam images of eyes and pupils ✔
 - pupil positions  ✔
-- pupil sizes (diameter)  ❌ TODO
-- average pupilsize; peak pupil size  ❌ TODO
-- fixations and saccades (count, mean, std)   ❌ TODO
-- blinks (rate, number, etc.)   ❌ (basic approaches are there; need to be expanded to actually be useful)
+- pupil sizes (diameter)  ❌ (works only for some participants; for other the image quality is not good enough)
+- average pupilsize; peak pupil size  ❌
+- fixations and saccades (count, mean, std)   ❌
+- blinks (rate, number, etc.)   ✔
 """
 
 
@@ -79,6 +79,9 @@ class EyeTracker:
         self.__current_frame = frame
 
         bboxes = self.face_detector.detect(self.__current_frame)
+        if bboxes is None:
+            print("No face could be found for this frame!")
+
         for landmarks in self.face_alignment.get_landmarks(self.__current_frame, bboxes, calibrate=True):
             self.__landmarks = landmarks
 
@@ -91,7 +94,6 @@ class EyeTracker:
             self.__get_eye_features()
 
             self.__track_gaze()
-            # self.__calculate_gaze_point()
 
             if self.__annotation_enabled:
                 self.__draw_face_landmarks()
@@ -154,9 +156,6 @@ class EyeTracker:
 
     def __save_post_processing_data(self):
         self.__logger.save_tracking_data()
-
-    # def stop_tracking(self):
-    #     self.__logger.stop_scheduling()
 
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
@@ -282,9 +281,6 @@ class EyeTracker:
         apply_threshold(left_eye_box_small, threshold_val=threshold_val, is_gray=True,
                         show_annotation=self.__annotation_enabled)
 
-        # TODO: get diameter of the black region by finding the contours of the connected components!
-        # see https://stackoverflow.com/questions/57317579/find-contiguous-black-pixels-in-image for an example
-
         # if self.__annotation_enabled and left_eye_box_small is not None:
         #     show_image_window(left_eye_box_small, "Left eyebox small", 450, 200)
 
@@ -330,40 +326,6 @@ class EyeTracker:
         if self.__annotation_enabled:
             self.__draw_gaze(offset)
 
-    def __calculate_gaze_point(self):
-        """
-        Algorithm below taken from this answer: https://stackoverflow.com/a/52922636/14345809
-        """
-        # Scaling factor
-        scale_x_left = self.__screenWidth / self.__left_eye_width
-        scale_y_left = self.__screenHeight / self.__left_eye_height
-        scale_x_right = self.__screenWidth / self.__right_eye_width
-        scale_y_right = self.__screenHeight / self.__right_eye_height
-
-        # difference iris center - eye center (direction of iris and pupil)
-        eye_center_deviation_x_left = self.__pupils[0][0] - self.__eye_centers[0][0]
-        eye_center_deviation_y_left = self.__pupils[0][1] - self.__eye_centers[0][1]
-        eye_center_deviation_x_right = self.__pupils[1][0] - self.__eye_centers[1][0]
-        eye_center_deviation_y_right = self.__pupils[1][1] - self.__eye_centers[1][1]
-
-        gaze_point_left_x = (self.__screenWidth / 2) + scale_x_left * eye_center_deviation_x_left
-        gaze_point_left_y = (self.__screenHeight / 2) + scale_y_left * eye_center_deviation_y_left
-
-        gaze_point_right_x = (self.__screenWidth / 2) + scale_x_right * eye_center_deviation_x_right
-        gaze_point_right_y = (self.__screenHeight / 2) + scale_y_right * eye_center_deviation_y_right
-
-        if gaze_point_left_x > self.__screenWidth or gaze_point_right_x > self.__screenWidth:
-            print(f"Gaze points x are out of screen bounds! ({gaze_point_left_x, gaze_point_right_x}")
-        if gaze_point_left_y > self.__screenHeight or gaze_point_right_y > self.__screenHeight:
-            print(f"Gaze points y are out of screen bounds! ({gaze_point_left_y, gaze_point_right_y})")
-
-        self.gaze_left = (gaze_point_left_x, gaze_point_left_y)
-        print("Gaze left: ", self.gaze_left)
-        self.gaze_right = (gaze_point_right_x, gaze_point_right_y)
-
-    def get_gaze_points(self):
-        return self.gaze_left, self.gaze_right
-
     def __calculate_3d_gaze(self, frame, poi, scale=256):
         SIN_LEFT_THETA = 2 * sin(pi / 4)
         SIN_UP_THETA = sin(pi / 6)
@@ -406,15 +368,13 @@ class EyeTracker:
 
         return theta, pha, delta.T
 
-    def __draw_gaze(self, offset, blink_thd=0.22, arrow_color=(0, 125, 255)):
+    def __draw_gaze(self, offset, arrow_color=(0, 125, 255)):
         # show gaze direction as arrows
         src = self.__current_frame.copy()
 
-        # if self.__left_eye_height / self.__left_eye_width > blink_thd:
         cv2.arrowedLine(src, tuple(self.__pupils[0].astype(int)),
                         tuple((offset + self.__pupils[0]).astype(int)),
                         arrow_color, 2)
-        # if self.__right_eye_height / self.__right_eye_width > blink_thd:
         cv2.arrowedLine(src, tuple(self.__pupils[1].astype(int)),
                         tuple((offset + self.__pupils[1]).astype(int)),
                         arrow_color, 2)

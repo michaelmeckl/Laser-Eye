@@ -12,7 +12,7 @@ from datetime import datetime
 import pandas as pd
 from post_processing.eye_tracking.eye_tracker import EyeTracker
 from post_processing.eye_tracking.image_utils import show_image_window
-from post_processing.post_processing_constants import download_folder, labeled_images_folder, post_processing_log_folder
+from post_processing.post_processing_constants import download_folder, post_processing_log_folder
 from post_processing.extract_downloaded_data import get_fps_info
 
 
@@ -83,84 +83,64 @@ def create_eye_region_csv(participant_folder, image_folder_name):
     print(f"Finished writing eye region csv file for {participant_folder}.")
 
 
-def process_images(eye_tracker, participants_folders=list[str], use_folder=False):
+def process_images(eye_tracker, participants_folders=list[str]):
     frame_count = 0
     start_time = time.time()
-    # iterate over and process all images in the labeled images subfolders (easy, medium and hard)
-    for sub_folder in os.listdir(download_folder):
-        if len(participants_folders) > 0 and sub_folder not in participants_folders:
-            print(f"\nSkipping folder '{sub_folder}' as it is not in the specified folder names.\n")
+
+    # iterate over and process all images associated with a difficulty level (easy, medium and hard)
+    for participant in os.listdir(download_folder):
+        if len(participants_folders) > 0 and participant not in participants_folders:
+            print(f"\nSkipping folder '{participant}' as it is not in the specified folder names.\n")
             continue
 
-        post_processing_log_path = os.path.join(download_folder, sub_folder, post_processing_log_folder)
+        # check if there is already a post processing folder and if so, ask if it should be overwritten
+        post_processing_log_path = os.path.join(download_folder, participant, post_processing_log_folder)
         if os.path.exists(post_processing_log_path):
-            print(f"A post processing folder already exists for participant '{sub_folder}'!")
+            print(f"A post processing folder already exists for participant '{participant}'!")
             answer = input("Do you want to overwrite it? [y/n]\n")
             if str.lower(answer) == "y" or str.lower(answer) == "yes":
-                print(f"\nOverwriting {sub_folder}...\n")
+                print(f"\nOverwriting {participant}...\n")
                 shutil.rmtree(post_processing_log_path)
             else:
-                print(f"\nSkipping folder '{sub_folder}'.\n")
+                print(f"\nSkipping folder '{participant}'.\n")
                 continue
 
         # get the recorded fps for the current participant
-        fps_log_path = os.path.join(download_folder, sub_folder, "fps_info.txt")
+        fps_log_path = os.path.join(download_folder, participant, "fps_info.txt")
         fps = get_fps_info(fps_log_path)
         # set the current participant for the post processing logger
-        eye_tracker.set_current_participant(sub_folder, fps)
+        eye_tracker.set_current_participant(participant, fps)
 
-        # only process the labeled images, that can be associated with one of the load levels
-        if use_folder:
-            images_path = os.path.join(download_folder, sub_folder, labeled_images_folder)
-            for load_folder in os.listdir(images_path):
-                print(f"Processing images for '{sub_folder}'; current difficulty: {load_folder}")
-                eye_tracker.set_current_difficulty(load_folder)
+        # iterate over the csv file with the image paths and their corresponding difficulty level
+        images_label_log = os.path.join(download_folder, participant, "labeled_images.csv")
+        labeled_images_df = pd.read_csv(images_label_log)
 
-                for image_file in os.listdir(os.path.join(images_path, load_folder)):
-                    current_frame = cv2.imread(os.path.join(images_path, load_folder, image_file))
-                    processed_frame = eye_tracker.process_current_frame(current_frame)
+        for difficulty_level in labeled_images_df.difficulty.unique():
+            print(f"Processing images for '{participant}'; current difficulty: {difficulty_level}")
+            eye_tracker.set_current_difficulty(difficulty_level)
 
-                    frame_count += 1
-                    show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
-                    # press q to skip to next participant / load level
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
+            # create a subset of the df that contains only the rows with this difficulty level
+            sub_df = labeled_images_df[labeled_images_df.difficulty == difficulty_level]
+            for idx, row in sub_df.iterrows():
+                image_path = row["image_path"]
+                current_image = cv2.imread(image_path)
+                processed_frame = eye_tracker.process_current_frame(current_image)
 
-                # after we finished one load folder, log all information that was recorded for it
-                eye_tracker.log_information()
-                # and reset the blink detector
-                eye_tracker.reset_blink_detector()
-        else:
-            # iterate over the csv file and yield the image paths and their corresponding difficulty level
-            images_label_log = os.path.join(download_folder, sub_folder, "labeled_images.csv")
-            labeled_images_df = pd.read_csv(images_label_log)
+                frame_count += 1
+                show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
+                # press q to skip to next participant / load level
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
-            for difficulty_level in labeled_images_df.difficulty.unique():
-                print(f"Processing images for '{sub_folder}'; current difficulty: {difficulty_level}")
-                eye_tracker.set_current_difficulty(difficulty_level)
-
-                # create a subset of the df that contains only the rows with this difficulty level
-                sub_df = labeled_images_df[labeled_images_df.difficulty == difficulty_level]
-                for idx, row in sub_df.iterrows():
-                    image_path = row["image_path"]
-                    current_image = cv2.imread(image_path)
-                    processed_frame = eye_tracker.process_current_frame(current_image)
-
-                    frame_count += 1
-                    show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
-                    # press q to skip to next participant / load level
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
-
-                # after we finished one load folder, log all information that was recorded for it
-                eye_tracker.log_information()
-                # and reset the blink detector
-                eye_tracker.reset_blink_detector()
+            # after we finished one difficulty folder, log all information that was recorded for it
+            eye_tracker.log_information()
+            # and reset the blink detector
+            eye_tracker.reset_blink_detector()
 
         # after we finished one participant folder, create a csv file with the paths to the new eye region images so
         # they can be easily found by the machine learning model
         print("Creating csv file for eye regions ...")
-        create_eye_region_csv(sub_folder, image_folder_name="eye_regions")
+        create_eye_region_csv(participant, image_folder_name="eye_regions")
 
     duration = time.time() - start_time
     print(f"[INFO]: Frame Count: {frame_count}")

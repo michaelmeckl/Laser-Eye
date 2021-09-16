@@ -1,5 +1,4 @@
 import cv2
-import imutils
 
 
 def to_gray(frame):
@@ -53,13 +52,6 @@ def scale_image(frame, scale_factor=0.25, show_scaled=False):
     if show_scaled:
         cv2.imshow(f"Scale={scale_factor}", scaled_image)
     return scaled_image
-
-
-def resize_image(image, size=150, show_resized=False):
-    resized = imutils.resize(image, width=size, inter=cv2.INTER_AREA)
-    if show_resized:
-        cv2.imshow(f"Size={size}dpx", resized)
-    return resized
 
 
 def extract_image_region(image, x_start, y_start, x_end, y_end, padding=5):

@@ -1,6 +1,10 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
+"""
+Unfinished and not working!
+"""
+
 from scipy.spatial import distance as dist
 from tracking.TrackingLogger import get_timestamp
 
