@@ -28,7 +28,7 @@ else:
     from machine_learning_predictor.custom_data_generator import CustomImageDataGenerator
 
 
-def merge_participant_image_logs(participant_list, use_eye_regions, test_mode=True):  # TODO False
+def merge_participant_image_logs(participant_list, use_eye_regions, test_mode=False):
     image_data_frame = pd.DataFrame()
 
     for participant in participant_list:
@@ -63,9 +63,9 @@ def merge_participant_image_logs(participant_list, use_eye_regions, test_mode=Tr
 
 def get_train_val_images(use_eye_regions):
     # without_participants = ["participant_1", "participant_5"]  # "participant_6"
-    without_participants = ["participant_18"]  # TODO
+    without_participants = []
 
-    all_participants = os.listdir(data_folder_path)[:17]  # only take 12 or 18 so the counterbalancing works
+    all_participants = os.listdir(data_folder_path)[:16]  # only take 12 or 18 so the counterbalancing works
     # remove some participants for testing
     all_participants = [p for p in all_participants if p not in set(without_participants)]
 
@@ -169,13 +169,13 @@ def train_classifier(train_generator, val_generator, batch_size, sample_size, tr
     return classifier
 
 
-def test_classifier(classifier, batch_size, sample_size):
+def test_classifier(classifier, batch_size, sample_size, use_eye_regions):
     # get the participants that weren't used for training or validation
     test_participants = os.listdir(data_folder_path)[16:]
     print(f"Found {len(test_participants)} participants for testing.")
 
     random.shuffle(test_participants)
-    test_df = merge_participant_image_logs(test_participants)
+    test_df = merge_participant_image_logs(test_participants, use_eye_regions)
 
     for difficulty_level in test_df.difficulty.unique():
         difficulty_level_df = test_df[test_df.difficulty == difficulty_level]
@@ -236,7 +236,7 @@ def start_training_and_testing(use_eye_regions=False):
 
     train_gen, val_gen, num_batches, num_samples = setup_data_generation(use_eye_regions, show_examples=False)
     difficulty_classifier = train_classifier(train_gen, val_gen, num_batches, num_samples)
-    test_classifier(difficulty_classifier, num_batches, num_samples)
+    test_classifier(difficulty_classifier, num_batches, num_samples, use_eye_regions)
 
 
 if __name__ == "__main__":

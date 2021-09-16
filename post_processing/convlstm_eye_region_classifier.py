@@ -13,7 +13,7 @@ import random
 import pandas as pd
 import tensorflow as tf
 import numpy as np
-from machine_learning_predictor.ml_utils import set_random_seed, split_train_test, show_generator_example_images, \
+from machine_learning_predictor.ml_utils import set_random_seed, split_train_test, \
     calculate_prediction_results, get_suitable_sample_size
 from post_processing.post_processing_constants import download_folder
 from matplotlib import pyplot as plt
@@ -22,7 +22,7 @@ from machine_learning_predictor.time_series_generator import CustomImageDataGene
 from machine_learning_predictor.time_series_classifier import DifficultyImageClassifier
 
 
-def merge_participant_image_logs(participant_list, test_mode=True):  # TODO False
+def merge_participant_image_logs(participant_list, test_mode=False):
     image_data_frame = pd.DataFrame()
 
     for participant in participant_list:
@@ -54,9 +54,9 @@ def merge_participant_image_logs(participant_list, test_mode=True):  # TODO Fals
 
 def get_train_val_images():
     # without_participants = ["participant_1", "participant_5"]
-    without_participants = ["participant_18"]  # TODO
+    without_participants = []
 
-    all_participants = os.listdir(data_folder_path)[:17]  # only take 12 or 18 so the counterbalancing works
+    all_participants = os.listdir(data_folder_path)[:16]  # only take 12 or 18 so the counterbalancing works
     # remove some participants for testing
     all_participants = [p for p in all_participants if p not in set(without_participants)]
 

@@ -33,7 +33,7 @@ class DifficultyImageClassifier:
         first_BatchNormalization = tf.keras.layers.BatchNormalization()(first_ConvLSTM)
         first_Pooling = tf.keras.layers.MaxPooling3D(pool_size=(1, 2, 2), padding='same')(first_BatchNormalization)
 
-        second_ConvLSTM = tf.keras.layers.ConvLSTM2D(filters=30, kernel_size=(3, 3), padding='same',
+        second_ConvLSTM = tf.keras.layers.ConvLSTM2D(filters=20, kernel_size=(3, 3), padding='same',
                                                      return_sequences=True)(first_Pooling)
         second_BatchNormalization = tf.keras.layers.BatchNormalization()(second_ConvLSTM)
         second_Pooling = tf.keras.layers.MaxPooling3D(pool_size=(1, 3, 3), padding='same')(second_BatchNormalization)

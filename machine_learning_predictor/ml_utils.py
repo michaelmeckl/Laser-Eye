@@ -1,6 +1,7 @@
 import itertools
 import os
 import random
+import sys
 import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
@@ -198,10 +199,16 @@ def calculate_prediction_results(true_labels, predicted_labels):
     print(f"Precision score on test data: "
           f"{metrics.precision_score(true_labels, predicted_labels, average='weighted')}:.2f")
     print(f"F1 score on test data: {metrics.f1_score(true_labels, predicted_labels, average='weighted'):.2f}")
-    print(f"\nClassification Report:\n"
-          f"{metrics.classification_report(true_labels, predicted_labels, target_names=label_names)}")
+    try:
+        print(f"\nClassification Report:\n"
+              f"{metrics.classification_report(true_labels, predicted_labels, target_names=label_names)}")
+    except Exception as e:
+        sys.stderr.write(f"Failed to compute classification report: {e}")
 
     # compute and show the confusion matrix
-    conf_matrix = metrics.confusion_matrix(predicted_labels, true_labels, normalize="all")
-    print(f"Confusion Matrix:\n{conf_matrix}")
-    plot_confusion_matrix(conf_matrix, label_names)
+    try:
+        conf_matrix = metrics.confusion_matrix(predicted_labels, true_labels, normalize="all")
+        print(f"Confusion Matrix:\n{conf_matrix}")
+        plot_confusion_matrix(conf_matrix, label_names)
+    except Exception as e:
+        sys.stderr.write(f"Failed to compute confusion matrix: {e}")

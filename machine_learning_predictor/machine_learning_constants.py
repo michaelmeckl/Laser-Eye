@@ -6,7 +6,7 @@ from post_processing.post_processing_constants import download_folder
 RANDOM_SEED = 42
 NUMBER_OF_CLASSES = 3
 DEFAULT_TRAIN_SPLIT = 0.8  # take 80 % of the participants as train data per default
-TRAIN_EPOCHS = 20
+TRAIN_EPOCHS = 35
 
 # NEW_IMAGE_SIZE = (112, 112)
 
