@@ -85,6 +85,9 @@ class EyeTracker:
         for landmarks in self.face_alignment.get_landmarks(self.__current_frame, bboxes, calibrate=True):
             self.__landmarks = landmarks
 
+            if self.__annotation_enabled:
+                self.__show_landmarks()
+
             # calculate head pose
             self.set_camera_matrix(frame_width=frame.shape[1], frame_height=frame.shape[0])
             _, euler_angle = self.head_pose_estimator.get_head_pose(landmarks)
@@ -156,6 +159,17 @@ class EyeTracker:
 
     def __save_post_processing_data(self):
         self.__logger.save_tracking_data()
+
+    def __show_landmarks(self):
+        frame_copy = self.__current_frame.copy()
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        for i, landmark in enumerate(self.__landmarks):
+            cv2.putText(frame_copy, f"{i}", (int(self.__landmarks[i][0] - 3), int(self.__landmarks[i][1] - 3)),
+                        font, 0.25, (255, 255, 255), 1)
+            cv2.circle(frame_copy, (int(self.__landmarks[i][0]), int(self.__landmarks[i][1])), 1, (0, 255, 0), 1,
+                       cv2.LINE_AA)
+
+        show_image_window(frame_copy, window_name="face landmarks", x_pos=1200, y_pos=50)
 
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
