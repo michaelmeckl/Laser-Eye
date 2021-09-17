@@ -91,8 +91,8 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             resized_img = crop_center_square(image_arr)
 
             # normalize pixel values to [0, 1] so the CNN can work with smaller values
-            # scaled_img = resized_img / 255.0
-            return resized_img
+            scaled_img = resized_img / 255.0
+            return scaled_img
 
         except Exception as e:
             sys.stderr.write(f"\nError in processing image '{image_path}': {e}")

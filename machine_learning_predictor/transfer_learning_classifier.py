@@ -2,6 +2,7 @@ import os
 import numpy as np
 import psutil
 import tensorflow as tf
+import tensorflow_hub as hub
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
 from machine_learning_predictor.machine_learning_constants import results_folder
@@ -25,6 +26,35 @@ class DifficultyImageClassifier:
         cpu_count_available = len(psutil.Process().cpu_affinity()),  # number of usable cpus by this process
         print("CPU Count available", cpu_count_available)
         self.num_workers = cpu_count_available[0] if cpu_count_available[0] else 1
+
+    def use_tensorhub(self, input_shape, train_dataset, val_dataset):
+        hub_url = "https://tfhub.dev/tensorflow/movinet/a0/base/kinetics-600/classification/3"
+        encoder = hub.KerasLayer(hub_url, trainable=True)
+
+        inputs = tf.keras.layers.Input(shape=input_shape[1:], dtype=tf.float32, name='image')
+        encoder_output = encoder(dict(image=inputs))
+
+        x = tf.keras.layers.Dense(256, activation="relu")(encoder_output)
+        x = tf.keras.layers.Dropout(0.2)(x)
+        outputs = tf.keras.layers.Dense(self.n_classes, activation="softmax")(x)
+
+        self.model = tf.keras.Model(inputs, outputs)
+        self.model.summary()
+
+        self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["categorical_accuracy"])
+
+        history = self.model.fit(train_dataset, validation_data=val_dataset,
+                                 use_multiprocessing=False,
+                                 workers=self.num_workers,
+                                 epochs=32,
+                                 verbose=1)
+
+        show_result_plot(history, metric="categorical_accuracy", output_name="train_history_tensorhub.png",
+                         show=True)
+
+        val_loss, val_acc = self.model.evaluate(val_dataset, verbose=1)
+        print("Validation loss: ", val_loss)
+        print("Validation accuracy: ", val_acc * 100)
 
     def unfreeze_model(self, model, num_layers=20):
         # We unfreeze the top 20 layers per default while leaving BatchNorm layers frozen

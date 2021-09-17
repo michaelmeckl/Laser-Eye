@@ -23,7 +23,8 @@ use_gen_v2 = True
 use_dataset_version = False
 
 if use_gen_v2:
-    from machine_learning_predictor.custom_data_generator_v2 import CustomImageDataGenerator
+    # from machine_learning_predictor.custom_data_generator_v2 import CustomImageDataGenerator
+    from machine_learning_predictor.time_series_generator import CustomImageDataGenerator
 else:
     from machine_learning_predictor.custom_data_generator import CustomImageDataGenerator
 
@@ -152,8 +153,12 @@ def setup_data_generation(show_examples=True):
 
 def prepare_dataset(train_generator, val_generator, batch_size, sample_size, image_shape):
     if use_gen_v2:
+        # ds_output_signature = (
+        #     tf.TensorSpec(shape=(batch_size, *image_shape), dtype=tf.float32),
+        #     tf.TensorSpec(shape=(batch_size, NUMBER_OF_CLASSES), dtype=tf.float32),
+        # )
         ds_output_signature = (
-            tf.TensorSpec(shape=(batch_size, *image_shape), dtype=tf.float32),
+            tf.TensorSpec(shape=image_shape, dtype=tf.float32),
             tf.TensorSpec(shape=(batch_size, NUMBER_OF_CLASSES), dtype=tf.float32),
         )
     else:
@@ -202,7 +207,9 @@ def train_classifier(train_generator, val_generator, batch_size, sample_size, tr
     # train_dataset, val_dataset = prepare_dataset(train_generator, val_generator, batch_size, sample_size, image_shape)
     # classifier.try_transfer_ds_version(image_shape, train_dataset, val_dataset)
 
-    classifier.train_transfer_model(image_shape)
+    # classifier.train_transfer_model(image_shape)
+    train_dataset, val_dataset = prepare_dataset(train_generator, val_generator, batch_size, sample_size, image_shape)
+    classifier.use_tensorhub(image_shape, train_dataset, val_dataset)
     return classifier
 
 

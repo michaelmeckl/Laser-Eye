@@ -20,7 +20,7 @@ def main():
     assign_labels(participant_list=[])
     start_extracting_eye_features(participant_list=[], debug=False, enable_annotation=False)
 
-    start_training_and_testing(use_eye_regions=False)  # Option 1
+    # start_training_and_testing(use_eye_regions=False)  # Option 1
     # start_training_and_testing(use_eye_regions=True)  # Option 2
     # start_training_and_testing_convlstm()  # Option 3
 
