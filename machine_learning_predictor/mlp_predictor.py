@@ -17,7 +17,7 @@ from machine_learning_predictor.ml_utils import set_random_seed, split_train_tes
     get_suitable_sample_size
 from post_processing.post_processing_constants import post_processing_log_folder
 from sklearn import metrics
-from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.model_selection import cross_val_score, train_test_split, KFold
 from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import confusion_matrix
@@ -128,7 +128,7 @@ def merge_participant_eye_tracking_logs(participant_list, is_train_data):
 
 def load_pupil_movement_data(train_participants):
     pupil_movement_dataframe = pd.DataFrame()
-    pupil_movement_path = "pupil_movement_data"
+    pupil_movement_path = "pupil_movement_data_2"
 
     for csv_file in os.listdir(pupil_movement_path):
         csv_df = pd.read_csv(os.path.join(pupil_movement_path, csv_file))
@@ -156,23 +156,7 @@ def load_pupil_movement_data(train_participants):
     return train_pupil_movement, val_pupil_movement
 
 
-def setup_data_generation(all_participants):
-    # TODO cross validation: split into random participants
-    # train_test_split(all_participants, test_size=0.2, random_state=RANDOM_SEED)
-    # score = cross_val_score(pipe, X_all, y_all, cv=3, scoring='accuracy').mean()
-    # print("Score: {:.2%}".format(score))
-
-    """
-    cv = KFold(n_splits=10, shuffle=True, random_state=1)
-    # evaluate the pipeline using cross validation and calculate MAE
-    scores = cross_val_score(pipeline, X, y, scoring='neg_mean_absolute_error', cv=cv, n_jobs=-1)
-    # convert MAE scores to positive values
-    scores = absolute(scores)
-    """
-
-    # split into train and test data
-    train_participants, test_participants = split_train_test(all_participants)
-
+def setup_data_generation(train_participants, test_participants):
     # TODO always needs to be re-generated if seed or participants are changed!
     if os.path.exists("eye_log_dataframe_ordered_train.csv"):
         # load data from csv
@@ -243,6 +227,7 @@ def setup_data_generation(all_participants):
     # pipeline.predict(X_val)
 
     # print("\nCorrelations_Pupil_Move_Train:\n", pupil_move_train.corr())
+    # print("\nCorrelations_Pupil_Move_Val:\n", pupil_move_val.corr())
 
     # print("\nCorrelations_Eye_Log_Train:\n", eye_log_train_data.corr())
     # print("\nCorrelations_Eye_Log_Val:\n", eye_log_val_data.corr())
@@ -254,9 +239,10 @@ def setup_data_generation(all_participants):
 
     pupil_movement_feature_vectors = {
         "avg_dist": {"average_pupil_movement_distance"},
+        "dist_angle": {"average_pupil_movement_distance", "movement_angle"},
         "all": ["left_pupil_movement_x", "left_pupil_movement_y", "right_pupil_movement_x", "right_pupil_movement_y",
                 "average_pupil_movement_x", "average_pupil_movement_y", "average_pupil_movement_distance",
-                "time_difference"],
+                "time_difference", "movement_angle"],
     }
 
     blink_feature_vectors = {
@@ -306,8 +292,8 @@ def setup_data_generation(all_participants):
     y_val_one_hot = blink_val_data[["difficulty_hard", "difficulty_medium", "difficulty_easy"]].values
     """
 
-    X_train = pupil_move_train[pupil_movement_feature_vectors["all"]].values
-    X_val = pupil_move_val[pupil_movement_feature_vectors["all"]].values
+    X_train = pupil_move_train[pupil_movement_feature_vectors["dist_angle"]].values
+    X_val = pupil_move_val[pupil_movement_feature_vectors["dist_angle"]].values
     y_train = pupil_move_train["difficulty_level_number"].values
     y_val = pupil_move_val["difficulty_level_number"].values
     y_train_one_hot = pupil_move_train[["difficulty_hard", "difficulty_medium", "difficulty_easy"]].values
@@ -333,10 +319,11 @@ def setup_data_generation(all_participants):
     X_train = scaler.fit_transform(X_train)
     X_val = scaler.transform(X_val)
 
-    train_perceptron(X_train, y_train, X_val, y_val)
+    accuracy = train_perceptron(X_train, y_train, X_val, y_val)
     # train_svm(X_train, y_train, X_val, y_val)
-    # TODO
     # train_mlp(X_train, y_train_one_hot, X_val, y_val_one_hot, batch_size)
+
+    return accuracy
 
 
 def train_perceptron(X_train, y_train, X_val, y_val):
@@ -352,6 +339,9 @@ def train_perceptron(X_train, y_train, X_val, y_val):
     # cm = confusion_matrix(y_val, prediction_perceptron, normalize="all")
     # print(cm)
     # plot_confusion_matrix(cm, class_names)
+
+    accuracy = metrics.accuracy_score(y_val, prediction_perceptron)
+    return accuracy
 
 
 def train_svm(X_train, y_train, X_val, y_val):
@@ -460,7 +450,29 @@ def start_training_mlp():
     # remove some participants for testing
     all_participants = [p for p in all_participants if p not in set(without_participants)]
 
-    setup_data_generation(all_participants)
+    # split into train and test data
+    # train_participants, test_participants = split_train_test(all_participants)
+
+    all_accuracies = []
+    kfold = KFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
+
+    # TODO use train test split instead? and shuffle manually each time?
+    for i, (train_indices, test_indices) in enumerate(kfold.split(all_participants, 4)):
+        print("Train indices: ", train_indices)
+        print("Test indices: ", test_indices)
+
+        train_participants = (np.array(all_participants)[train_indices]).tolist()
+        test_participants = (np.array(all_participants)[test_indices]).tolist()
+
+        print("Train participants for split: ", train_participants)
+        print("Test participants for split: ", test_participants)
+
+        accuracy_val = setup_data_generation(train_participants, test_participants)
+        all_accuracies.append(accuracy_val)
+        print(f"Accuracy for split {i}: {accuracy_val}")
+
+    print("Mean accuracy over all splits: ", np.mean(all_accuracies))
+    print("Best accuracy over all splits: ", np.max(all_accuracies))
 
 
 if __name__ == "__main__":
