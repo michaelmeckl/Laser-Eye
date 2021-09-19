@@ -17,10 +17,12 @@ import pandas as pd
 import tensorflow as tf
 import numpy as np
 from machine_learning_predictor.ml_utils import set_random_seed, split_train_test, show_generator_example_images, \
-    calculate_prediction_results
+    calculate_prediction_results, get_suitable_sample_size
 from post_processing.post_processing_constants import download_folder, post_processing_log_folder
 from machine_learning_predictor.mixed_data_generator import MixedDataGenerator
 from machine_learning_predictor.classifier import DifficultyImageClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.compose import ColumnTransformer, make_column_selector
 
 
 class DatasetType(Enum):
@@ -36,7 +38,6 @@ def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetT
     for participant in participant_list:
         difficulty_dir_path = os.path.join(data_folder_path, participant, post_processing_log_folder)
         difficulty_dirs = os.listdir(difficulty_dir_path)
-        #  random.shuffle(difficulty_dirs)  # shuffle difficulty dirs so it won't be the same order for each participant
 
         for difficulty_dir in difficulty_dirs:
             for element in os.listdir(os.path.join(difficulty_dir_path, difficulty_dir)):
@@ -141,38 +142,85 @@ def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetT
     return blink_dataframe_shuffled, eye_log_dataframe_ordered
 
 
-def load_pupil_movement_data(train_participants):
-    pupil_movement_dataframe = pd.DataFrame()
+def load_pupil_movement_data(train_participants, val_participants):
+    train_pupil_movement_dataframe = pd.DataFrame()
+    val_pupil_movement_dataframe = pd.DataFrame()
     pupil_movement_path = "pupil_movement_data_2"
 
-    for csv_file in os.listdir(pupil_movement_path):
-        csv_df = pd.read_csv(os.path.join(pupil_movement_path, csv_file))
-        pupil_movement_dataframe = pd.concat([pupil_movement_dataframe, csv_df])
+    for participant in train_participants:
+        for csv_file in os.listdir(pupil_movement_path):
+            if participant in csv_file:
+                csv_df = pd.read_csv(os.path.join(pupil_movement_path, csv_file))
+                train_pupil_movement_dataframe = pd.concat([train_pupil_movement_dataframe, csv_df])
 
-    pupil_movement_dataframe['difficulty_level_number'] = pupil_movement_dataframe['difficulty']
-    pupil_movement_dataframe.loc[pupil_movement_dataframe['difficulty'] == 'hard', 'difficulty_level_number'] = 2
-    pupil_movement_dataframe.loc[pupil_movement_dataframe['difficulty'] == 'medium', 'difficulty_level_number'] = 1
-    pupil_movement_dataframe.loc[pupil_movement_dataframe['difficulty'] == 'easy', 'difficulty_level_number'] = 0
+    for participant in val_participants:
+        for csv_file in os.listdir(pupil_movement_path):
+            if participant in csv_file:
+                csv_df = pd.read_csv(os.path.join(pupil_movement_path, csv_file))
+                val_pupil_movement_dataframe = pd.concat([val_pupil_movement_dataframe, csv_df])
+
+    # TODO fix this:
+    """
+    for pupil_movement_dataframe in [train_pupil_movement_dataframe, val_pupil_movement_dataframe]:
+        pupil_movement_dataframe['difficulty_level_number'] = pupil_movement_dataframe['difficulty']
+        pupil_movement_dataframe.loc[pupil_movement_dataframe['difficulty'] == 'hard', 'difficulty_level_number'] = 2
+        pupil_movement_dataframe.loc[pupil_movement_dataframe['difficulty'] == 'medium', 'difficulty_level_number'] = 1
+        pupil_movement_dataframe.loc[pupil_movement_dataframe['difficulty'] == 'easy', 'difficulty_level_number'] = 0
+
+        # add one-hot-encoding to the dataframe
+        new_cols = pd.get_dummies(pupil_movement_dataframe['difficulty'], prefix='difficulty')
+
+        # TODO
+        pupil_movement_dataframe = pupil_movement_dataframe.append(new_cols)
+        # pupil_movement_dataframe = pd.concat([pupil_movement_dataframe, new_cols], axis=1)
+
+        pupil_movement_dataframe = pupil_movement_dataframe.reset_index(drop=True)
+
+        pupil_movement_dataframe[["difficulty_level_number"]] = pupil_movement_dataframe[["difficulty_level_number"]].astype(int)
+    """
+    train_pupil_movement_dataframe['difficulty_level_number'] = train_pupil_movement_dataframe['difficulty']
+    train_pupil_movement_dataframe.loc[train_pupil_movement_dataframe['difficulty'] == 'hard', 'difficulty_level_number'] = 2
+    train_pupil_movement_dataframe.loc[train_pupil_movement_dataframe['difficulty'] == 'medium', 'difficulty_level_number'] = 1
+    train_pupil_movement_dataframe.loc[train_pupil_movement_dataframe['difficulty'] == 'easy', 'difficulty_level_number'] = 0
 
     # add one-hot-encoding to the dataframe
-    new_cols = pd.get_dummies(pupil_movement_dataframe['difficulty'], prefix='difficulty')
-    pupil_movement_dataframe = pd.concat([pupil_movement_dataframe, new_cols], axis=1)
+    new_cols = pd.get_dummies(train_pupil_movement_dataframe['difficulty'], prefix='difficulty')
 
-    pupil_movement_dataframe = pupil_movement_dataframe.reset_index(drop=True)
+    train_pupil_movement_dataframe = pd.concat([train_pupil_movement_dataframe, new_cols], axis=1)
 
-    pupil_movement_dataframe[["difficulty_level_number"]] = pupil_movement_dataframe[["difficulty_level_number"]].astype(int)
+    train_pupil_movement_dataframe = train_pupil_movement_dataframe.reset_index(drop=True)
 
-    train_pupil_movement = pupil_movement_dataframe[pupil_movement_dataframe.participant.isin(train_participants)]
-    val_pupil_movement = pupil_movement_dataframe[~pupil_movement_dataframe.participant.isin(train_participants)]
+    train_pupil_movement_dataframe[["difficulty_level_number"]] = train_pupil_movement_dataframe[
+        ["difficulty_level_number"]].astype(int)
 
-    train_pupil_movement.to_csv(os.path.join(ml_data_folder, "train_pupil_movement.csv"), index=False)
-    val_pupil_movement.to_csv(os.path.join(ml_data_folder, "val_pupil_movement.csv"), index=False)
+    val_pupil_movement_dataframe['difficulty_level_number'] = val_pupil_movement_dataframe['difficulty']
+    val_pupil_movement_dataframe.loc[val_pupil_movement_dataframe['difficulty'] == 'hard', 'difficulty_level_number'] = 2
+    val_pupil_movement_dataframe.loc[val_pupil_movement_dataframe['difficulty'] == 'medium', 'difficulty_level_number'] = 1
+    val_pupil_movement_dataframe.loc[val_pupil_movement_dataframe['difficulty'] == 'easy', 'difficulty_level_number'] = 0
 
-    return train_pupil_movement, val_pupil_movement
+    # add one-hot-encoding to the dataframe
+    new_cols = pd.get_dummies(val_pupil_movement_dataframe['difficulty'], prefix='difficulty')
+
+    val_pupil_movement_dataframe = pd.concat([val_pupil_movement_dataframe, new_cols], axis=1)
+
+    val_pupil_movement_dataframe = val_pupil_movement_dataframe.reset_index(drop=True)
+
+    val_pupil_movement_dataframe[["difficulty_level_number"]] = val_pupil_movement_dataframe[
+        ["difficulty_level_number"]].astype(int)
+
+    # train_pupil_movement = pupil_movement_dataframe[pupil_movement_dataframe.participant.isin(train_participants)]
+    # val_pupil_movement = pupil_movement_dataframe[~pupil_movement_dataframe.participant.isin(train_participants)]
+
+    train_pupil_movement_dataframe.to_csv(os.path.join(ml_data_folder, "train_pupil_movement.csv"), index=False)
+    val_pupil_movement_dataframe.to_csv(os.path.join(ml_data_folder, "val_pupil_movement.csv"), index=False)
+
+    return train_pupil_movement_dataframe, val_pupil_movement_dataframe
 
 
-def merge_participant_image_logs(participant_list, dataset_type: DatasetType, test_mode=True):
+def merge_participant_image_logs(participant_list, dataset_type: DatasetType, test_mode=False):
     image_data_frame = pd.DataFrame()
+
+    row_order = ["easy", "hard", "medium"]  # TODO read in from folder structure
 
     for participant in participant_list:
         use_eye_regions = False
@@ -183,7 +231,6 @@ def merge_participant_image_logs(participant_list, dataset_type: DatasetType, te
 
         labeled_images_df = pd.read_csv(images_label_log)
 
-        # TODO
         # participant_5 has 5 images less than the rest after the eye tracking part so we simply duplicate the last row
         if use_eye_regions and participant == "participant_5":
             last_row = labeled_images_df.iloc[[-1]]
@@ -195,7 +242,9 @@ def merge_participant_image_logs(participant_list, dataset_type: DatasetType, te
             test_subset_size = 250
 
             difficulty_level_df = pd.DataFrame()
-            for difficulty_level in labeled_images_df.difficulty.unique():
+            # TODO
+            # for difficulty_level in labeled_images_df.difficulty.unique():
+            for difficulty_level in row_order:
                 # create a subset of the df that contains only the rows with this difficulty level
                 sub_df = labeled_images_df[labeled_images_df.difficulty == difficulty_level]
                 sub_df = sub_df[:test_subset_size]
@@ -203,7 +252,13 @@ def merge_participant_image_logs(participant_list, dataset_type: DatasetType, te
 
             image_data_frame = pd.concat([image_data_frame, difficulty_level_df])
         else:
-            image_data_frame = pd.concat([image_data_frame, labeled_images_df])
+            difficulty_level_df = pd.DataFrame()
+            for difficulty_level in row_order:  # TODO
+                # create a subset of the df that contains only the rows with this difficulty level
+                sub_df = labeled_images_df[labeled_images_df.difficulty == difficulty_level]
+                difficulty_level_df = pd.concat([difficulty_level_df, sub_df])
+
+            image_data_frame = pd.concat([image_data_frame, difficulty_level_df])
 
     # reset the df index as the concatenate above creates duplicate indexes
     image_data_frame_numbered = image_data_frame.reset_index(drop=True)
@@ -257,7 +312,7 @@ def get_train_val_data():
                                                                                    DatasetType.TRAIN)
         blink_val_data, eye_log_val_data = merge_participant_eye_tracking_logs(val_participants,
                                                                                DatasetType.VALIDATION)
-        pupil_move_train, pupil_move_val = load_pupil_movement_data(train_participants)
+        pupil_move_train, pupil_move_val = load_pupil_movement_data(train_participants, val_participants)
 
     return train_image_data, val_image_data, eye_log_train_data, eye_log_val_data, pupil_move_train, pupil_move_val
 
@@ -300,25 +355,51 @@ def check_data(train_image_data, val_image_data, eye_log_train_data, eye_log_val
     return difficulty_category_size
 
 
-def setup_data_generation(show_examples=True):
+def setup_data_generation(show_examples=False):  # TODO
     train_image_data, val_image_data, eye_log_train_data, eye_log_val_data, pupil_move_train, pupil_move_val = get_train_val_data()
 
     difficulty_category_size = check_data(train_image_data, val_image_data, eye_log_train_data, eye_log_val_data)
+
+    """
+    # TODO only select the correct columns for standard scaler!!
+    column_trans = ColumnTransformer(
+        [
+            # ('scale', StandardScaler(), make_column_selector(dtype_include=np.number)),
+            'scale', StandardScaler(), ['left_pupil_movement_x', 'left_pupil_movement_y', 'right_pupil_movement_x',
+                                        'right_pupil_movement_y', 'average_pupil_movement_x',
+                                        'average_pupil_movement_y', 'average_pupil_movement_distance', 'movement_angle'],
+        ], remainder='passthrough'
+    )
+    pupil_move_train = column_trans.fit_transform(pupil_move_train)
+    pupil_move_val = column_trans.transform(pupil_move_val)
+    """
+
+    # test = column_trans.transform(eye_log_train_data)
+    # scaler = StandardScaler()
+    #eye_log_train_data = scaler.fit_transform(eye_log_train_data)  # TODO check if it works on whole df!
+    #eye_log_val_data = scaler.transform(eye_log_val_data)
+
+    # TODO scale & standardize numerical data first
+    """
+    scaler = StandardScaler()
+    eye_log_train_data = scaler.fit_transform(eye_log_train_data)
+    eye_log_val_data = scaler.transform(eye_log_val_data)
+    """
 
     # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
     # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
     batch_size = 4
 
-    sample_size = 25  # get_suitable_sample_size(difficulty_category_size)  # TODO
+    sample_size = get_suitable_sample_size(difficulty_category_size)  # TODO
     print(f"Sample size: {sample_size} (Train data len: {len(train_image_data)}, val data len: {len(val_image_data)})")
 
     use_gray = False
-    train_generator = MixedDataGenerator(img_data_frame=train_image_data, eye_data_frame=eye_log_train_data,
+    train_generator = MixedDataGenerator(img_data_frame=train_image_data, eye_data_frame=pupil_move_train,
                                          x_col_name="image_path", y_col_name="difficulty",
                                          sequence_length=sample_size, batch_size=batch_size,
                                          images_base_path=images_path, use_grayscale=use_gray, is_train_set=True)
 
-    val_generator = MixedDataGenerator(img_data_frame=val_image_data, eye_data_frame=eye_log_val_data,
+    val_generator = MixedDataGenerator(img_data_frame=val_image_data, eye_data_frame=pupil_move_val,
                                        x_col_name="image_path", y_col_name="difficulty",
                                        sequence_length=sample_size, batch_size=batch_size,
                                        images_base_path=images_path, use_grayscale=use_gray, is_train_set=False)

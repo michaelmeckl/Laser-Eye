@@ -19,7 +19,8 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
         self.X_col = x_col_name
         self.y_col = y_col_name
 
-        self.eye_log_cols = ["ROLL", "PITCH"]   # TODO
+        # self.eye_log_cols = ["ROLL", "PITCH"]   # TODO
+        self.eye_log_cols = ["average_pupil_movement_distance", "movement_angle"]
 
         self.sequence_length = sequence_length
         self.batch_size = batch_size

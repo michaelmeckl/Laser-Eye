@@ -147,11 +147,13 @@ class DifficultyImageClassifier:
 
     def build_mixed_model(self, img_input_shape, eye_log_input_shape):
         img_input = tf.keras.Input(shape=img_input_shape)
-        conv1 = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu')(img_input)
+        conv1 = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), activation='relu')(img_input)
         pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(conv1)
-        conv2 = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation='relu')(pool1)
+        conv2 = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), activation='relu')(pool1)
         pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(conv2)
-        flat_1 = tf.keras.layers.Flatten()(pool2)
+        conv3 = tf.keras.layers.Conv2D(256, kernel_size=(3, 3), activation='relu')(pool2)
+        pool3 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(conv3)
+        flat_1 = tf.keras.layers.Flatten()(pool3)
         # flat_1 = tf.keras.layers.TimeDistributed(tf.keras.layers.Flatten())(pool2)
 
         eye_log_input = tf.keras.Input(shape=eye_log_input_shape)
@@ -163,7 +165,7 @@ class DifficultyImageClassifier:
 
         combinedInput = tf.keras.layers.concatenate([flat_1, flat_2])
 
-        dense1 = tf.keras.layers.Dense(128, activation='relu')(combinedInput)
+        dense1 = tf.keras.layers.Dense(256, activation='relu')(combinedInput)
         dropout = tf.keras.layers.Dropout(0.2)(dense1)
         # units must be the number of classes -> we want a vector that looks like this: [0.2, 0.5, 0.3]
         output = tf.keras.layers.Dense(self.n_classes, activation='softmax')(dropout)
@@ -177,13 +179,21 @@ class DifficultyImageClassifier:
         #                epochs=self.n_epochs,
         #                verbose=1)
 
-        tf.keras.utils.plot_model(self.model, "multi_input_model_graph.png")
+        # TODO
+        # tf.keras.utils.plot_model(self.model, "multi_input_model_graph.png")
+
+        checkpoint_path = os.path.join(results_folder, "checkpoints_mixed_data",
+                                       "checkpoint-improvement-{epoch:02d}-{val_categorical_accuracy:.3f}.ckpt")
+        # save checkpoints
+        checkpoint_callback = ModelCheckpoint(checkpoint_path, monitor='val_categorical_accuracy', verbose=1,
+                                              mode="max", save_best_only=True, save_weights_only=True)
 
         history = self.model.fit(self.train_generator,
                                  validation_data=self.validation_generator,
                                  use_multiprocessing=False,
                                  workers=self.num_workers,
                                  epochs=self.n_epochs,
+                                 callbacks=[checkpoint_callback],
                                  verbose=1)
 
         model_name = "Mixed-Model.h5"
