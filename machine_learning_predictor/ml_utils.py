@@ -114,6 +114,8 @@ def show_result_plot(train_history, metric="categorical_accuracy", output_folder
     plt.legend(loc='upper right')
     plt.title('Training and Validation Loss')
 
+    if not os.path.exists(results_folder):
+        os.mkdir(results_folder)
     # save plot to file and show in a new window
     plt.savefig(os.path.join(output_folder, output_name))
     if show:

@@ -27,15 +27,20 @@ class DifficultyImageClassifier:
         print("CPU Count available", cpu_count_available)
         self.num_workers = cpu_count_available[0] if cpu_count_available[0] else 1
 
-    def use_tensorhub(self, input_shape, train_dataset, val_dataset):
+    def use_tensorhub(self, input_shape, train_dataset=None, val_dataset=None):
+        """
+        with 3000 images per difficulty level per particpant after 32 epochs with timeseries gen only 35,7 % (max: 36%);
+        batch_size: 3; sample_size: 50
+        """
+
         hub_url = "https://tfhub.dev/tensorflow/movinet/a0/base/kinetics-600/classification/3"
         encoder = hub.KerasLayer(hub_url, trainable=True)
 
         inputs = tf.keras.layers.Input(shape=input_shape[1:], dtype=tf.float32, name='image')
         encoder_output = encoder(dict(image=inputs))
 
-        x = tf.keras.layers.Dense(256, activation="relu")(encoder_output)
-        x = tf.keras.layers.Dropout(0.2)(x)
+        # x = tf.keras.layers.Dense(256, activation="relu")(encoder_output)
+        x = tf.keras.layers.Dropout(0.2)(encoder_output)
         outputs = tf.keras.layers.Dense(self.n_classes, activation="softmax")(x)
 
         self.model = tf.keras.Model(inputs, outputs)
@@ -43,10 +48,19 @@ class DifficultyImageClassifier:
 
         self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["categorical_accuracy"])
 
+        checkpoint_path = os.path.join(results_folder, "checkpoints_tensorhub",
+                                       "checkpoint-improvement-{epoch:02d}-{val_categorical_accuracy:.3f}.ckpt")
+        # save checkpoints
+        checkpoint_callback = ModelCheckpoint(checkpoint_path, monitor='val_categorical_accuracy', verbose=1,
+                                              mode="max", save_best_only=True, save_weights_only=True)
+        # adjust learning rate
+        lr_callback = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, verbose=1)
+
         history = self.model.fit(train_dataset, validation_data=val_dataset,
                                  use_multiprocessing=False,
                                  workers=self.num_workers,
                                  epochs=32,
+                                 callbacks=[checkpoint_callback, lr_callback],
                                  verbose=1)
 
         show_result_plot(history, metric="categorical_accuracy", output_name="train_history_tensorhub.png",
@@ -55,6 +69,10 @@ class DifficultyImageClassifier:
         val_loss, val_acc = self.model.evaluate(val_dataset, verbose=1)
         print("Validation loss: ", val_loss)
         print("Validation accuracy: ", val_acc * 100)
+
+        model_name = "Tensorhub-Movinet-Model-Generator.h5"
+        model_path = os.path.join(results_folder, model_name)
+        self.model.save(model_path)
 
     def unfreeze_model(self, model, num_layers=20):
         # We unfreeze the top 20 layers per default while leaving BatchNorm layers frozen
