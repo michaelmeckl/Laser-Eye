@@ -8,19 +8,19 @@ from machine_learning_predictor.machine_learning_constants import NEW_IMAGE_SIZE
 from machine_learning_predictor.ml_utils import crop_center_square
 
 
-class CustomImageDataGenerator(tf.keras.utils.Sequence):
-    """
-    Custom Generator that loads, preprocesses and returns the images and their corresponding labels in batches.
-    Structure and implementation based on https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly.
-    The custom Generator inherits from `Sequence` to support multi-threading.
-    """
+class MixedDataGenerator(tf.keras.utils.Sequence):
 
-    def __init__(self, data_frame, x_col_name, y_col_name, sequence_length, batch_size, num_classes=NUMBER_OF_CLASSES,
-                 images_base_path=".", use_grayscale=False, is_train_set=True):
+    def __init__(self, img_data_frame, eye_data_frame, x_col_name, y_col_name, sequence_length, batch_size,
+                 num_classes=NUMBER_OF_CLASSES, images_base_path=".", use_grayscale=False, is_train_set=True):
 
-        self.df = data_frame.copy()
+        self.image_df = img_data_frame.copy()
+        self.eye_df = eye_data_frame.copy()
+
         self.X_col = x_col_name
         self.y_col = y_col_name
+
+        self.eye_log_cols = ["ROLL", "PITCH"]   # TODO
+
         self.sequence_length = sequence_length
         self.batch_size = batch_size
         self.n_classes = num_classes
@@ -29,12 +29,17 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         self.is_train = is_train_set
 
         num_channels = 1 if self.use_grayscale else 3
-        self.output_size = (*NEW_IMAGE_SIZE, num_channels)
+        self.original_image_shape = (*NEW_IMAGE_SIZE, num_channels)
+        self.stacked_image_shape = (self.original_image_shape[0], (self.sequence_length * self.original_image_shape[1]),
+                                    self.original_image_shape[2])
+        self.eye_log_shape = (self.sequence_length, len(self.eye_log_cols))
 
-        # self.new_image_shape = ((self.sequence_length * self.output_size[0]), self.output_size[1],self.output_size[2])
-        self.new_image_shape = (self.output_size[0], (self.sequence_length * self.output_size[1]), self.output_size[2])
+        self.img_n = len(self.image_df)
+        self.eye_n = len(self.eye_df)
+        # these two should be identical !!
+        print("\n[INFO] Image n: ", self.img_n)
+        print(f"[INFO] Eye Log n: {self.eye_n}\n")
 
-        self.n = len(self.df)
         self.indices_list = self.generate_random_index_list()  # create a random order for the samples
         # print(f"Train: {self.is_train}; IndicesList (Len {len(self.indices_list)}): {self.indices_list}")
 
@@ -48,49 +53,19 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         would not necessarily be correct consecutive images if parts in-between were taken for a previous sample!
         """
         sample_indices = []
-        for i in range(0, self.n, self.sequence_length):
+        for i in range(0, self.img_n, self.sequence_length):
             sample_indices.append(i)
 
         random.shuffle(sample_indices)
         return sample_indices
 
     def __len__(self):
-        length = self.n // (self.sequence_length * self.batch_size)
+        length = self.img_n // (self.sequence_length * self.batch_size)
         return length
 
     def on_epoch_end(self):
         # self.indices_list = self.generate_random_index_list()  # each epoch we generate a new indices order
         random.shuffle(self.indices_list)
-        # print(f"\nEpoch finished! Generating new indices list: {self.indices_list}\n", flush=True)
-
-    """
-    def __getitem__(self, index):
-        X = np.empty((self.batch_size, self.sequence_length, *self.output_size), dtype=np.float32)
-        y = np.empty((self.batch_size, self.n_classes))
-
-        for i, batch in enumerate(range(self.batch_size)):
-            if len(self.indices_list) == 0:
-                # print(f"\nself.indices_list is empty in __get_item__()!", flush=True)
-                continue
-
-            # Get a random index from the list
-            start_index = random.choice(self.indices_list)
-            # and remove this index from the list so it won't be used more than once per epoch
-            self.indices_list.remove(start_index)
-
-            sample_rows = self.df[start_index:start_index + self.sequence_length]  # get the corresponding df rows
-            image_sample, sample_label = self.__get_img_data(sample_rows)
-            X[i, ] = image_sample
-            y[i, ] = sample_label
-
-        # move the sequence length dim to the left of the width so the reshape works correctly
-        X = np.moveaxis(X, 1, 2)
-        # and reshape into (batch_size, img_height, (sequence_length * img_width), num_channels)
-        reshaped_X = X.reshape(self.batch_size, *self.new_image_shape)
-
-        # y_new = np.repeat(y, self.output_size[0], axis=0)
-        return reshaped_X, y
-    """
 
     def __getitem__(self, index):
         """
@@ -99,31 +74,58 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         Args:
             index: the number of the current sample from 0 to __len__() - 1
         """
-        X = np.empty((self.batch_size, self.sequence_length, *self.output_size), dtype=np.float32)
-        y = np.empty((self.batch_size, self.n_classes))
+        X_img = np.empty((self.batch_size, self.sequence_length, *self.original_image_shape), dtype=np.float32)
+        y_img = np.empty((self.batch_size, self.n_classes))
         batch_img_names = []
+
+        X_eye = np.empty((self.batch_size, *self.eye_log_shape))
+        y_eye = np.empty((self.batch_size, self.n_classes))
 
         # start from the current batch and take the next 'batch_size' indices
         current_index = index * self.batch_size
         indices = self.indices_list[current_index:current_index + self.batch_size]
 
         for i, start_index in enumerate(indices):
-            sample_rows = self.df[start_index:start_index + self.sequence_length]  # get the corresponding df rows
-            image_sample, sample_label, sample_names = self.__get_image_data(sample_rows)
-            X[i, ] = image_sample
-            y[i, ] = sample_label
+            # get the corresponding df rows
+            image_sample_rows = self.image_df[start_index:start_index + self.sequence_length]
+            image_sample, sample_label, sample_names = self.__get_image_data(image_sample_rows)
+            X_img[i, ] = image_sample
+            y_img[i, ] = sample_label
             batch_img_names.append(sample_names)
 
-        # move the sequence length dim to the left of the width so the reshape works correctly
-        X = np.moveaxis(X, 1, 2)
-        # and reshape into (batch_size, img_height, (sequence_length * img_width), num_channels)
-        reshaped_X = X.reshape(self.batch_size, *self.new_image_shape)
+            eye_sample_rows = self.eye_df[start_index:start_index + self.sequence_length]
+            eye_sample, eye_sample_label = self.__get_eye_data(eye_sample_rows)
+            X_eye[i, ] = eye_sample
+            y_eye[i, ] = eye_sample_label
 
-        # print("Img names in this batch: ", batch_img_names)  # TODO save as dict: {index: batch_img_names} ?
-        return reshaped_X, y
+        # move the sequence length dim to the left of the width so the reshape works correctly
+        X_img = np.moveaxis(X_img, 1, 2)
+        # and reshape into (batch_size, img_height, (sequence_length * img_width), num_channels)
+        reshaped_X = X_img.reshape(self.batch_size, *self.stacked_image_shape)
+
+        # print("Img names in this batch: ", batch_img_names)
+
+        # create mixed output
+        generator_output = [reshaped_X, X_eye]  # image_X and eye_feature_X
+        return generator_output, y_img
+
+    def __get_eye_data(self, sample):
+        eye_log_sample = np.empty(self.eye_log_shape)
+
+        i = 0
+        for idx, row in sample.iterrows():
+            # get all columns from the eye feature dataframe that should be used for training
+            eye_feature = row[self.eye_log_cols].to_numpy()  # and convert to a numpy array
+            eye_log_sample[i, ] = eye_feature
+            i += 1
+
+        y_one_hot = sample[["difficulty_hard", "difficulty_medium", "difficulty_easy"]].values
+        label = y_one_hot[0]  # take only the first as all should be the same (if sequence generation works correctly)
+
+        return eye_log_sample, label
 
     def __get_image_data(self, sample):
-        image_sample = np.empty((self.sequence_length, *self.output_size), dtype=np.float32)
+        image_sample = np.empty((self.sequence_length, *self.original_image_shape), dtype=np.float32)
         img_names = []
 
         # Load and preprocess the images for the current sample
@@ -138,12 +140,6 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
         label = sample[self.y_col].iloc[0]  # take the label of the first element in the sample
         sample_label = DifficultyLevels.get_one_hot_encoding(label)  # convert string label to one-hot-vector
 
-        # efficientNet doesn't need preprocess_input, only input values between [0, 255]
-        # image_sample = tf.keras.applications.resnet50.preprocess_input(image_sample)
-        # image_sample = tf.keras.applications.vgg16.preprocess_input(image_sample)
-        # image_sample = tf.keras.applications.inception_v3.preprocess_input(image_sample)
-        # image_sample = tf.keras.applications.xception.preprocess_input(image_sample)
-
         return image_sample, sample_label, img_names
 
     def __scale_and_convert_image(self, image_path):
@@ -153,25 +149,24 @@ class CustomImageDataGenerator(tf.keras.utils.Sequence):
             image = tf.keras.preprocessing.image.load_img(image_path, color_mode=color_mode)
             image_arr = tf.keras.preprocessing.image.img_to_array(image)
             resized_img = crop_center_square(image_arr)
-
-            # TODO ?
-            # resized_img = tf.image.adjust_contrast(resized_img, 1.2)
-            # resized_img = tf.image.adjust_saturation(resized_img, -0.5)
-
             # normalize pixel values to [0, 1] so the CNN can work with smaller values
-            # scaled_img = resized_img / 255.0
-            return resized_img
+            scaled_img = resized_img / 255.0
+            return scaled_img
 
         except Exception as e:
             sys.stderr.write(f"\nError in processing image '{image_path}': {e}")
             return None
 
     def get_image_shape(self):
-        return self.new_image_shape
+        return self.stacked_image_shape
+
+    def get_eye_log_shape(self):
+        return self.eye_log_shape
 
     def get_example_batch(self, idx=0):
         # we need to make a copy first so we don't actually change the list by taking an example
         indices_copy = self.indices_list.copy()
-        first_sample, labels = self.__getitem__(idx)
+        batch_data, labels = self.__getitem__(idx)
+        first_img_sample, first_eye_sample = batch_data[0], batch_data[1]
         self.indices_list = indices_copy
-        return first_sample, labels
+        return first_img_sample, first_eye_sample, labels

@@ -238,8 +238,8 @@ def setup_data_generation(train_participants, test_participants):
     # print("\nEye Log Train descriptive:\n", eye_log_train_data.describe())
 
     pupil_movement_feature_vectors = {
-        "avg_dist": {"average_pupil_movement_distance"},
-        "dist_angle": {"average_pupil_movement_distance", "movement_angle"},
+        "avg_dist": ["average_pupil_movement_distance"],
+        "dist_angle": ["average_pupil_movement_distance", "movement_angle"],
         "all": ["left_pupil_movement_x", "left_pupil_movement_y", "right_pupil_movement_x", "right_pupil_movement_y",
                 "average_pupil_movement_x", "average_pupil_movement_y", "average_pupil_movement_distance",
                 "time_difference", "movement_angle"],

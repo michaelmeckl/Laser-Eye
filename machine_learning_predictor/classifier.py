@@ -145,6 +145,55 @@ class DifficultyImageClassifier:
         self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["categorical_accuracy"])
         return self.model
 
+    def build_mixed_model(self, img_input_shape, eye_log_input_shape):
+        img_input = tf.keras.Input(shape=img_input_shape)
+        conv1 = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu')(img_input)
+        pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(conv1)
+        conv2 = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation='relu')(pool1)
+        pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(conv2)
+        flat_1 = tf.keras.layers.Flatten()(pool2)
+        # flat_1 = tf.keras.layers.TimeDistributed(tf.keras.layers.Flatten())(pool2)
+
+        eye_log_input = tf.keras.Input(shape=eye_log_input_shape)
+        layer1 = tf.keras.layers.Dense(64, activation='relu')(eye_log_input)
+        layer2 = tf.keras.layers.Dense(128, activation='relu')(layer1)
+        layer3 = tf.keras.layers.Dense(256, activation='relu')(layer2)
+        flat_2 = tf.keras.layers.Flatten()(layer3)
+        # flat_2 = tf.keras.layers.TimeDistributed(tf.keras.layers.Flatten())(layer3)
+
+        combinedInput = tf.keras.layers.concatenate([flat_1, flat_2])
+
+        dense1 = tf.keras.layers.Dense(128, activation='relu')(combinedInput)
+        dropout = tf.keras.layers.Dropout(0.2)(dense1)
+        # units must be the number of classes -> we want a vector that looks like this: [0.2, 0.5, 0.3]
+        output = tf.keras.layers.Dense(self.n_classes, activation='softmax')(dropout)
+
+        self.model = tf.keras.Model(inputs=[img_input, eye_log_input], outputs=output)
+        self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["categorical_accuracy"])
+
+        # self.model.fit(x=[img_gen, eye_gen], y=labels, validation_data=([val_img_gen, val_eye_gen], val_labels),
+        #                use_multiprocessing=False,
+        #                workers=self.num_workers,
+        #                epochs=self.n_epochs,
+        #                verbose=1)
+
+        tf.keras.utils.plot_model(self.model, "multi_input_model_graph.png")
+
+        history = self.model.fit(self.train_generator,
+                                 validation_data=self.validation_generator,
+                                 use_multiprocessing=False,
+                                 workers=self.num_workers,
+                                 epochs=self.n_epochs,
+                                 verbose=1)
+
+        model_name = "Mixed-Model.h5"
+        model_path = os.path.join(results_folder, model_name)
+        self.model.save(model_path)
+
+        show_result_plot(history, metric="categorical_accuracy", output_name="train_history_mixed_model.png",
+                         show=True)
+        return history
+
     def build_and_train_multi_input_model(self, train, val, sequence_length, input_shape: tuple):
         # Idea based on https://stackoverflow.com/questions/53020898/multiple-input-cnn-for-images
         branches = []
@@ -202,10 +251,10 @@ class DifficultyImageClassifier:
         print("Index list len:", len(self.train_generator.indices_list), flush=True)
 
     def train_classifier(self):
-        self.step_size_train = self.train_generator.n // (self.train_generator.sequence_length *
-                                                          self.train_generator.batch_size)
-        self.step_size_val = self.validation_generator.n // (self.validation_generator.sequence_length *
-                                                             self.validation_generator.batch_size)
+        self.step_size_train = self.train_generator.img_n // (self.train_generator.sequence_length *
+                                                              self.train_generator.batch_size)
+        self.step_size_val = self.validation_generator.img_n // (self.validation_generator.sequence_length *
+                                                                 self.validation_generator.batch_size)
 
         model_name = "Difficulty-CNN-Model-Generator.h5"
         model_path = os.path.join(results_folder, model_name)
