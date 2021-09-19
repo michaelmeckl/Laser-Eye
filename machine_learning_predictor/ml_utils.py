@@ -23,7 +23,7 @@ def get_suitable_sample_size(category_size):
     # use a divisor of the amount of images per difficulty category for a participant
     # -> this way their won't be any overlap of label categories or participants per sample!
     sample_size = 1
-    min_sample_size = 50
+    min_sample_size = 30
     for i in range(min_sample_size, 201):
         if category_size % i == 0:
             sample_size = i
@@ -114,6 +114,8 @@ def show_result_plot(train_history, metric="categorical_accuracy", output_folder
     plt.legend(loc='upper right')
     plt.title('Training and Validation Loss')
 
+    if not os.path.exists(results_folder):
+        os.mkdir(results_folder)
     # save plot to file and show in a new window
     plt.savefig(os.path.join(output_folder, output_name))
     if show:
