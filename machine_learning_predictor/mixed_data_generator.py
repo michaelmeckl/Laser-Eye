@@ -9,6 +9,12 @@ from machine_learning_predictor.ml_utils import crop_center_square
 
 
 class MixedDataGenerator(tf.keras.utils.Sequence):
+    """
+    Custom Generator that loads, preprocesses and returns the images, eye log data and their corresponding labels in
+    sequences to be used in a mixed-input model.
+    Structure and implementation is based on https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly.
+    The custom Generator inherits from `Sequence` to support multi-threading.
+    """
 
     def __init__(self, img_data_frame, eye_data_frame, x_col_name, y_col_name, sequence_length, batch_size,
                  num_classes=NUMBER_OF_CLASSES, images_base_path=".", use_grayscale=False, is_train_set=True):
@@ -37,9 +43,9 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
 
         self.img_n = len(self.image_df)
         self.eye_n = len(self.eye_df)
-        # these two should be identical !!
-        print("\n[INFO] Image n: ", self.img_n)
-        print(f"[INFO] Eye Log n: {self.eye_n}\n")
+        print("\nThe following two values must be identical!")
+        print(f"Image df len: {self.img_n}")
+        print(f"Eye Log df len: {self.eye_n}\n")
 
         self.indices_list = self.generate_random_index_list()  # create a random order for the samples
         # print(f"Train: {self.is_train}; IndicesList (Len {len(self.indices_list)}): {self.indices_list}")
@@ -47,10 +53,10 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
     def generate_random_index_list(self):
         """
         Iterates over the indices in the dataframe in order and creates batch-sized chunks so consecutive images
-        will be fed as a sample to the CNN. This way the time-domain can be used as well.
+        will be fed as a sample to the NN. This way the time-domain can be used as well.
         If we were to randomly choose a new start index on every '__get_item__()' - Method and take "batch-size"
         consecutive images from this index, we would have to remove these from the dataset afterwards so they aren't
-        fed more than once to the CNN. However, this would also ruin the time-domain as consecutive images from the df
+        fed more than once to the NN. However, this would also ruin the time-domain as consecutive images from the df
         would not necessarily be correct consecutive images if parts in-between were taken for a previous sample!
         """
         sample_indices = []
@@ -70,14 +76,14 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
 
     def __getitem__(self, index):
         """
-        Return a new sample in the form (X, y) where X is a batch of image samples and y the corresponding labels.
+        Return a new sample in the form (X, y) where X is a list with two elements (a batch of image samples and the
+        batch of numerical data from the eye log) and y the corresponding labels.
 
         Args:
             index: the number of the current sample from 0 to __len__() - 1
         """
         X_img = np.empty((self.batch_size, self.sequence_length, *self.original_image_shape), dtype=np.float32)
         y_img = np.empty((self.batch_size, self.n_classes))
-        batch_img_names = []
 
         X_eye = np.empty((self.batch_size, *self.eye_log_shape))
         y_eye = np.empty((self.batch_size, self.n_classes))
@@ -89,10 +95,9 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
         for i, start_index in enumerate(indices):
             # get the corresponding df rows
             image_sample_rows = self.image_df[start_index:start_index + self.sequence_length]
-            image_sample, sample_label, sample_names = self.__get_image_data(image_sample_rows)
+            image_sample, sample_label = self.__get_image_data(image_sample_rows)
             X_img[i, ] = image_sample
             y_img[i, ] = sample_label
-            batch_img_names.append(sample_names)
 
             eye_sample_rows = self.eye_df[start_index:start_index + self.sequence_length]
             eye_sample, eye_sample_label = self.__get_eye_data(eye_sample_rows)
@@ -104,10 +109,11 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
         # and reshape into (batch_size, img_height, (sequence_length * img_width), num_channels)
         reshaped_X = X_img.reshape(self.batch_size, *self.stacked_image_shape)
 
-        # print("Img names in this batch: ", batch_img_names)
+        # for both batches the labels should be identical if preprocessing worked correct
+        assert (y_eye == y_img).all(), "Error in mixed data generator: labels of image and eye batch are different!"
 
         # create mixed output
-        generator_output = [reshaped_X, X_eye]  # image_X and eye_feature_X
+        generator_output = [reshaped_X, X_eye]
         return generator_output, y_img
 
     def __get_eye_data(self, sample):
@@ -120,14 +126,14 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
             eye_log_sample[i, ] = eye_feature
             i += 1
 
-        y_one_hot = sample[["difficulty_hard", "difficulty_medium", "difficulty_easy"]].values
+        # make sure this is the same order as the order of the one-hot vectors in the DifficultyLevels Enum!
+        y_one_hot = sample[["difficulty_easy", "difficulty_medium", "difficulty_hard"]].values
         label = y_one_hot[0]  # take only the first as all should be the same (if sequence generation works correctly)
 
         return eye_log_sample, label
 
     def __get_image_data(self, sample):
         image_sample = np.empty((self.sequence_length, *self.original_image_shape), dtype=np.float32)
-        img_names = []
 
         # Load and preprocess the images for the current sample
         i = 0
@@ -135,13 +141,12 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
             img_path = row[self.X_col]
             image_path = os.path.join(self.images_base_path, img_path)
             image_sample[i, ] = self.__scale_and_convert_image(image_path)  # load image and resize and scale it
-            img_names.append(img_path)
             i += 1
 
         label = sample[self.y_col].iloc[0]  # take the label of the first element in the sample
         sample_label = DifficultyLevels.get_one_hot_encoding(label)  # convert string label to one-hot-vector
 
-        return image_sample, sample_label, img_names
+        return image_sample, sample_label
 
     def __scale_and_convert_image(self, image_path):
         try:

@@ -29,15 +29,11 @@ def get_suitable_sample_size(category_size):
             sample_size = i
             break
 
-    # TODO
     """
     # fps = get_smallest_fps()
-    fps = 14.3
-
     sample_time_span = 6  # 6 seconds as in the Fridman Paper: "Cognitive Load Estimation in the Wild"
     sample_size = round(fps * sample_time_span)  # the number of images we take as one sample
     """
-
     print("[INFO] Using sample size: ", sample_size)
     return sample_size
 

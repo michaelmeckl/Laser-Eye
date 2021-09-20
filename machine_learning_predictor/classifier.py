@@ -202,6 +202,11 @@ class DifficultyImageClassifier:
 
         show_result_plot(history, metric="categorical_accuracy", output_name="train_history_mixed_model.png",
                          show=True)
+
+        val_loss, val_acc = self.model.evaluate(self.validation_generator, verbose=1)
+        print("Validation loss: ", val_loss)
+        print("Validation accuracy: ", val_acc * 100)
+
         return history
 
     def build_and_train_multi_input_model(self, train, val, sequence_length, input_shape: tuple):
