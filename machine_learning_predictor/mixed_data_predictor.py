@@ -86,7 +86,7 @@ def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetT
 
     # shuffle the dataframe rows but maintain the row content,
     # see https://stackoverflow.com/questions/29576430/shuffle-dataframe-rows
-    blink_dataframe_shuffled = blink_dataframe_ordered.sample(frac=1)
+    # blink_dataframe_ordered = blink_dataframe_ordered.sample(frac=1)
 
     # remove all '(', ')', '[' and ']' in the dataframe
     eye_log_dataframe_ordered.replace(to_replace=r"[\(\)\[\]]", value="", regex=True, inplace=True)
@@ -135,9 +135,9 @@ def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetT
         sys.exit(0)
 
     eye_log_dataframe_ordered.to_csv(os.path.join(ml_data_folder, eye_log_file), index=False)
-    blink_dataframe_shuffled.to_csv(os.path.join(ml_data_folder, blink_log_file), index=False)
+    blink_dataframe_ordered.to_csv(os.path.join(ml_data_folder, blink_log_file), index=False)
 
-    return blink_dataframe_shuffled, eye_log_dataframe_ordered
+    return blink_dataframe_ordered, eye_log_dataframe_ordered
 
 
 def load_pupil_movement_data(participants, dataset_type: DatasetType):
@@ -231,16 +231,9 @@ def merge_participant_image_logs(participant_list, dataset_type: DatasetType):
     return image_data_frame_numbered
 
 
-def get_train_val_data():
-    without_participants = []
-    all_participants = os.listdir(data_folder_path)[:18]  # only take 12 or 18 so the counterbalancing works
-    # remove some participants for testing
-    all_participants = [p for p in all_participants if p not in set(without_participants)]
-
-    # split into train and test participants
-    train_participants, val_participants = split_train_test(all_participants)
-
+def get_train_val_data(train_participants, val_participants):
     # TODO if anything changes remove the existing logs
+    #  also don't use the first part, i.e. the cached data, if running cross - validation !!
     if os.path.exists(ml_data_folder):
         # load existing data from csv files
         print("[INFO] Using cached data")
@@ -311,8 +304,8 @@ def check_data(train_image_data, val_image_data, eye_log_train_data, eye_log_val
     return difficulty_category_size
 
 
-def setup_data_generation(show_examples=False):
-    train_image_data, val_image_data, eye_log_train_data, eye_log_val_data, pupil_move_train, pupil_move_val = get_train_val_data()
+def setup_data_generation(train_participants, val_participants, show_examples=False):
+    train_image_data, val_image_data, eye_log_train_data, eye_log_val_data, pupil_move_train, pupil_move_val = get_train_val_data(train_participants, val_participants)
 
     difficulty_category_size = check_data(train_image_data, val_image_data, eye_log_train_data, eye_log_val_data)
 
@@ -364,9 +357,11 @@ def train_classifier(train_generator, val_generator, batch_size, sample_size, tr
     classifier = DifficultyImageClassifier(train_generator, val_generator, num_classes=NUMBER_OF_CLASSES,
                                            num_epochs=train_epochs)
 
-    classifier.build_mixed_model(img_input_shape=image_shape, eye_log_input_shape=eye_log_shape)
+    train_history, val_accuracy = classifier.build_mixed_model(img_input_shape=image_shape,
+                                                               eye_log_input_shape=eye_log_shape)
     # classifier.evaluate_classifier()
-    return classifier
+
+    return classifier, val_accuracy
 
 
 def test_classifier(classifier, batch_size, sample_size):
@@ -441,8 +436,38 @@ def start_training_and_testing_mixed_model():
 
     set_random_seed()  # set seed for reproducibility
 
-    train_gen, val_gen, num_batches, num_samples = setup_data_generation()
-    difficulty_classifier = train_classifier(train_gen, val_gen, num_batches, num_samples)
+    without_participants = []
+    all_participants = os.listdir(data_folder_path)[:18]  # only take 12 or 18 so the counterbalancing works
+    # remove some participants for testing
+    all_participants = [p for p in all_participants if p not in set(without_participants)]
+
+    train_participants, val_participants = split_train_test(all_participants)
+    train_gen, val_gen, num_batches, num_samples = setup_data_generation(train_participants, val_participants)
+    difficulty_classifier, val_accuracy = train_classifier(train_gen, val_gen, num_batches, num_samples)
+
+    # use code below for cross-validation instead of the 3 lines above:
+    """
+    import gc
+
+    all_accuracies = []
+    n_splits = 5
+    for i in range(n_splits):
+        print(f"\n################## Starting split {i} / {n_splits} ################## \n")
+        train_participants, val_participants = split_train_test(all_participants)  # shuffle and split into train & val
+        # train_participants = (np.array(all_participants)[train_indices]).tolist()
+        # val_participants = (np.array(all_participants)[test_indices]).tolist()
+
+        train_gen, val_gen, num_batches, num_samples = setup_data_generation(train_participants, val_participants)
+        difficulty_classifier, val_accuracy = train_classifier(train_gen, val_gen, num_batches, num_samples)
+
+        all_accuracies.append(val_accuracy)
+        print(f"Validation accuracy for split {i}: {val_accuracy * 100:.2f} %\n")
+        gc.collect()  # manually call garbage collector at the end of each run to prevent OutOfMemory - Errors on GPU
+
+    print(f"Mean accuracy over all splits: {np.mean(all_accuracies):.2f}")
+    print(f"Best accuracy over all splits: {np.max(all_accuracies):.2f}")
+    """
+
     # test_classifier(difficulty_classifier, num_batches, num_samples)
 
 

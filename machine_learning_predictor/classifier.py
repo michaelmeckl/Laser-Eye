@@ -201,13 +201,13 @@ class DifficultyImageClassifier:
         self.model.save(model_path)
 
         show_result_plot(history, metric="categorical_accuracy", output_name="train_history_mixed_model.png",
-                         show=True)
+                         show=False)
 
         val_loss, val_acc = self.model.evaluate(self.validation_generator, verbose=1)
         print("Validation loss: ", val_loss)
         print("Validation accuracy: ", val_acc * 100)
 
-        return history
+        return history, val_acc
 
     def build_and_train_multi_input_model(self, train, val, sequence_length, input_shape: tuple):
         # Idea based on https://stackoverflow.com/questions/53020898/multiple-input-cnn-for-images
