@@ -17,14 +17,11 @@ from machine_learning_predictor.ml_utils import set_random_seed, split_train_tes
     get_suitable_sample_size
 from post_processing.post_processing_constants import post_processing_log_folder
 from sklearn import metrics
-from sklearn.model_selection import cross_val_score, train_test_split, KFold
-from sklearn.compose import ColumnTransformer, make_column_selector
-from sklearn.pipeline import Pipeline
+from sklearn.model_selection import KFold
 from sklearn.metrics import confusion_matrix
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.svm import SVC
 from sklearn.linear_model import Perceptron
-from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 
 
 # make pandas and numpy output more pretty and show complete dataframe
@@ -157,7 +154,6 @@ def load_pupil_movement_data(train_participants):
 
 
 def setup_data_generation(train_participants, test_participants):
-    # TODO always needs to be re-generated if seed or participants are changed!
     if os.path.exists("eye_log_dataframe_ordered_train.csv"):
         # load data from csv
         eye_log_train_data = pd.read_csv("eye_log_dataframe_ordered_train.csv")
@@ -211,21 +207,6 @@ def setup_data_generation(train_participants, test_participants):
     sample_size = get_suitable_sample_size(difficulty_category_size)
     print(f"Sample size: {sample_size}")
 
-    column_trans = ColumnTransformer(
-        [
-            ('scale', StandardScaler(), make_column_selector(dtype_include=np.number)),
-            ('difficulty_category', OneHotEncoder(dtype='int'), ['difficulty_level']),  # one-hot-encoder needs a list
-        ], remainder='passthrough'
-    )
-    # column_trans.fit(eye_log_train_data)
-    # test = column_trans.transform(eye_log_train_data)
-
-    # TODO
-    # transformer = ColumnTransformer(transformers=[('one_hot', OneHotEncoder(), ["difficulty_level"])])
-    # pipeline = Pipeline(steps=[('t', transformer), ('m', model)])
-    # pipeline.fit(train_X, train_y)
-    # pipeline.predict(X_val)
-
     # print("\nCorrelations_Pupil_Move_Train:\n", pupil_move_train.corr())
     # print("\nCorrelations_Pupil_Move_Val:\n", pupil_move_val.corr())
 
@@ -269,11 +250,6 @@ def setup_data_generation(train_participants, test_participants):
                 "LEFT_EYE_WIDTH", "RIGHT_EYE_WIDTH", "LEFT_EYE_HEIGHT", "RIGHT_EYE_HEIGHT", "ROLL", "PITCH", "YAW"],
     }
 
-    # First results:
-    # all blink features mit svm 50 %
-    # best correlation blink features mit perceptron 50 %
-    # all blink features mit mlp (one-hot) und batch_size auskommentiert über 70 epochs 58 %
-
     """
     X_train = eye_log_train_data[eye_log_feature_vectors["all"]].values
     X_val = eye_log_val_data[eye_log_feature_vectors["all"]].values
@@ -299,8 +275,6 @@ def setup_data_generation(train_participants, test_participants):
     y_train_one_hot = pupil_move_train[["difficulty_hard", "difficulty_medium", "difficulty_easy"]].values
     y_val_one_hot = pupil_move_val[["difficulty_hard", "difficulty_medium", "difficulty_easy"]].values
 
-    print(X_train[:5])
-
     """
     # show scatterplot for all difficulty levels
     plt.scatter(*X_val[y_val == 2].T, label="hard", c='steelblue')
@@ -311,9 +285,6 @@ def setup_data_generation(train_participants, test_participants):
     plt.legend()
     plt.show()
     """
-
-    # TODO use this to get every sample_size-th row of df starting from the first
-    # sampled_df = eye_log_train_data[0::sample_size]
 
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
@@ -334,11 +305,6 @@ def train_perceptron(X_train, y_train, X_val, y_val):
     print("Prediction Perceptron:\n", prediction_perceptron)
     print(f"Accuracy: {metrics.accuracy_score(y_val, prediction_perceptron) :.2%} correctly classified!")
     print(f"Bal. Accuracy: {metrics.balanced_accuracy_score(y_val, prediction_perceptron):.2%} correctly classified!")
-
-    # class_names = DifficultyLevels.values()
-    # cm = confusion_matrix(y_val, prediction_perceptron, normalize="all")
-    # print(cm)
-    # plot_confusion_matrix(cm, class_names)
 
     accuracy = metrics.accuracy_score(y_val, prediction_perceptron)
     return accuracy
@@ -382,20 +348,6 @@ def svm_plot(svm_classifier, X, y):
     plt.plot(x_0 - margin_vektor[0, 0], x_1 - margin_vektor[0, 1], linewidth=2, linestyle="--", c="orange", zorder=0)
 
 
-def plot_confusion_matrix(cm, class_names):
-    plt.matshow(cm, cmap=plt.cm.Blues)
-    plt.colorbar()
-    ticks = np.array(range(len(class_names)))
-    plt.xticks(ticks, class_names)
-    plt.yticks(ticks, class_names)
-    for (pos_y, pos_x), value in np.ndenumerate(cm):
-        plt.text(pos_x, pos_y, value, ha='center', va='center', size=12)
-
-    plt.xlabel('Klassifikatorvorhersage')
-    plt.ylabel('Referenzstandard')
-    plt.show()
-
-
 def build_model(input_shape):
     print("\nInput_shape: ", input_shape)
 
@@ -412,7 +364,7 @@ def build_model(input_shape):
     model = tf.keras.Model(inputs=inputs, outputs=output, name="mlp_model")
     print(model.summary())
 
-    # TODO 'sparse_categorical_crossentropy' as loss instead
+    # 'sparse_categorical_crossentropy' as loss instead?
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
     return model
 
@@ -435,11 +387,6 @@ def train_mlp(X_train, y_train, X_val, y_val, batch_size):
     print("Validation loss: ", val_loss)
     print("Validation accuracy: ", val_acc * 100)
 
-    # TODO mit kerasClassifier:
-    """
-    keras_classifier = KerasClassifier(build_classifier, epochs=20, batch_size=256,verbose = 0, l2 = 0.1)
-    """
-
 
 def start_training_mlp():
     set_random_seed()  # set seed for reproducibility
@@ -456,20 +403,19 @@ def start_training_mlp():
     all_accuracies = []
     kfold = KFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
 
-    # TODO use train test split instead? and shuffle manually each time?
-    for i, (train_indices, test_indices) in enumerate(kfold.split(all_participants, 4)):
-        print("Train indices: ", train_indices)
-        print("Test indices: ", test_indices)
+    n_splits = 5
+    for i in range(n_splits):
+        random.shuffle(all_participants)
+        train_participants, test_participants = split_train_test(all_participants)
+        # train_participants = (np.array(all_participants)[train_indices]).tolist()
+        # test_participants = (np.array(all_participants)[test_indices]).tolist()
 
-        train_participants = (np.array(all_participants)[train_indices]).tolist()
-        test_participants = (np.array(all_participants)[test_indices]).tolist()
-
-        print("Train participants for split: ", train_participants)
+        print("\nTrain participants for split: ", train_participants)
         print("Test participants for split: ", test_participants)
 
         accuracy_val = setup_data_generation(train_participants, test_participants)
         all_accuracies.append(accuracy_val)
-        print(f"Accuracy for split {i}: {accuracy_val}")
+        print(f"Accuracy for split {i}: {accuracy_val}\n")
 
     print("Mean accuracy over all splits: ", np.mean(all_accuracies))
     print("Best accuracy over all splits: ", np.max(all_accuracies))
@@ -477,3 +423,8 @@ def start_training_mlp():
 
 if __name__ == "__main__":
     start_training_mlp()
+
+    # First results:
+    # all blink features mit svm 50 %
+    # best correlation blink features mit perceptron 50 %
+    # all blink features mit mlp (one-hot) und batch_size auskommentiert über 70 epochs 58 %
