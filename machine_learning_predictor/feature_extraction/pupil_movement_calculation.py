@@ -138,22 +138,18 @@ class PupilMovementCalculation:
         ang2 = np.arctan2(*p2[::-1])
         return np.rad2deg((ang1 - ang2) % (2 * np.pi))
 
-    def calculate_frequencies(data_array):
-        ff_transformed_data = []
-        for index, array in enumerate(data_array):
-            try:
-                data = np.array(array)
-                # highest_quartile_list = sorted((data))[int(len(data)*0.75):]
-                # lowest_quartile_list = sorted((data))[0:int(len(data) * 0.25)]
-                # data = np.setdiff1d(data, highest_quartile_list)
-                # data = np.setdiff1d(data, lowest_quartile_list)
+    def calculate_frequencies(self, data_array):
+        try:
+            # highest_quartile_list = sorted((data))[int(len(data)*0.75):]
+            # lowest_quartile_list = sorted((data))[0:int(len(data) * 0.25)]
+            # data = np.setdiff1d(data, highest_quartile_list)
+            # data = np.setdiff1d(data, lowest_quartile_list)
 
-                # fft computing and normalization and
-                # use only first half as the function is mirrored
-                fourier = np.abs(np.fft.fft(data))
+            # fft computing and normalization and
+            # use only first half as the function is mirrored
+            fourier = np.abs(np.fft.fft(data_array))
 
-                # tolist() to convert from np.ndarray
-                ff_transformed_data.append(fourier[0:int(len(fourier))].tolist())
-            except Exception as e:
-                print(e)
-        return ff_transformed_data
+            # tolist() to convert from np.ndarray
+            return fourier[0:int(len(fourier))]
+        except Exception as e:
+            print(e)

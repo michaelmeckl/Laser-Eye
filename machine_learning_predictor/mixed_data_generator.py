@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import tensorflow as tf
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
+from machine_learning_predictor.feature_extraction.pupil_movement_calculation import PupilMovementCalculation
 from machine_learning_predictor.machine_learning_constants import NEW_IMAGE_SIZE, NUMBER_OF_CLASSES
 from machine_learning_predictor.ml_utils import crop_center_square
 
@@ -27,6 +28,8 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
 
         # self.eye_log_cols = ["ROLL", "PITCH"]   # TODO
         self.eye_log_cols = ["average_pupil_movement_distance", "movement_angle"]
+
+        self.pupil_movement_calculator = PupilMovementCalculation()
 
         self.sequence_length = sequence_length
         self.batch_size = batch_size
@@ -123,7 +126,9 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
         for idx, row in sample.iterrows():
             # get all columns from the eye feature dataframe that should be used for training
             eye_feature = row[self.eye_log_cols].to_numpy()  # and convert to a numpy array
-            eye_log_sample[i, ] = eye_feature
+            transformed_eye_features = self.pupil_movement_calculator.calculate_frequencies(eye_feature)
+
+            eye_log_sample[i, ] = transformed_eye_features
             i += 1
 
         # make sure this is the same order as the order of the one-hot vectors in the DifficultyLevels Enum!
