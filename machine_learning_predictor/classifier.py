@@ -149,7 +149,7 @@ class DifficultyImageClassifier:
 
         print(self.model.summary())
         # needs graphviz and pydot to work!
-        tf.keras.utils.plot_model(self.model, "mixed_model_graph.png", show_shapes=True)
+        # tf.keras.utils.plot_model(self.model, "mixed_model_graph.png", show_shapes=True)
 
         checkpoint_path = os.path.join(results_folder, "checkpoints_mixed_data",
                                        "checkpoint-improvement-{epoch:02d}-{val_categorical_accuracy:.3f}.ckpt")
