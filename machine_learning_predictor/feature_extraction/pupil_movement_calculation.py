@@ -148,8 +148,7 @@ class PupilMovementCalculation:
             # fft computing and normalization and
             # use only first half as the function is mirrored
             fourier = np.abs(np.fft.fft(data_array))
-
-            # tolist() to convert from np.ndarray
             return fourier[0:int(len(fourier))]
         except Exception as e:
-            print(e)
+            print(f"Exception when trying to perform fast fourier transformation: {e}\n")
+            return data_array
