@@ -5,7 +5,8 @@ import os
 
 class PupilMovementCalculation:
 
-    def calculate_pupil_movement(self, outputdir="./SVM/data/pupil_movement_data", inputdir="./SVM/data/eye_movement_data"):
+    def calculate_pupil_movement(self, outputdir="./feature_extraction/data/pupil_movement_data",
+                                 inputdir="./feature_extraction/data/eye_movement_data"):
 
         for filename in os.listdir(inputdir):
             print("#######################")
@@ -19,7 +20,7 @@ class PupilMovementCalculation:
                                                       'average_pupil_movement_distance', 'movement_angle',
                                                       'strong_movement', 'direction_change', 'time_difference',
                                                       'time_stamp'])
-            eye_movement_df = pd.read_csv(f"./SVM/data/{filename}", converters={"column_name": eval})
+            eye_movement_df = pd.read_csv(f"./feature_extraction/data/{filename}", converters={"column_name": eval})
             rowCount = eye_movement_df.shape[0]
             print(f"länge: {rowCount}")
             last_left_pupil_position = None

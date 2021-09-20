@@ -128,7 +128,8 @@ def process_images(eye_tracker, participants_folders=list[str]):
 
                 # get the original timestamp from image so it can be associated later
                 image_timestamp = get_timestamp_from_image(image_path)
-                processed_frame = eye_tracker.process_current_frame(current_image, image_timestamp)
+                processed_frame = eye_tracker.process_current_frame(current_image, participant, difficulty_level,
+                                                                    image_timestamp)
 
                 frame_count += 1
                 show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
@@ -136,6 +137,7 @@ def process_images(eye_tracker, participants_folders=list[str]):
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
+            eye_tracker.movement_tracker.save_data(participant, difficulty_level)
             # after we finished one difficulty folder, log all information that was recorded for it
             eye_tracker.log_information()
             # and reset the blink detector

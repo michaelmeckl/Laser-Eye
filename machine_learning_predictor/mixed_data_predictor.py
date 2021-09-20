@@ -22,7 +22,6 @@ from post_processing.post_processing_constants import download_folder, post_proc
 from machine_learning_predictor.mixed_data_generator import MixedDataGenerator
 from machine_learning_predictor.classifier import DifficultyImageClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.compose import ColumnTransformer, make_column_selector
 
 
 ############### Global vars
@@ -142,7 +141,7 @@ def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetT
 
 def load_pupil_movement_data(participants, dataset_type: DatasetType):
     pupil_movement_dataframe = pd.DataFrame()
-    pupil_movement_path = "pupil_movement_data_2"
+    pupil_movement_path = os.path.join("feature_extraction", "data", "pupil_movement_data")
 
     for participant in participants:
         # TODO this assumes that the csv files for each participant are in the correct difficulty order!!

@@ -15,7 +15,6 @@ from tracking_service.face_detector import MxnetDetectionModel
 from tracking.tracking_utils import extract_image_region
 from post_processing_service.head_pose import HeadPoseEstimator
 from post_processing_service.iris_localization import IrisLocalizationModel
-from post_processing_service.pupil_tracker import PupilTracker
 from post_processing_service.gaze_movement_tracker import GazeMovementTracker
 
 
@@ -44,7 +43,6 @@ class EyeTracker:
 
         self.saccade_detector = SaccadeFixationDetector()
         self.blink_detector = BlinkDetector(show_annotation=self.__annotation_enabled)
-        self.pupil_tracker = PupilTracker()
         self.movement_tracker = GazeMovementTracker()
 
         weights_path = pathlib.Path(__file__).parent.parent.parent / "weights"
@@ -73,10 +71,11 @@ class EyeTracker:
     def reset_blink_detector(self):
         self.blink_detector.reset_blink_detection()
 
-    def process_current_frame(self, frame: np.ndarray, participant, difficulty, timestamp):
+    def process_current_frame(self, frame: np.ndarray, participant, difficulty, frame_timestamp):
         """
         Args:
             frame: video frame in the format [width, height, channels]
+            frame_timestamp: timestamp of this frame
         """
 
         # processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
@@ -88,6 +87,9 @@ class EyeTracker:
 
         for landmarks in self.face_alignment.get_landmarks(self.__current_frame, bboxes, calibrate=True):
             self.__landmarks = landmarks
+
+            if self.__annotation_enabled:
+                self.__show_landmarks()
 
             # calculate head pose
             self.set_camera_matrix(frame_width=frame.shape[1], frame_height=frame.shape[0])
@@ -115,29 +117,26 @@ class EyeTracker:
 
             self.__left_pupil_diameter, self.__right_pupil_diameter = detect_pupils(left_eye_bbox, right_eye_bbox,
                                                                                     self.__annotation_enabled)
-            self.__log(eye_region_bbox)
+            self.__log(eye_region_bbox, frame_timestamp)
 
             # new_eye_region = improve_image(eye_region_bbox)
             # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
 
             detect_pupils(cropped_l_e_img=left_eye_bbox, cropped_r_e_img=right_eye_bbox)
 
-            self.pupil_tracker.set_current_frame_vals(self.__pupils)
-            #self.pupil_tracker.calculate_current_delta()
             self.movement_tracker.save_eye_data_to_data_frame((self.__landmarks[88, 0], self.__landmarks[88, 1]),
-                                                           (self.__landmarks[38, 0], self.__landmarks[38, 1]),
-                                                           (self.__landmarks[89, 0], self.__landmarks[87, 1]),
-                                                           (self.__landmarks[35, 0], self.__landmarks[33, 1]),
-                                                           self.__landmarks[93, 0]- self.__landmarks[89, 0],
-                                                           self.__landmarks[87, 1]- self.__landmarks[94, 1],
-                                                           self.__landmarks[39, 0] - self.__landmarks[35, 0],
-                                                           self.__landmarks[33, 1] - self.__landmarks[40, 1],
-                                                           difficulty, participant, timestamp
-                                                           )
+                                                              (self.__landmarks[38, 0], self.__landmarks[38, 1]),
+                                                              (self.__landmarks[89, 0], self.__landmarks[87, 1]),
+                                                              (self.__landmarks[35, 0], self.__landmarks[33, 1]),
+                                                              self.__landmarks[93, 0] - self.__landmarks[89, 0],
+                                                              self.__landmarks[87, 1] - self.__landmarks[94, 1],
+                                                              self.__landmarks[39, 0] - self.__landmarks[35, 0],
+                                                              self.__landmarks[33, 1] - self.__landmarks[40, 1],
+                                                              difficulty, participant, frame_timestamp)
 
         return self.__current_frame
 
-    def __log(self, eye_region_bbox):
+    def __log(self, eye_region_bbox, log_timestamp):
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
             ProcessingData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
@@ -154,9 +153,6 @@ class EyeTracker:
             # ProcessingData.FACE_LANDMARKS.name: self.__landmarks,
         })
 
-        # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
-        # can't be matched later!
-        log_timestamp = get_timestamp()
         self.__logger.log_frame_data(frame_id=log_timestamp, data=self.__tracked_data)
 
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)
@@ -175,6 +171,17 @@ class EyeTracker:
 
     def __save_post_processing_data(self):
         self.__logger.save_tracking_data()
+
+    def __show_landmarks(self):
+        frame_copy = self.__current_frame.copy()
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        for i, landmark in enumerate(self.__landmarks):
+            cv2.putText(frame_copy, f"{i}", (int(self.__landmarks[i][0] - 3), int(self.__landmarks[i][1] - 3)),
+                        font, 0.25, (255, 255, 255), 1)
+            cv2.circle(frame_copy, (int(self.__landmarks[i][0]), int(self.__landmarks[i][1])), 1, (0, 255, 0), 1,
+                       cv2.LINE_AA)
+
+        show_image_window(frame_copy, window_name="numbered_landmarks", x_pos=1200, y_pos=50)
 
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
@@ -307,17 +314,8 @@ class EyeTracker:
 
     def __draw_face_landmarks(self):
         frame_copy = self.__current_frame.copy()  # make a copy so we don't edit the original frame
-        for index, mark in enumerate(self.__landmarks.reshape(-1, 2).astype(int)):
-            if index == 35:
-                color = (1,1,255)
-            elif index == 38:
-                color = (255,0,255)
-            else:
-                color = (index*5,255,255)
-            cv2.circle(frame_copy, tuple(mark), radius=1, color=color, thickness=-1)
-
-            if index in [89, 87, 35, 38, 93]:
-                cv2.putText(frame_copy,f"{index}", tuple(mark), cv2.FONT_HERSHEY_COMPLEX,0.5, color, 1)
+        for mark in self.__landmarks.reshape(-1, 2).astype(int):
+            cv2.circle(frame_copy, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
         show_image_window(frame_copy, window_name="face landmarks", x_pos=800, y_pos=350)
 
     def __track_gaze(self):

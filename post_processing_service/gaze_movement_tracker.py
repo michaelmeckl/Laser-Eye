@@ -1,11 +1,12 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
+
+import os
 import pandas as pd
-import numpy as np
-import math
 
 
-SEQUENZ_LENGTH = 200
+SEQUENCE_LENGTH = 200
+
 
 class GazeMovementTracker:
     def __init__(self):
@@ -19,9 +20,14 @@ class GazeMovementTracker:
         self.pupil_movement_array = []
         self.difficulties = []
         self.movement_df = pd.DataFrame(
-                columns=['participant', 'difficulty', 'left_pupil_position', 'right_pupil_position', 'left_eye_position', 'right_eye_position', 'left_eye_size_x','right_eye_size_x','left_eye_size_y','right_eye_size_y', 'time_stamp'])
+            columns=['participant', 'difficulty', 'left_pupil_position', 'right_pupil_position', 'left_eye_position',
+                     'right_eye_position', 'left_eye_size_x', 'right_eye_size_x', 'left_eye_size_y', 'right_eye_size_y',
+                     'time_stamp'])
 
-    def save_eye_data_to_data_frame(self, left_pupil_position, right_pupil_position, left_eye_position, right_eye_position, left_eye_size_x,  left_eye_size_y, right_eye_size_x, right_eye_size_y, difficulty, participant, timestamp):
+    def save_eye_data_to_data_frame(self, left_pupil_position, right_pupil_position, left_eye_position,
+                                    right_eye_position, left_eye_size_x, left_eye_size_y, right_eye_size_x,
+                                    right_eye_size_y, difficulty, participant, timestamp):
+
         self.movement_df = self.movement_df.append({'participant': participant, 'difficulty': difficulty,
                                                     'left_pupil_position': left_pupil_position,
                                                     'right_pupil_position': right_pupil_position,
@@ -32,10 +38,12 @@ class GazeMovementTracker:
                                                     'left_eye_size_y': left_eye_size_y,
                                                     'right_eye_size_y': right_eye_size_y,
                                                     'time_stamp': timestamp},
-                                                     ignore_index=True)
+                                                   ignore_index=True)
 
     def save_data(self, participant, difficulty):
-        self.movement_df.to_csv(f"../machine_learning_predictor/SVM/data/eye_movement_data/eye_movement_{participant}_{difficulty}.csv", index=False)
+        eye_movement_path = os.path.join("..", "machine_learning_predictor", "feature_extraction", "eye_movement_data",
+                                         f"eye_movement_{participant}_{difficulty}.csv")
+        self.movement_df.to_csv(eye_movement_path, index=False)
         self.movement_df = pd.DataFrame(
             columns=['participant', 'difficulty', 'left_pupil_position', 'right_pupil_position', 'left_eye_position',
                      'right_eye_position', 'left_eye_size_x', 'right_eye_size_x', 'left_eye_size_y', 'right_eye_size_y',
