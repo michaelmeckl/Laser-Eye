@@ -311,11 +311,11 @@ def setup_data_generation(train_participants, val_participants, show_examples=Fa
 
     # scale & standardize numerical data first,
     # see https://stackoverflow.com/questions/24645153/pandas-dataframe-columns-scaling-with-sklearn
+    scaler = StandardScaler()
     # TODO select the correct columns for standard scaler!
     feature_columns = ['left_pupil_movement_x', 'left_pupil_movement_y', 'right_pupil_movement_x',
                        'right_pupil_movement_y', 'average_pupil_movement_x', 'average_pupil_movement_y',
                        'average_pupil_movement_distance', 'movement_angle']
-    scaler = StandardScaler()
     # only fit once (on the training data) and use the fitted scaler on the validation and test data
     pupil_move_train[feature_columns] = scaler.fit_transform(pupil_move_train[feature_columns])
     pupil_move_val[feature_columns] = scaler.transform(pupil_move_val[feature_columns])
@@ -327,7 +327,7 @@ def setup_data_generation(train_participants, val_participants, show_examples=Fa
     sample_size = get_suitable_sample_size(difficulty_category_size)  # TODO
     print(f"Sample size: {sample_size} (Train data len: {len(train_image_data)}, val data len: {len(val_image_data)})")
 
-    use_gray = False
+    use_gray = True
     train_generator = MixedDataGenerator(img_data_frame=train_image_data, eye_data_frame=pupil_move_train,
                                          x_col_name="image_path", y_col_name="difficulty",
                                          sequence_length=sample_size, batch_size=batch_size,
