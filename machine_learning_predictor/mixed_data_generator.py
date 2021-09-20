@@ -25,11 +25,13 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
 
         self.X_col = x_col_name
         self.y_col = y_col_name
-
         # self.eye_log_cols = ["ROLL", "PITCH"]   # TODO
         self.eye_log_cols = ["average_pupil_movement_distance", "movement_angle"]
 
-        self.pupil_movement_calculator = PupilMovementCalculation()
+        self.apply_fourier_transform = True
+
+        if self.apply_fourier_transform:
+            self.pupil_movement_calculator = PupilMovementCalculation()
 
         self.sequence_length = sequence_length
         self.batch_size = batch_size
@@ -126,10 +128,11 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
         for idx, row in sample.iterrows():
             # get all columns from the eye feature dataframe that should be used for training
             eye_feature = row[self.eye_log_cols].to_numpy()  # and convert to a numpy array
-            transformed_eye_features = self.pupil_movement_calculator.calculate_frequencies(eye_feature)
-
-            eye_log_sample[i, ] = transformed_eye_features
+            eye_log_sample[i, ] = eye_feature
             i += 1
+
+        if self.apply_fourier_transform:
+            eye_log_sample = self.pupil_movement_calculator.calculate_frequencies(eye_log_sample)
 
         # make sure this is the same order as the order of the one-hot vectors in the DifficultyLevels Enum!
         y_one_hot = sample[["difficulty_easy", "difficulty_medium", "difficulty_hard"]].values
