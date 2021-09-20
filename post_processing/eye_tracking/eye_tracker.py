@@ -181,7 +181,7 @@ class EyeTracker:
             cv2.circle(frame_copy, (int(self.__landmarks[i][0]), int(self.__landmarks[i][1])), 1, (0, 255, 0), 1,
                        cv2.LINE_AA)
 
-        show_image_window(frame_copy, window_name="numbered_landmarks", x_pos=1200, y_pos=50)
+        show_image_window(frame_copy, window_name="numbered_landmarks", x_pos=1000, y_pos=450)
 
     def __get_eye_features(self):
         self.__eye_markers = np.take(self.__landmarks, self.face_alignment.eye_bound, axis=0)
@@ -214,7 +214,7 @@ class EyeTracker:
         self.__pupils = np.array([pupil_left, pupil_right])
 
         if self.__annotation_enabled:
-            show_image_window(frame_copy, window_name="pupils", x_pos=1000, y_pos=50)
+            show_image_window(frame_copy, window_name="pupils", x_pos=1000, y_pos=150)
 
         if self.__debug:
             print(f"Pupil left: {pupil_left}")
@@ -294,8 +294,8 @@ class EyeTracker:
 
         gray_frame = cv2.cvtColor(self.__current_frame, cv2.COLOR_BGR2GRAY)
         eye_mask = cv2.bitwise_and(gray_frame, gray_frame, mask=mask)
-        if self.__annotation_enabled and eye_mask is not None:
-            show_image_window(eye_mask, "Eye Mask", 320, 450)
+        # if self.__annotation_enabled and eye_mask is not None:
+        #     show_image_window(eye_mask, "Eye Mask", 320, 450)
 
         left_eye_box_small = extract_image_region(eye_mask, left_eye_x_min, left_eye_y_min, left_eye_x_max,
                                                   left_eye_y_max, padding=0)
@@ -316,7 +316,7 @@ class EyeTracker:
         frame_copy = self.__current_frame.copy()  # make a copy so we don't edit the original frame
         for mark in self.__landmarks.reshape(-1, 2).astype(int):
             cv2.circle(frame_copy, tuple(mark), radius=1, color=(0, 0, 255), thickness=-1)
-        show_image_window(frame_copy, window_name="face landmarks", x_pos=800, y_pos=350)
+        show_image_window(frame_copy, window_name="face landmarks", x_pos=800, y_pos=450)
 
     def __track_gaze(self):
         # landmarks[[35, 89]] and landmarks[[39, 93]] are the start and end marks
@@ -390,7 +390,7 @@ class EyeTracker:
             frame_copy = frame.copy()
             cv2.circle(frame_copy, tuple(pupils[0].astype(int)), 1, (0, 255, 255), -1)
             cv2.circle(frame_copy, tuple(pupils[1].astype(int)), 1, (0, 255, 255), -1)
-            show_image_window(frame_copy, window_name="pupil centers", x_pos=600, y_pos=50)
+            show_image_window(frame_copy, window_name="pupil centers", x_pos=600, y_pos=150)
 
         return theta, pha, delta.T
 
@@ -404,4 +404,4 @@ class EyeTracker:
         cv2.arrowedLine(src, tuple(self.__pupils[1].astype(int)),
                         tuple((offset + self.__pupils[1]).astype(int)),
                         arrow_color, 2)
-        show_image_window(src, window_name="gaze direction", x_pos=1000, y_pos=350)
+        show_image_window(src, window_name="gaze direction", x_pos=1200, y_pos=150)

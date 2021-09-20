@@ -19,7 +19,7 @@ def apply_threshold(eye_img, threshold_val=20, is_gray=False, show_annotation=Fa
     _, threshold_eye_img = cv2.threshold(eye_img, threshold_val, 255, cv2.THRESH_BINARY)
     if show_annotation and threshold_eye_img is not None:
         # threshold_eye_img = cv2.resize(threshold_eye_img, None, fx=5, fy=5)
-        show_image_window(threshold_eye_img, window_name="Threshold eye_img: ", x_pos=300, y_pos=200)
+        show_image_window(threshold_eye_img, window_name="Threshold eye_img: ", x_pos=300, y_pos=300)
 
     return threshold_eye_img
 
@@ -96,11 +96,11 @@ def detect_pupils(cropped_l_e_img, cropped_r_e_img, show_annotation=False):
         if center_l and radius_l:
             cv2.circle(cropped_l_e_img, tuple(np.array([center_l[0], center_l[1]]).astype(int)),
                        int(round(radius_l)), (255, 34, 34))
-            show_image_window(cropped_l_e_img, window_name="left eye", x_pos=20, y_pos=50)
+            show_image_window(cropped_l_e_img, window_name="left eye", x_pos=20, y_pos=150)
         if center_r and radius_r:
             cv2.circle(cropped_r_e_img, tuple(np.array([center_r[0], center_r[1]]).astype(int)),
                        int(round(radius_r)), (255, 34, 34))
-            show_image_window(cropped_r_e_img, window_name="right eye", x_pos=300, y_pos=50)
+            show_image_window(cropped_r_e_img, window_name="right eye", x_pos=300, y_pos=150)
 
     return 2 * radius_l, 2 * radius_r  # return the diameter of both pupils
 
