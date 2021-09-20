@@ -69,10 +69,11 @@ class EyeTracker:
     def reset_blink_detector(self):
         self.blink_detector.reset_blink_detection()
 
-    def process_current_frame(self, frame: np.ndarray):
+    def process_current_frame(self, frame: np.ndarray, frame_timestamp):
         """
         Args:
             frame: video frame in the format [width, height, channels]
+            frame_timestamp: timestamp of this frame
         """
 
         # processed_frame = preprocess_frame(frame, kernel_size=3, keep_dim=True)
@@ -114,14 +115,14 @@ class EyeTracker:
 
             self.__left_pupil_diameter, self.__right_pupil_diameter = detect_pupils(left_eye_bbox, right_eye_bbox,
                                                                                     self.__annotation_enabled)
-            self.__log(eye_region_bbox)
+            self.__log(eye_region_bbox, frame_timestamp)
 
             # new_eye_region = improve_image(eye_region_bbox)
             # self.__logger.log_image("eye_regions_improved", "region", new_eye_region, get_timestamp())
 
         return self.__current_frame
 
-    def __log(self, eye_region_bbox):
+    def __log(self, eye_region_bbox, log_timestamp):
         # fill dict with all relevant data so we don't have to pass all params manually
         self.__tracked_data.update({
             ProcessingData.HEAD_POS_ROLL_PITCH_YAW.name: (self.__roll, self.__pitch, self.__yaw),
@@ -138,9 +139,6 @@ class EyeTracker:
             # ProcessingData.FACE_LANDMARKS.name: self.__landmarks,
         })
 
-        # save timestamp separately as it has to be the same for all the frames and the log data! otherwise it
-        # can't be matched later!
-        log_timestamp = get_timestamp()
         self.__logger.log_frame_data(frame_id=log_timestamp, data=self.__tracked_data)
 
         self.__logger.log_image("eye_regions", "region", eye_region_bbox, log_timestamp)

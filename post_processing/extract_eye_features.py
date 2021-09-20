@@ -10,6 +10,7 @@ import time
 import cv2
 from datetime import datetime
 import pandas as pd
+from post_processing.assign_load_classes import get_timestamp_from_image
 from post_processing.eye_tracking.eye_tracker import EyeTracker
 from post_processing.eye_tracking.image_utils import show_image_window
 from post_processing.post_processing_constants import download_folder, post_processing_log_folder
@@ -124,7 +125,10 @@ def process_images(eye_tracker, participants_folders=list[str]):
             for idx, row in sub_df.iterrows():
                 image_path = row["image_path"]
                 current_image = cv2.imread(image_path)
-                processed_frame = eye_tracker.process_current_frame(current_image)
+
+                # get the original timestamp from image so it can be associated later
+                image_timestamp = get_timestamp_from_image(image_path)
+                processed_frame = eye_tracker.process_current_frame(current_image, image_timestamp)
 
                 frame_count += 1
                 show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
