@@ -101,7 +101,7 @@ class BlinkDetector:
             cv2.putText(frame_copy, f"Onset: {self.__blink_onset}", (10, 50), font, 0.5, (0, 0, 255), 2)
             cv2.putText(frame_copy, f"EAR: {ear:.2f}", (10, 80), font, 0.5, (0, 0, 255), 2)
             cv2.putText(frame_copy, f"LAST EAR: {self.__last_ratio:.2f}", (10, 120), font, 0.5, (0, 0, 255), 2)
-            show_image_window(frame_copy, window_name="blink detection", x_pos=600, y_pos=350)
+            show_image_window(frame_copy, window_name="blink detection", x_pos=600, y_pos=450)
 
         if self.__last_ratio - ear > diff_threshold:
             # If the current EAR is far smaller than the last one (i.e. the difference is greater than the specified

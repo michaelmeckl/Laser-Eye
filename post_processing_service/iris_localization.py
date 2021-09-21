@@ -94,7 +94,7 @@ class IrisLocalizationModel:
         landmarks = landmarks.astype(np.int32)
         frame_copy = frame.copy()
         cv2.polylines(frame_copy, landmarks, close, color, thickness, cv2.LINE_AA)
-        show_image_window(frame_copy, window_name="eye markers", x_pos=800, y_pos=50)
+        show_image_window(frame_copy, window_name="eye markers", x_pos=800, y_pos=150)
 
 
 if __name__ == "__main__":

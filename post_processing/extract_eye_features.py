@@ -132,7 +132,7 @@ def process_images(eye_tracker, participants_folders=list[str]):
                                                                     image_timestamp)
 
                 frame_count += 1
-                show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=50)
+                show_image_window(processed_frame, window_name="processed_frame", x_pos=120, y_pos=150)
                 # press q to skip to next participant / load level
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break

@@ -41,8 +41,12 @@ class GazeMovementTracker:
                                                    ignore_index=True)
 
     def save_data(self, participant, difficulty):
-        eye_movement_path = os.path.join("..", "machine_learning_predictor", "feature_extraction", "eye_movement_data",
-                                         f"eye_movement_{participant}_{difficulty}.csv")
+        output_eye_data_folder = os.path.join("..", "machine_learning_predictor", "feature_extraction", "data",
+                                              "eye_movement_data")
+        if not os.path.exists(output_eye_data_folder):
+            os.makedirs(output_eye_data_folder)
+
+        eye_movement_path = os.path.join(output_eye_data_folder, f"eye_movement_{participant}_{difficulty}.csv")
         self.movement_df.to_csv(eye_movement_path, index=False)
         self.movement_df = pd.DataFrame(
             columns=['participant', 'difficulty', 'left_pupil_position', 'right_pupil_position', 'left_eye_position',

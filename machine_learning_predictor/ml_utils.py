@@ -2,6 +2,7 @@ import itertools
 import os
 import random
 import sys
+import time
 import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
@@ -9,7 +10,7 @@ from sklearn import metrics
 from post_processing.extract_downloaded_data import get_smallest_fps
 from machine_learning_predictor.difficulty_levels import DifficultyLevels
 from machine_learning_predictor.machine_learning_constants import RANDOM_SEED, results_folder, NEW_IMAGE_SIZE, \
-    DEFAULT_TRAIN_SPLIT
+    DEFAULT_TRAIN_SPLIT, NUMBER_OF_CLASSES
 
 
 def set_random_seed(seed=RANDOM_SEED):
@@ -195,7 +196,7 @@ def calculate_prediction_results(true_labels, predicted_labels):
     print(f"\nAccuracy score on test data: {metrics.accuracy_score(true_labels, predicted_labels) * 100:.2f} %")
     print(f"Balanced accuracy score on test data: {metrics.balanced_accuracy_score(true_labels, predicted_labels):.2f}")
     print(f"Precision score on test data: "
-          f"{metrics.precision_score(true_labels, predicted_labels, average='weighted')}:.2f")
+          f"{metrics.precision_score(true_labels, predicted_labels, average='weighted'):.2f}")
     print(f"F1 score on test data: {metrics.f1_score(true_labels, predicted_labels, average='weighted'):.2f}")
     try:
         print(f"\nClassification Report:\n"
@@ -210,3 +211,54 @@ def calculate_prediction_results(true_labels, predicted_labels):
         plot_confusion_matrix(conf_matrix, label_names)
     except Exception as e:
         sys.stderr.write(f"Failed to compute confusion matrix: {e}")
+
+
+def load_saved_model(model_name):
+    model_path = os.path.join(results_folder, model_name)
+
+    if os.path.exists(model_path):
+        loaded_model = tf.keras.models.load_model(model_path)
+        # tf.keras.utils.plot_model(loaded_model, "loaded_model_graph.png", show_shapes=True)
+        print("Model successfully loaded")
+        return loaded_model
+    else:
+        sys.stderr.write("No saved model found!")
+        return None
+
+
+def save_prediction_as_image(batch, sequence_number, actual_label, predicted_label):
+    sequence = batch[sequence_number]
+    sequence_len = int(sequence.shape[1] / sequence.shape[0])   # calculate the sequence length based on the shape
+    img_height, img_width = NEW_IMAGE_SIZE
+
+    plt.figure(figsize=(10, 10))
+    plt.grid(False)
+    plt.xticks([])
+    plt.yticks([])
+    plt.imshow(sequence[:, 0:sequence_len * img_width, :])
+    plt.ylabel(DifficultyLevels.get_label_for_encoding(actual_label))
+    plt.title(f"Predicted label: {predicted_label}")
+
+    # plt.savefig(os.path.join(results_folder, f"mixed_data_prediction_result_{sequence_number}_{time.time()}.png"))
+    plt.savefig(os.path.join(results_folder, f"mixed_data_prediction_result_{sequence_number}.png"))
+
+
+def get_label_name_for_index_pos(index_pos):
+    mask_array = np.zeros(NUMBER_OF_CLASSES, dtype=int)  # creates this: [0 0 0]
+    mask_array[index_pos] = 1  # if index_pos was 0: [1 0 0]
+    return DifficultyLevels.get_label_for_encoding(mask_array)
+
+
+def predict_new_data(model, img_batch, eye_data_batch, correct_labels):
+    predictions = model.predict([img_batch, eye_data_batch])
+
+    for i, (prediction, correct_label) in enumerate(zip(predictions, correct_labels)):
+        score = tf.nn.softmax(prediction)
+        print(f"\nPrediction for sequence {i}: {prediction}\nScore: {score})")
+        index = np.argmax(score)
+        predicted_label = get_label_name_for_index_pos(index)
+        print(f"Correct label is  \"{DifficultyLevels.get_label_for_encoding(correct_label)}\"")
+        print(f"Predicted label was \"{predicted_label}\" with a confidence of {100 * score[index]:.2f} %")
+        # save_prediction_as_image(img_batch, i, correct_label, predicted_label)
+
+    return predictions
