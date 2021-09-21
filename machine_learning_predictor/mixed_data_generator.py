@@ -30,6 +30,7 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
 
         self.apply_fourier_transform = False
         print("\nFourier Transformation applied: ", self.apply_fourier_transform)
+
         if self.apply_fourier_transform:
             self.pupil_movement_calculator = PupilMovementCalculation()
 
@@ -132,7 +133,15 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
             i += 1
 
         if self.apply_fourier_transform:
-            eye_log_sample = self.pupil_movement_calculator.calculate_frequencies(eye_log_sample)
+        #    eye_log_sample = self.pupil_movement_calculator.calculate_frequencies(eye_log_sample)
+
+        # Calculate Fourier transformation for average_movement_distance
+            average_movement_list =  []
+            for i in range(len(eye_log_sample)):
+                average_movement_list.append(eye_log_sample[i][0])
+            fft_transformed_average_movement = self.pupil_movement_calculator.calculate_frequencies(average_movement_list)
+            for i in range(len(fft_transformed_average_movement)):
+                eye_log_sample[i][0] = fft_transformed_average_movement[i]
 
         # make sure this is the same order as the order of the one-hot vectors in the DifficultyLevels Enum!
         y_one_hot = sample[["difficulty_easy", "difficulty_medium", "difficulty_hard"]].values
