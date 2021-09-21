@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
+from machine_learning_predictor.feature_extraction.pupil_movement_calculation import PupilMovementCalculation
 from post_processing.convlstm_eye_region_classifier import start_training_and_testing_convlstm
 from post_processing.download_data import download_data_from_server
 from post_processing.efficient_net_classifier import start_training_and_testing
@@ -19,6 +20,10 @@ def main():
     extract_data(participant_list=[])
     assign_labels(participant_list=[])
     start_extracting_eye_features(participant_list=[], debug=False, enable_annotation=False)
+
+    # TODO
+    pupil_movement_calculator = PupilMovementCalculation()
+    pupil_movement_calculator.calculate_pupil_movement()
 
     # start_training_and_testing(use_eye_regions=False)  # Option 1
     # start_training_and_testing(use_eye_regions=True)  # Option 2

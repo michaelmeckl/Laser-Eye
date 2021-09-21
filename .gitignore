@@ -123,3 +123,5 @@ tracking_data/
 /machine_learning_predictor/tests/
 /machine_learning_predictor/ml_results*
 /machine_learning_predictor/cached_dataset/
+
+evaluation_study_data/
