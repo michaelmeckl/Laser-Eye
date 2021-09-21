@@ -5,11 +5,12 @@ import os
 
 class PupilMovementCalculation:
 
-    def calculate_pupil_movement(self, outputdir="./feature_extraction/data/pupil_movement_data",
-                                 inputdir="./feature_extraction/data/eye_movement_data"):
+    def calculate_pupil_movement(self):
+        input_dir_path = os.path.join("feature_extraction", "data", "eye_movement_data")
+        output_dir_path = os.path.join("feature_extraction", "data", "pupil_movement_data")
 
-        for filename in os.listdir(inputdir):
-            print("#######################")
+        for filename in os.listdir(input_dir_path):
+            print("\n####################\nStarting pupil movement calculation\n####################\n")
             print(f"Reading in : {filename}")
             pupil_movement_df = pd.DataFrame(columns=['participant', 'difficulty', 'left_pupil_movement_x',
                                                       'left_pupil_movement_y',
@@ -20,9 +21,13 @@ class PupilMovementCalculation:
                                                       'average_pupil_movement_distance', 'movement_angle',
                                                       'strong_movement', 'direction_change', 'time_difference',
                                                       'time_stamp'])
-            eye_movement_df = pd.read_csv(f"./feature_extraction/data/{filename}", converters={"column_name": eval})
+
+            # eye_movement_df_path = os.path.join("feature_extraction", "data", filename)
+            eye_movement_df_path = os.path.join(input_dir_path, filename)
+            eye_movement_df = pd.read_csv(eye_movement_df_path, converters={"column_name": eval})
+
             rowCount = eye_movement_df.shape[0]
-            print(f"länge: {rowCount}")
+            print(f"length: {rowCount}")
             last_left_pupil_position = None
             last_right_pupil_position = None
             last_left_eye_position = None
@@ -31,8 +36,10 @@ class PupilMovementCalculation:
             first_row = True
             for index, row in eye_movement_df.iterrows():
 
-                if index % (int)(rowCount / 10) == 0:
+                # show progress
+                if index % int(rowCount / 10) == 0:
                     print(f"Calculating pupil movement done: {index / int(rowCount / 100)}%")
+
                 left_pupil_position = row["left_pupil_position"][1:-1].split(", ")
 
                 right_pupil_position = row["right_pupil_position"][1:-1].split(", ")
@@ -48,6 +55,7 @@ class PupilMovementCalculation:
                 difficulty = row["difficulty"]
                 participant = row["participant"]
                 timestamp = row["time_stamp"]
+
                 if not first_row:
                     #   calculate change in pupil position depending on eye position, normalized to eye size
 
@@ -59,14 +67,10 @@ class PupilMovementCalculation:
                     left_pupil_movement = (x_movement_left_pupil, y_movement_left_pupil)
 
                     x_movement_right_pupil = ((float(last_right_pupil_position[0]) - float(
-                        last_right_eye_position[0])) - (
-                                                      float(right_pupil_position[0]) - float(
-                                                  right_eye_position[0]))) / right_eye_size_x
+                        last_right_eye_position[0])) - (float(right_pupil_position[0]) - float(right_eye_position[0]))) / right_eye_size_x
 
                     y_movement_right_pupil = ((float(last_right_pupil_position[1]) - float(
-                        last_right_eye_position[1])) - (
-                                                      float(right_pupil_position[1]) - float(
-                                                  right_eye_position[1]))) / right_eye_size_y
+                        last_right_eye_position[1])) - (float(right_pupil_position[1]) - float(right_eye_position[1]))) / right_eye_size_y
 
                     right_pupil_movement = (x_movement_right_pupil, y_movement_right_pupil)
 
@@ -130,23 +134,25 @@ class PupilMovementCalculation:
                 last_left_eye_position = left_eye_position
                 last_right_eye_position = right_eye_position
                 last_time_stamp = timestamp
-            pupil_movement_df.to_csv(f"{outputdir}/pupil_movement_{participant}_{difficulty}.csv")
-        print("####################")
 
-    def __calculate_angle(self,p1, p2):
+            pupil_movement_path = os.path.join(output_dir_path, f"pupil_movement_{participant}_{difficulty}.csv")
+            pupil_movement_df.to_csv(pupil_movement_path)
+
+        print("\n####################\nFinished pupil movement calculation!\n####################\n")
+
+    def __calculate_angle(self, p1, p2):
         ang1 = np.arctan2(*p1[::-1])
         ang2 = np.arctan2(*p2[::-1])
         return np.rad2deg((ang1 - ang2) % (2 * np.pi))
 
     def calculate_frequencies(self, data_array):
         try:
-            # highest_quartile_list = sorted((data))[int(len(data)*0.75):]
-            # lowest_quartile_list = sorted((data))[0:int(len(data) * 0.25)]
-            # data = np.setdiff1d(data, highest_quartile_list)
-            # data = np.setdiff1d(data, lowest_quartile_list)
+            # highest_quartile_list = sorted((data_array))[int(len(data_array)*0.75):]
+            # lowest_quartile_list = sorted((data_array))[0:int(len(data_array) * 0.25)]
+            # data_array = np.setdiff1d(data_array, highest_quartile_list)
+            # data_array = np.setdiff1d(data_array, lowest_quartile_list)
 
-            # fft computing and normalization and
-            # use only first half as the function is mirrored
+            # fft computing and normalization
             fourier = np.abs(np.fft.fft(data_array))
             return fourier[0:int(len(fourier))]
         except Exception as e:

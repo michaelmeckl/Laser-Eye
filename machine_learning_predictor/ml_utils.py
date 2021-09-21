@@ -218,6 +218,7 @@ def load_saved_model(model_name):
 
     if os.path.exists(model_path):
         loaded_model = tf.keras.models.load_model(model_path)
+        # tf.keras.utils.plot_model(loaded_model, "loaded_model_graph.png", show_shapes=True)
         print("Model successfully loaded")
         return loaded_model
     else:

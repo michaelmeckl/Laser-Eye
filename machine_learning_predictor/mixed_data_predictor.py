@@ -245,8 +245,8 @@ def get_train_val_data(train_participants, val_participants):
         print("Loading csv data ...\n")
         eye_log_train_data = pd.read_csv(os.path.join(ml_data_folder, "eye_log_dataframe_ordered_train.csv"))
         eye_log_val_data = pd.read_csv(os.path.join(ml_data_folder, "eye_log_dataframe_ordered_val.csv"))
-        blink_train_data = pd.read_csv(os.path.join(ml_data_folder, "blink_dataframe_shuffled_train.csv"))
-        blink_val_data = pd.read_csv(os.path.join(ml_data_folder, "blink_dataframe_shuffled_val.csv"))
+        blink_train_data = pd.read_csv(os.path.join(ml_data_folder, "blink_dataframe_ordered_train.csv"))
+        blink_val_data = pd.read_csv(os.path.join(ml_data_folder, "blink_dataframe_ordered_val.csv"))
 
         pupil_move_train = pd.read_csv(os.path.join(ml_data_folder, "train_pupil_movement.csv"))
         pupil_move_val = pd.read_csv(os.path.join(ml_data_folder, "val_pupil_movement.csv"))
