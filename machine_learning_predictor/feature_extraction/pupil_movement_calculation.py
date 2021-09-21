@@ -135,6 +135,9 @@ class PupilMovementCalculation:
                 last_right_eye_position = right_eye_position
                 last_time_stamp = timestamp
 
+            if not os.path.exists(output_dir_path):
+                os.mkdir(output_dir_path)
+
             pupil_movement_path = os.path.join(output_dir_path, f"pupil_movement_{participant}_{difficulty}.csv")
             pupil_movement_df.to_csv(pupil_movement_path)
 
