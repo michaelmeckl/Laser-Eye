@@ -325,7 +325,7 @@ def setup_data_generation(train_participants, val_participants, show_examples=Fa
     pupil_move_train[feature_columns] = scaler.fit_transform(pupil_move_train[feature_columns])
     pupil_move_val[feature_columns] = scaler.transform(pupil_move_val[feature_columns])
 
-    sample_size = get_suitable_sample_size(difficulty_category_size)  # TODO
+    sample_size = get_suitable_sample_size(difficulty_category_size)
     print(f"Sample size: {sample_size} (Train data len: {len(train_image_data)}, val data len: {len(val_image_data)})")
 
     train_generator = MixedDataGenerator(img_data_frame=train_image_data, eye_data_frame=pupil_move_train,
@@ -445,26 +445,21 @@ def test_classifier(test_participants, scaler, sample_size):
     classifier = load_saved_model(model_name="Mixed-Model-66.h5")
     print(classifier.summary())
 
-    """
     # load latest (i.e. the best) checkpoint
-    checkpoint_folder = os.path.join(results_folder, "checkpoints_mixed_data")
-
+    checkpoint_folder = os.path.join("checkpoints_mixed_data_last")
     latest = tf.train.latest_checkpoint(checkpoint_folder)
-    loaded_model.load_weights(latest)
-    """
-    # or like this when creating a new model from scratch:
-    # loaded_model.load_weights("Mixed-Model-66.h5")
+    print("Using latest checkpoint: ", latest)
+    classifier.load_weights(latest)
 
-    test_loss, test_acc = classifier.evaluate(test_generator, verbose=1)
-    print("Test loss: ", test_loss)
-    print("Test accuracy: ", test_acc * 100)
+    # test_loss, test_acc = classifier.evaluate(test_generator, verbose=1)
+    # print("Test loss: ", test_loss)
+    # print("Test accuracy: ", test_acc * 100)
 
     all_predictions = np.array([])
     all_labels = np.array([])
-    # take 3 random generator outputs for prediction
-    # for i in random.sample(range(test_generator.__len__()), k=3):
-    for i in range(test_generator.__len__()):
-        test_image_batch, test_eye_data_batch, test_labels = test_generator.get_example_batch(idx=i)
+    # for i in range(test_generator.__len__()):
+    for i, ((test_image_batch, test_eye_data_batch), test_labels) in enumerate(test_generator):
+        # test_image_batch, test_eye_data_batch, test_labels = test_generator.get_batch(idx=i)
         # show_generator_example_images(test_image_batch, test_labels, sample_size, gen_v2=True)
 
         predictions = predict_new_data(classifier, test_image_batch, test_eye_data_batch, test_labels)

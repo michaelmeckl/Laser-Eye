@@ -184,3 +184,8 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
         first_img_sample, first_eye_sample = batch_data[0], batch_data[1]
         self.indices_list = indices_copy
         return first_img_sample, first_eye_sample, labels
+
+    def get_batch(self, idx=0):
+        batch_data, labels = self.__getitem__(idx)
+        img_sample, eye_sample = batch_data[0], batch_data[1]
+        return img_sample, eye_sample, labels

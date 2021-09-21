@@ -257,7 +257,7 @@ def predict_new_data(model, img_batch, eye_data_batch, correct_labels):
         print(f"\nPrediction for sequence {i}: {prediction}\nScore: {score})")
         index = np.argmax(score)
         predicted_label = get_label_name_for_index_pos(index)
-        print(f"Correct label is  \"{DifficultyLevels.get_label_for_encoding(correct_label)}\"")
+        print(f"Correct label is {correct_label} (\"{DifficultyLevels.get_label_for_encoding(correct_label)}\")")
         print(f"Predicted label was \"{predicted_label}\" with a confidence of {100 * score[index]:.2f} %")
         # save_prediction_as_image(img_batch, i, correct_label, predicted_label)
 
