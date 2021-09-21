@@ -28,8 +28,8 @@ class MixedDataGenerator(tf.keras.utils.Sequence):
         # self.eye_log_cols = ["ROLL", "PITCH"]   # TODO
         self.eye_log_cols = ["average_pupil_movement_distance", "movement_angle"]
 
-        self.apply_fourier_transform = True
-
+        self.apply_fourier_transform = False
+        print("\nFourier Transformation applied: ", self.apply_fourier_transform)
         if self.apply_fourier_transform:
             self.pupil_movement_calculator = PupilMovementCalculation()
 

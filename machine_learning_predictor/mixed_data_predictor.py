@@ -3,7 +3,6 @@
 
 import os
 import sys
-
 from machine_learning_predictor.machine_learning_constants import NUMBER_OF_CLASSES, data_folder_path, images_path, \
     RANDOM_SEED, TRAIN_EPOCHS, ml_data_folder
 
@@ -17,7 +16,7 @@ import pandas as pd
 import tensorflow as tf
 import numpy as np
 from machine_learning_predictor.ml_utils import set_random_seed, split_train_test, show_generator_example_images, \
-    calculate_prediction_results, get_suitable_sample_size
+    calculate_prediction_results, get_suitable_sample_size, load_saved_model, predict_new_data
 from post_processing.post_processing_constants import download_folder, post_processing_log_folder
 from machine_learning_predictor.mixed_data_generator import MixedDataGenerator
 from machine_learning_predictor.classifier import DifficultyImageClassifier
@@ -25,8 +24,15 @@ from sklearn.preprocessing import StandardScaler
 
 
 ############### Global vars
-test_mode = True
+test_mode = False
 test_subset_size = 250
+
+use_gray = False
+
+# See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
+# the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
+batch_size = 4
+
 ###############
 
 
@@ -122,13 +128,13 @@ def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetT
     # save as csv files
     if dataset_type == DatasetType.TRAIN:
         eye_log_file = f"eye_log_dataframe_ordered_{DatasetType.TRAIN.value}.csv"
-        blink_log_file = f"blink_dataframe_shuffled_{DatasetType.TRAIN.value}.csv"
+        blink_log_file = f"blink_dataframe_ordered_{DatasetType.TRAIN.value}.csv"
     elif dataset_type == DatasetType.VALIDATION:
         eye_log_file = f"eye_log_dataframe_ordered_{DatasetType.VALIDATION.value}.csv"
-        blink_log_file = f"blink_dataframe_shuffled_{DatasetType.VALIDATION.value}.csv"
+        blink_log_file = f"blink_dataframe_ordered_{DatasetType.VALIDATION.value}.csv"
     elif dataset_type == DatasetType.TEST:
         eye_log_file = f"eye_log_dataframe_ordered_{DatasetType.TEST.value}.csv"
-        blink_log_file = f"blink_dataframe_shuffled_{DatasetType.TEST.value}.csv"
+        blink_log_file = f"blink_dataframe_ordered_{DatasetType.TEST.value}.csv"
     else:
         print("Unknown Dataset Type given!")
         sys.exit(0)
@@ -319,14 +325,9 @@ def setup_data_generation(train_participants, val_participants, show_examples=Fa
     pupil_move_train[feature_columns] = scaler.fit_transform(pupil_move_train[feature_columns])
     pupil_move_val[feature_columns] = scaler.transform(pupil_move_val[feature_columns])
 
-    # See https://stats.stackexchange.com/questions/153531/what-is-batch-size-in-neural-network for consequences of
-    # the batch size. Smaller batches lead to better results in general. Batch sizes are usually a power of two.
-    batch_size = 4
-
     sample_size = get_suitable_sample_size(difficulty_category_size)  # TODO
     print(f"Sample size: {sample_size} (Train data len: {len(train_image_data)}, val data len: {len(val_image_data)})")
 
-    use_gray = True
     train_generator = MixedDataGenerator(img_data_frame=train_image_data, eye_data_frame=pupil_move_train,
                                          x_col_name="image_path", y_col_name="difficulty",
                                          sequence_length=sample_size, batch_size=batch_size,
@@ -344,10 +345,10 @@ def setup_data_generation(train_participants, val_participants, show_examples=Fa
 
     print("Len train generator: ", train_generator.__len__())
     print("Len val generator: ", val_generator.__len__())
-    return train_generator, val_generator, batch_size, sample_size
+    return train_generator, val_generator, sample_size, scaler
 
 
-def train_classifier(train_generator, val_generator, batch_size, sample_size, train_epochs=TRAIN_EPOCHS):
+def train_classifier(train_generator, val_generator, train_epochs=TRAIN_EPOCHS):
     image_shape = train_generator.get_image_shape()
     print("[INFO] Using image Shape: ", image_shape)
     eye_log_shape = train_generator.get_eye_log_shape()
@@ -359,26 +360,68 @@ def train_classifier(train_generator, val_generator, batch_size, sample_size, tr
     train_history, val_accuracy = classifier.build_mixed_model(img_input_shape=image_shape,
                                                                eye_log_input_shape=eye_log_shape)
     # classifier.evaluate_classifier()
-
     return classifier, val_accuracy
 
 
-def test_classifier(classifier, batch_size, sample_size):
-    # get the participants that weren't used for training or validation
-    test_participants = os.listdir(data_folder_path)[16:]
+def train_mixed_model(should_train=False):
+    without_participants = []
+    all_participants = os.listdir(data_folder_path)[:18]  # only take 12 or 18 so the counterbalancing works
+    # remove some participants for testing
+    all_participants = [p for p in all_participants if p not in set(without_participants)]
+
+    train_participants, val_participants = split_train_test(all_participants)
+    train_gen, val_gen, num_samples, scaler = setup_data_generation(train_participants, val_participants)
+
+    if should_train:
+        print("Training mixed data classifier ...\n")
+        difficulty_classifier, val_accuracy = train_classifier(train_gen, val_gen)
+
+    return num_samples, scaler
+
+
+def cross_validate_mixed_model():
+    import gc  # garbage collector
+
+    without_participants = []
+    all_participants = os.listdir(data_folder_path)[:18]  # only take 12 or 18 so the counterbalancing works
+    # remove some participants for testing
+    all_participants = [p for p in all_participants if p not in set(without_participants)]
+
+    all_accuracies = []
+    n_splits = 5
+    for i in range(n_splits):
+        print(f"\n################## Starting split {i} / {n_splits} ################## \n")
+        train_participants, val_participants = split_train_test(all_participants)  # shuffle and split into train & val
+        # train_participants = (np.array(all_participants)[train_indices]).tolist()
+        # val_participants = (np.array(all_participants)[test_indices]).tolist()
+
+        train_gen, val_gen, num_samples, scaler = setup_data_generation(train_participants, val_participants)
+        difficulty_classifier, val_accuracy = train_classifier(train_gen, val_gen, num_samples)
+
+        all_accuracies.append(val_accuracy)
+        print(f"Validation accuracy for split {i}: {val_accuracy * 100:.2f} %\n")
+        gc.collect()  # manually call garbage collector at the end of each run to prevent OutOfMemory - Errors on GPU
+
+    print(f"Mean accuracy over all splits: {np.mean(all_accuracies):.2f}")
+    print(f"Best accuracy over all splits: {np.max(all_accuracies):.2f}")
+
+
+def test_classifier(test_participants, scaler, sample_size):
     print(f"Found {len(test_participants)} participants for testing.")
 
-    random.shuffle(test_participants)
+    # random.shuffle(test_participants)
 
+    """
     # load test data
     if os.path.exists(ml_data_folder):
         print("[INFO] Using cached test data")
         image_test_df = pd.read_csv(os.path.join(ml_data_folder, "test_image_data_frame.csv"))
         eye_log_test_df = pd.read_csv(os.path.join(ml_data_folder, "eye_log_dataframe_ordered_test.csv"))
-    else:
-        print("Generating test data ...")
-        image_test_df = merge_participant_image_logs(test_participants, DatasetType.TEST)
-        eye_log_test_df = merge_participant_eye_tracking_logs(test_participants, DatasetType.TEST)
+    """
+    print("Generating test data ...")
+    image_test_df = merge_participant_image_logs(test_participants, DatasetType.TEST)
+    blink_test_df, eye_log_test_df = merge_participant_eye_tracking_logs(test_participants, DatasetType.TEST)
+    pupil_move_test_data = load_pupil_movement_data(test_participants, DatasetType.TEST)
 
     for difficulty_level in image_test_df.difficulty.unique():
         difficulty_level_df = image_test_df[image_test_df.difficulty == difficulty_level]
@@ -388,31 +431,54 @@ def test_classifier(classifier, batch_size, sample_size):
         participant_df = image_test_df[image_test_df.participant == participant]
         print(f"Found {len(participant_df)} test images for participant \"{participant}\".")
 
-    use_gray = False
-    test_generator = MixedDataGenerator(img_data_frame=image_test_df, eye_data_frame=eye_log_test_df,
+    # scaler = StandardScaler()
+    feature_columns = ['left_pupil_movement_x', 'left_pupil_movement_y', 'right_pupil_movement_x',
+                       'right_pupil_movement_y', 'average_pupil_movement_x', 'average_pupil_movement_y',
+                       'average_pupil_movement_distance', 'movement_angle']
+    pupil_move_test_data[feature_columns] = scaler.transform(pupil_move_test_data[feature_columns])
+
+    test_generator = MixedDataGenerator(img_data_frame=image_test_df, eye_data_frame=pupil_move_test_data,
                                         x_col_name="image_path", y_col_name="difficulty",
                                         sequence_length=sample_size, batch_size=batch_size,
                                         images_base_path=images_path, use_grayscale=use_gray, is_train_set=False)
 
+    classifier = load_saved_model(model_name="Mixed-Model-66.h5")
+    print(classifier.summary())
+
+    """
+    # load latest (i.e. the best) checkpoint
+    checkpoint_folder = os.path.join(results_folder, "checkpoints_mixed_data")
+
+    latest = tf.train.latest_checkpoint(checkpoint_folder)
+    loaded_model.load_weights(latest)
+    """
+    # or like this when creating a new model from scratch:
+    # loaded_model.load_weights("Mixed-Model-66.h5")
+
+    test_loss, test_acc = classifier.evaluate(test_generator, verbose=1)
+    print("Test loss: ", test_loss)
+    print("Test accuracy: ", test_acc * 100)
+
     all_predictions = np.array([])
     all_labels = np.array([])
     # take 3 random generator outputs for prediction
-    # for choice in random.sample(range(test_generator.__len__()), k=3):
+    # for i in random.sample(range(test_generator.__len__()), k=3):
     for i in range(test_generator.__len__()):
-        test_image_batch, labels = test_generator.get_example_batch(idx=i)
-        # show_generator_example_images(test_image_batch, labels, sample_size, gen_v2=use_gen_v2)
-        predictions = classifier.predict(test_image_batch, labels)
+        test_image_batch, test_eye_data_batch, test_labels = test_generator.get_example_batch(idx=i)
+        # show_generator_example_images(test_image_batch, test_labels, sample_size, gen_v2=True)
+
+        predictions = predict_new_data(classifier, test_image_batch, test_eye_data_batch, test_labels)
 
         predictions_results = np.argmax(predictions, axis=1)
         all_predictions = np.concatenate([all_predictions, predictions_results])
-        actual_labels = np.argmax(labels, axis=1)
+        actual_labels = np.argmax(test_labels, axis=1)
         all_labels = np.concatenate([all_labels, actual_labels])
 
     # show some result metrics
     calculate_prediction_results(all_labels, all_predictions)
 
 
-def start_training_and_testing_mixed_model():
+def train_test_mixed_model():
     # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # uncomment this to always use the CPU instead of a GPU
     gpus = tf.config.list_physical_devices('GPU')
     for gpu in gpus:
@@ -435,40 +501,19 @@ def start_training_and_testing_mixed_model():
 
     set_random_seed()  # set seed for reproducibility
 
-    without_participants = []
-    all_participants = os.listdir(data_folder_path)[:18]  # only take 12 or 18 so the counterbalancing works
-    # remove some participants for testing
-    all_participants = [p for p in all_participants if p not in set(without_participants)]
+    sample_length, standard_scaler = train_mixed_model()
 
-    train_participants, val_participants = split_train_test(all_participants)
-    train_gen, val_gen, num_batches, num_samples = setup_data_generation(train_participants, val_participants)
-    difficulty_classifier, val_accuracy = train_classifier(train_gen, val_gen, num_batches, num_samples)
+    # get participants that weren't used for training or validation
+    test_participants = ['participant_9', 'participant_17', 'participant_1', 'participant_12']  # TODO val data
 
-    # use code below for cross-validation instead of the 3 lines above:
-    """
-    import gc
+    # TODO sample_length must be 34 as we have 4284 images per category
 
-    all_accuracies = []
-    n_splits = 5
-    for i in range(n_splits):
-        print(f"\n################## Starting split {i} / {n_splits} ################## \n")
-        train_participants, val_participants = split_train_test(all_participants)  # shuffle and split into train & val
-        # train_participants = (np.array(all_participants)[train_indices]).tolist()
-        # val_participants = (np.array(all_participants)[test_indices]).tolist()
-
-        train_gen, val_gen, num_batches, num_samples = setup_data_generation(train_participants, val_participants)
-        difficulty_classifier, val_accuracy = train_classifier(train_gen, val_gen, num_batches, num_samples)
-
-        all_accuracies.append(val_accuracy)
-        print(f"Validation accuracy for split {i}: {val_accuracy * 100:.2f} %\n")
-        gc.collect()  # manually call garbage collector at the end of each run to prevent OutOfMemory - Errors on GPU
-
-    print(f"Mean accuracy over all splits: {np.mean(all_accuracies):.2f}")
-    print(f"Best accuracy over all splits: {np.max(all_accuracies):.2f}")
-    """
-
-    # test_classifier(difficulty_classifier, num_batches, num_samples)
+    # TODO must be the same as in training!  => this means that the test data MUST have the
+    #  same length as otherwise participants could overlap per sequence!
+    #  => adjust assign_load_classes.py so it takes 4284 images (or a smaller number that is divisible by the sequence
+    #  length if necessary) per category for all test participants
+    test_classifier(test_participants, standard_scaler, sample_length)
 
 
 if __name__ == "__main__":
-    start_training_and_testing_mixed_model()
+    train_test_mixed_model()

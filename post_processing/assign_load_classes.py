@@ -303,6 +303,7 @@ def assign_labels(participant_list=list[str]):
                                                sorted_img_file_dict, smallest_fps_val)
         participant_dict[participant] = result_dict
 
+        # TODO for test participants use 4284 as smallest_difficulty_list_len instead of this:
         # check if any difficulty level of this participant has fewer entries than the current minimum
         for image_list in result_dict.values():
             if smallest_difficulty_list_len is None or len(image_list) < smallest_difficulty_list_len:
@@ -322,4 +323,4 @@ def assign_labels(participant_list=list[str]):
 
 
 if __name__ == "__main__":
-    assign_labels(participant_list=["participant_18"])
+    assign_labels(participant_list=[])   # TODO this must be run with all participants currently to work correctly!
