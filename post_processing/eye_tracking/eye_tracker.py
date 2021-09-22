@@ -61,8 +61,8 @@ class EyeTracker:
         # print(f"frame width: {frame_width}, frame height: {frame_height}")
         self.head_pose_estimator.set_camera_matrix(frame_width, frame_height)
 
-    def set_current_participant(self, participant_folder, fps_val):
-        self.__logger.set_participant(participant_folder)
+    def set_current_participant(self, participant_folder, fps_val, is_evaluation_data):
+        self.__logger.set_participant(participant_folder, is_evaluation_data)
         self.blink_detector.set_participant_fps(fps_val)
 
     def set_current_difficulty(self, difficulty):

@@ -188,8 +188,8 @@ def check_image_blur(image_path) -> float:
 
 def split_image_folder(result_dict, participant_folder, create_new_folders=False):
     """
-    Param `result_dict` contains a list for each of the 3 load levels which contains all images from this participant
-    that were recorded during a game with the corresponding difficulty:
+    Param `result_dict` contains a list for each of the 3 difficulty levels which contains all images from this
+    participant that were recorded during a game with the corresponding difficulty:
     ```
     {
         'hard': [capture__1223445.34.png, capture__122673445.89.png, ...],
@@ -248,7 +248,7 @@ def split_image_folder(result_dict, participant_folder, create_new_folders=False
 
 
 def assign_labels(participant_list=list[str]):
-    smallest_fps_val = get_smallest_fps()
+    smallest_fps_val = get_smallest_fps(evaluation_study_mode=False)
 
     smallest_difficulty_list_len = None  # length of the list with the least entries over all participants
     participant_dict = defaultdict(dict)
@@ -318,7 +318,7 @@ def assign_labels(participant_list=list[str]):
             if len_diff > 0:
                 del image_list[-len_diff:]  # remove the elements at the end if the list is too long
 
-        print(f"\n####################Creating labeled images file for {participant_name} ...\n####################")
+        print(f"\n####################\nCreating labeled images file for {participant_name} ...\n####################")
         split_image_folder(difficulty_dict, participant_name)
 
 

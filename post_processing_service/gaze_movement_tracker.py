@@ -5,7 +5,7 @@ import os
 import pandas as pd
 
 
-SEQUENCE_LENGTH = 200
+# SEQUENCE_LENGTH = 200
 
 
 class GazeMovementTracker:
@@ -40,9 +40,15 @@ class GazeMovementTracker:
                                                     'time_stamp': timestamp},
                                                    ignore_index=True)
 
-    def save_data(self, participant, difficulty):
-        output_eye_data_folder = os.path.join("..", "machine_learning_predictor", "feature_extraction", "data",
-                                              "eye_movement_data")
+    def save_data(self, participant, difficulty, evaluation_study_data: bool):
+        # use os.path.dirname(__file__) to get the correct path to this file independent of the calling location
+        ml_folder = os.path.join(os.path.dirname(__file__), "..", "machine_learning_predictor")
+        if evaluation_study_data:
+            output_eye_data_folder = os.path.join(ml_folder, "feature_extraction", "data",
+                                                  "evaluation_eye_movement_data")
+        else:
+            output_eye_data_folder = os.path.join(ml_folder, "feature_extraction", "data", "eye_movement_data")
+
         if not os.path.exists(output_eye_data_folder):
             os.makedirs(output_eye_data_folder)
 

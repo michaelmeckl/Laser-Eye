@@ -110,7 +110,7 @@ def process_images(eye_tracker, participants_folders=list[str]):
         fps_log_path = os.path.join(download_folder, participant, "fps_info.txt")
         fps = get_fps_info(fps_log_path)
         # set the current participant for the post processing logger
-        eye_tracker.set_current_participant(participant, fps)
+        eye_tracker.set_current_participant(participant, fps, is_evaluation_data=False)
 
         # iterate over the csv file with the image paths and their corresponding difficulty level
         images_label_log = os.path.join(download_folder, participant, "labeled_images.csv")
@@ -137,7 +137,7 @@ def process_images(eye_tracker, participants_folders=list[str]):
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
-            eye_tracker.movement_tracker.save_data(participant, difficulty_level)
+            eye_tracker.movement_tracker.save_data(participant, difficulty_level, evaluation_study_data=False)
             # after we finished one difficulty folder, log all information that was recorded for it
             eye_tracker.log_information()
             # and reset the blink detector
@@ -175,8 +175,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Postprocessing system to find the useful data in the recorded "
                                                  "images.")
     parser.add_argument("-v", "--video_file", help="path to a video file to be used instead of the webcam", type=str)
-    parser.add_argument("-a", "--enable_annotation", help="If enabled the tracked face parts are highlighted in the "
-                                                          "current frame", action="store_true")
+    parser.add_argument("-a", "--enable_annotation", help="If enabled the tracked face parts are shown in "
+                                                          "separate frames", action="store_true")
     args = parser.parse_args()
     annotation_enabled = args.enable_annotation
     video_file = args.video_file

@@ -8,7 +8,8 @@ import sys
 import shutil
 import time
 from py7zr import py7zr
-from post_processing.post_processing_constants import download_folder, image_folder, logs_folder
+from post_processing.post_processing_constants import download_folder, image_folder, logs_folder, \
+    evaluation_study_folder, evaluation_download_folder
 
 
 def get_fps_info(fps_file_path):
@@ -21,11 +22,16 @@ def get_fps_info(fps_file_path):
     return fps_rounded
 
 
-def get_smallest_fps():
+def get_smallest_fps(evaluation_study_mode: bool):
     smallest_fps_val = 30
     participant_smallest_fps = ""
 
-    all_participants_path = os.path.join(os.path.dirname(__file__), download_folder)
+    if evaluation_study_mode:
+        all_participants_path = os.path.join(os.path.dirname(__file__), evaluation_study_folder,
+                                             evaluation_download_folder)
+    else:
+        all_participants_path = os.path.join(os.path.dirname(__file__), download_folder)
+
     for participant in os.listdir(all_participants_path):
         fps_log_path = os.path.join(all_participants_path, participant, "fps_info.txt")
         fps = get_fps_info(fps_log_path)
@@ -33,7 +39,8 @@ def get_smallest_fps():
             participant_smallest_fps = participant
             smallest_fps_val = fps
 
-    print(f"Smallest fps value has {participant_smallest_fps}: {smallest_fps_val} fps")
+    print(f"Smallest fps value has {participant_smallest_fps}: {smallest_fps_val} fps (evaluation_mode: "
+          f"{evaluation_study_mode})")
     return smallest_fps_val
 
 

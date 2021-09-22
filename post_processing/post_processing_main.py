@@ -16,14 +16,13 @@ def main():
     well. This can be used to execute the whole process from the start in the correct order. Pass empty lists to use
     all participants or specify the names of the participant folders that should be used.
     """
-    download_data_from_server(folder_names=[])
-    extract_data(participant_list=[])
-    assign_labels(participant_list=[])
-    start_extracting_eye_features(participant_list=[], debug=False, enable_annotation=False)
+    # download_data_from_server(folder_names=[])
+    # extract_data(participant_list=[])
+    # assign_labels(participant_list=[])
+    # start_extracting_eye_features(participant_list=[], debug=False, enable_annotation=False)
 
-    # TODO
     pupil_movement_calculator = PupilMovementCalculation()
-    pupil_movement_calculator.calculate_pupil_movement()
+    pupil_movement_calculator.calculate_pupil_movement(is_evaluation_data=True)
 
     # start_training_and_testing(use_eye_regions=False)  # Option 1
     # start_training_and_testing(use_eye_regions=True)  # Option 2

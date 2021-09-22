@@ -6,7 +6,8 @@ import cv2
 import numpy as np
 import pandas as pd
 import pathlib
-from post_processing.post_processing_constants import download_folder, post_processing_log_folder
+from post_processing.post_processing_constants import download_folder, post_processing_log_folder, \
+    evaluation_download_folder
 
 ProcessingData = Enum("ProcessingData", "HEAD_POS_ROLL_PITCH_YAW LEFT_EYE_CENTER RIGHT_EYE_CENTER LEFT_EYE_WIDTH "
                                         "RIGHT_EYE_WIDTH LEFT_EYE_HEIGHT RIGHT_EYE_HEIGHT LEFT_PUPIL_POS "
@@ -23,15 +24,23 @@ class ProcessingLogger:
         self.__processed_data = []
         self.__image_data = []
 
-    def set_participant(self, participant):
+        self.__is_evaluation_study_data = False
+
+    def set_participant(self, participant, evaluation_study_data: bool):
         self.current_participant = participant
+        self.__is_evaluation_study_data = evaluation_study_data
 
     def set_difficulty(self, difficulty):
         self.current_difficulty_level = difficulty
         self.__start_logging()
 
     def __start_logging(self):
-        participant_folder = pathlib.Path(__file__).parent.parent / download_folder / self.current_participant
+        if self.__is_evaluation_study_data:
+            participant_folder = pathlib.Path(__file__).parent.parent / "evaluation_study" / evaluation_download_folder\
+                                 / self.current_participant
+        else:
+            participant_folder = pathlib.Path(__file__).parent.parent / download_folder / self.current_participant
+
         self.__folder_path = participant_folder / self.__log_folder / self.current_difficulty_level
         self.__log_file_path = self.__folder_path / f"processing_log_{self.current_difficulty_level}.csv"
 
@@ -44,16 +53,19 @@ class ProcessingLogger:
         self.__processed_data.append({'date': datetime.now(), 'frame_id': frame_id, **data})
 
     def log_image(self, dirname: str, filename: str, image: np.ndarray, timestamp: float):
-        self.__image_data.append((dirname, filename, image, timestamp))
+        if not self.__is_evaluation_study_data:
+            self.__image_data.append((dirname, filename, image, timestamp))
 
     def save_tracking_data(self):
         tracking_df = pd.DataFrame(self.__processed_data)
         tracking_df.to_csv(self.__log_file_path, sep=";", index=False)
         self.__processed_data.clear()  # reset tracking data
 
-        for entry in self.__image_data:
-            self.__save_image(*entry)
-        self.__image_data.clear()
+        # only save smaller images for the training data, not for the evaluation participants
+        if not self.__is_evaluation_study_data:
+            for entry in self.__image_data:
+                self.__save_image(*entry)
+            self.__image_data.clear()
 
     def __save_image(self, dirname: str, filename: str, image: np.ndarray, timestamp: float):
         path = self.__folder_path / dirname

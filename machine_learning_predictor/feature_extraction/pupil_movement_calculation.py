@@ -5,9 +5,13 @@ import os
 
 class PupilMovementCalculation:
 
-    def calculate_pupil_movement(self):
-        input_dir_path = os.path.join("feature_extraction", "data", "eye_movement_data")
-        output_dir_path = os.path.join("feature_extraction", "data", "pupil_movement_data")
+    def calculate_pupil_movement(self, is_evaluation_data: bool):
+        if is_evaluation_data:
+            input_dir_path = os.path.join(os.path.dirname(__file__), "data", "evaluation_eye_movement_data")
+            output_dir_path = os.path.join(os.path.dirname(__file__), "data", "evaluation_pupil_movement_data")
+        else:
+            input_dir_path = os.path.join(os.path.dirname(__file__), "data", "eye_movement_data")
+            output_dir_path = os.path.join(os.path.dirname(__file__), "data", "pupil_movement_data")
 
         for filename in os.listdir(input_dir_path):
             print("\n####################\nStarting pupil movement calculation\n####################\n")
@@ -22,7 +26,6 @@ class PupilMovementCalculation:
                                                       'strong_movement', 'direction_change', 'time_difference',
                                                       'time_stamp'])
 
-            # eye_movement_df_path = os.path.join("feature_extraction", "data", filename)
             eye_movement_df_path = os.path.join(input_dir_path, filename)
             eye_movement_df = pd.read_csv(eye_movement_df_path, converters={"column_name": eval})
 
@@ -38,7 +41,7 @@ class PupilMovementCalculation:
 
                 # show progress
                 if index % int(rowCount / 10) == 0:
-                    print(f"Calculating pupil movement done: {index / int(rowCount / 100)}%")
+                    print(f"Calculating pupil movement done: {index / int(rowCount / 100):.2f} %")
 
                 left_pupil_position = row["left_pupil_position"][1:-1].split(", ")
 
