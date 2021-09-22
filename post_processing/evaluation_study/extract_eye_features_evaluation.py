@@ -83,7 +83,7 @@ def process_images(eye_tracker, participants_folders=list[str]):
     sys.exit(0)
 
 
-def start_extracting_eye_features(participant_list=list[str], enable_annotation=False):
+def start_extracting_evaluation_eye_features(participant_list=list[str], enable_annotation=False):
     eye_tracker = EyeTracker(enable_annotation, debug_active=False)
     process_images(eye_tracker, participant_list)
 
@@ -98,4 +98,4 @@ if __name__ == "__main__":
 
     # for easier debugging; select the participants that should be processed; pass empty list to process all
     participants = []
-    start_extracting_eye_features(participant_list=participants, enable_annotation=annotation_enabled)
+    start_extracting_evaluation_eye_features(participant_list=participants, enable_annotation=annotation_enabled)

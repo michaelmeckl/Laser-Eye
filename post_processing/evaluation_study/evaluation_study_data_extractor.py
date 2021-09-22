@@ -39,7 +39,7 @@ def extract_zipped_images(participant_folder):
     shutil.rmtree(os.path.join(evaluation_download_folder, participant_folder, image_folder, "tracking_data"))
 
 
-def extract_data(participant_list=list[str]):
+def extract_evaluation_data(participant_list=list[str]):
     for participant in os.listdir(evaluation_download_folder):
         # if specific participants are given, skip the others
         if len(participant_list) > 0 and participant not in participant_list:
@@ -62,5 +62,5 @@ def extract_data(participant_list=list[str]):
 
 if __name__ == "__main__":
     # empty list means we want to extract all participants
-    extract_data(participant_list=[])
+    extract_evaluation_data(participant_list=[])
     print("\n####################\nFinished extracting evaluation study data\n####################\n")

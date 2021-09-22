@@ -10,7 +10,7 @@ from post_processing.post_processing_constants import evaluation_download_folder
 from tracking.TrackingLogger import get_server_credentials
 
 
-def download_data_from_server(folder_names=list[str]):
+def download_evaluation_data_from_server(folder_names=list[str]):
     credentials = get_server_credentials(pathlib.Path(__file__).parent.parent.parent / "sftp_credentials.properties")
     if credentials is None:
         sys.stderr.write("Reading sftp server credentials didn't work! Terminating program...")
@@ -105,4 +105,4 @@ def download_data_from_server(folder_names=list[str]):
 if __name__ == "__main__":
     # change this to an empty list to download all participants
     specified_participants = []
-    download_data_from_server(specified_participants)  # download the participant data from our sftp server
+    download_evaluation_data_from_server(specified_participants)

@@ -92,7 +92,7 @@ def generate_difficulty_label_csv(result_dict, participant_folder):
     df_exploded.to_csv(os.path.join(evaluation_download_folder, participant_folder, "labeled_images.csv"), index=False)
 
 
-def assign_labels(participant_list=list[str]):
+def assign_evaluation_labels(participant_list=list[str]):
     smallest_fps_val = get_smallest_fps(evaluation_study_mode=True)
     time_dist = 70  # TODO fixed at 70 as this should be the same as in training!
 
@@ -174,4 +174,4 @@ def assign_labels(participant_list=list[str]):
 
 
 if __name__ == "__main__":
-    assign_labels(participant_list=[])
+    assign_evaluation_labels(participant_list=[])
