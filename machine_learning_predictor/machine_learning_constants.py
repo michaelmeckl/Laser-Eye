@@ -1,6 +1,6 @@
 import os
 import pathlib
-from post_processing.post_processing_constants import download_folder
+from post_processing.post_processing_constants import download_folder, evaluation_download_folder
 
 
 RANDOM_SEED = 42
@@ -19,3 +19,5 @@ ml_data_folder = "ml_csv_data"
 results_folder = "ml_results"
 images_path = pathlib.Path(__file__).parent.parent / "post_processing"
 data_folder_path = os.path.join(os.path.dirname(__file__), "..", "post_processing", download_folder)
+evaluation_data_folder_path = os.path.join(os.path.dirname(__file__), "..", "post_processing", "evaluation_study",
+                                           evaluation_download_folder)

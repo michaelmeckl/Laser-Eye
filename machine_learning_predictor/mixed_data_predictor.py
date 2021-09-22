@@ -4,7 +4,7 @@
 import os
 import sys
 from machine_learning_predictor.machine_learning_constants import NUMBER_OF_CLASSES, data_folder_path, images_path, \
-    RANDOM_SEED, TRAIN_EPOCHS, ml_data_folder
+    RANDOM_SEED, TRAIN_EPOCHS, ml_data_folder, evaluation_data_folder_path
 
 # for reproducibility set this BEFORE importing tensorflow: see
 # https://stackoverflow.com/questions/60058588/tesnorflow-2-0-tf-random-set-seed-not-working-since-i-am-getting-different-resul
@@ -17,7 +17,8 @@ import tensorflow as tf
 import numpy as np
 from machine_learning_predictor.ml_utils import set_random_seed, split_train_test, show_generator_example_images, \
     calculate_prediction_results, get_suitable_sample_size, load_saved_model, predict_new_data
-from post_processing.post_processing_constants import download_folder, post_processing_log_folder
+from post_processing.post_processing_constants import evaluation_download_folder, download_folder, \
+    post_processing_log_folder
 from machine_learning_predictor.mixed_data_generator import MixedDataGenerator
 from machine_learning_predictor.classifier import DifficultyImageClassifier
 from sklearn.preprocessing import StandardScaler
@@ -42,12 +43,14 @@ class DatasetType(Enum):
     TEST = "test"
 
 
-def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetType):
+def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetType, is_evaluation_data: bool):
+    data_folder = evaluation_data_folder_path if is_evaluation_data else data_folder_path
+
     blink_dataframe = pd.DataFrame()
     eye_log_dataframe = pd.DataFrame()
 
     for participant in participant_list:
-        difficulty_dir_path = os.path.join(data_folder_path, participant, post_processing_log_folder)
+        difficulty_dir_path = os.path.join(data_folder, participant, post_processing_log_folder)
         difficulty_dirs = os.listdir(difficulty_dir_path)
 
         for difficulty_dir in difficulty_dirs:
@@ -73,7 +76,7 @@ def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetT
 
             # participant_5 has 5 rows less for category "easy" than the rest after the eye tracking part so we simply
             # duplicate the last row in the dataframe so every participant has the same amount of data rows
-            if not test_mode and difficulty_dir == "easy" and participant == "participant_5":
+            if not test_mode and not is_evaluation_data and difficulty_dir == "easy" and participant == "participant_5":
                 eye_df_last_row = eye_log_dataframe.iloc[[-1]]
                 for i in range(5):
                     eye_log_dataframe = eye_log_dataframe.append(eye_df_last_row)
@@ -145,9 +148,12 @@ def merge_participant_eye_tracking_logs(participant_list, dataset_type: DatasetT
     return blink_dataframe_ordered, eye_log_dataframe_ordered
 
 
-def load_pupil_movement_data(participants, dataset_type: DatasetType):
+def load_pupil_movement_data(participants, dataset_type: DatasetType, is_evaluation_data: bool):
     pupil_movement_dataframe = pd.DataFrame()
-    pupil_movement_path = os.path.join("feature_extraction", "data", "pupil_movement_data")
+    if is_evaluation_data:
+        pupil_movement_path = os.path.join("feature_extraction", "data", "evaluation_pupil_movement_data")
+    else:
+        pupil_movement_path = os.path.join("feature_extraction", "data", "pupil_movement_data")
 
     for participant in participants:
         # TODO this assumes that the csv files for each participant are in the correct difficulty order!!
@@ -181,7 +187,7 @@ def load_pupil_movement_data(participants, dataset_type: DatasetType):
     return pupil_movement_dataframe
 
 
-def merge_participant_image_logs(participant_list, dataset_type: DatasetType):
+def merge_participant_image_logs(participant_list, dataset_type: DatasetType, is_evaluation_data: bool):
     image_data_frame = pd.DataFrame()
     use_eye_regions = False
 
@@ -191,16 +197,18 @@ def merge_participant_image_logs(participant_list, dataset_type: DatasetType):
     difficulty_dir_path = os.path.join(data_folder_path, "participant_1", post_processing_log_folder)
     row_order = os.listdir(difficulty_dir_path)  # the row order should be ["easy", "hard", "medium"]
 
+    data_folder = evaluation_data_folder_path if is_evaluation_data else data_folder_path
+
     for participant in participant_list:
         if use_eye_regions:
-            images_label_log = images_path / download_folder / participant / "labeled_eye_regions.csv"
+            images_label_log = os.path.join(data_folder, participant, "labeled_eye_regions.csv")
         else:
-            images_label_log = images_path / download_folder / participant / "labeled_images.csv"
+            images_label_log = os.path.join(data_folder, participant, "labeled_images.csv")
 
         labeled_images_df = pd.read_csv(images_label_log)
 
         # participant_5 has 5 images less than the rest after the eye tracking part so we simply duplicate the last row
-        if not test_mode and use_eye_regions and participant == "participant_5":
+        if not test_mode and not is_evaluation_data and use_eye_regions and participant == "participant_5":
             last_row = labeled_images_df.iloc[[-1]]
             for i in range(5):
                 labeled_images_df = labeled_images_df.append(last_row)
@@ -258,15 +266,15 @@ def get_train_val_data(train_participants, val_participants):
         print("Generating csv data ...\n")
         os.mkdir(ml_data_folder)
 
-        train_image_data = merge_participant_image_logs(train_participants, DatasetType.TRAIN)
-        val_image_data = merge_participant_image_logs(val_participants, DatasetType.VALIDATION)
+        train_image_data = merge_participant_image_logs(train_participants, DatasetType.TRAIN, False)
+        val_image_data = merge_participant_image_logs(val_participants, DatasetType.VALIDATION, False)
 
         blink_train_data, eye_log_train_data = merge_participant_eye_tracking_logs(train_participants,
-                                                                                   DatasetType.TRAIN)
+                                                                                   DatasetType.TRAIN, False)
         blink_val_data, eye_log_val_data = merge_participant_eye_tracking_logs(val_participants,
-                                                                               DatasetType.VALIDATION)
-        pupil_move_train = load_pupil_movement_data(train_participants, DatasetType.TRAIN)
-        pupil_move_val = load_pupil_movement_data(val_participants, DatasetType.VALIDATION)
+                                                                               DatasetType.VALIDATION, False)
+        pupil_move_train = load_pupil_movement_data(train_participants, DatasetType.TRAIN, False)
+        pupil_move_val = load_pupil_movement_data(val_participants, DatasetType.VALIDATION, False)
 
     return train_image_data, val_image_data, eye_log_train_data, eye_log_val_data, pupil_move_train, pupil_move_val
 
@@ -408,20 +416,13 @@ def cross_validate_mixed_model():
 
 def test_classifier(test_participants, scaler, sample_size):
     print(f"Found {len(test_participants)} participants for testing.")
-
     # random.shuffle(test_participants)
 
-    """
-    # load test data
-    if os.path.exists(ml_data_folder):
-        print("[INFO] Using cached test data")
-        image_test_df = pd.read_csv(os.path.join(ml_data_folder, "test_image_data_frame.csv"))
-        eye_log_test_df = pd.read_csv(os.path.join(ml_data_folder, "eye_log_dataframe_ordered_test.csv"))
-    """
     print("Generating test data ...")
-    image_test_df = merge_participant_image_logs(test_participants, DatasetType.TEST)
-    blink_test_df, eye_log_test_df = merge_participant_eye_tracking_logs(test_participants, DatasetType.TEST)
-    pupil_move_test_data = load_pupil_movement_data(test_participants, DatasetType.TEST)
+    image_test_df = merge_participant_image_logs(test_participants, DatasetType.TEST, is_evaluation_data=True)
+    blink_test_df, eye_log_test_df = merge_participant_eye_tracking_logs(test_participants, DatasetType.TEST,
+                                                                         is_evaluation_data=True)
+    pupil_move_test_data = load_pupil_movement_data(test_participants, DatasetType.TEST, is_evaluation_data=True)
 
     for difficulty_level in image_test_df.difficulty.unique():
         difficulty_level_df = image_test_df[image_test_df.difficulty == difficulty_level]
@@ -437,19 +438,22 @@ def test_classifier(test_participants, scaler, sample_size):
                        'average_pupil_movement_distance', 'movement_angle']
     pupil_move_test_data[feature_columns] = scaler.transform(pupil_move_test_data[feature_columns])
 
+    images_base_path = images_path / "evaluation_study"
     test_generator = MixedDataGenerator(img_data_frame=image_test_df, eye_data_frame=pupil_move_test_data,
                                         x_col_name="image_path", y_col_name="difficulty",
                                         sequence_length=sample_size, batch_size=batch_size,
-                                        images_base_path=images_path, use_grayscale=use_gray, is_train_set=False)
+                                        images_base_path=images_base_path, use_grayscale=use_gray, is_train_set=False)
 
     classifier = load_saved_model(model_name="Mixed-Model-66.h5")
     print(classifier.summary())
 
     # load latest (i.e. the best) checkpoint
+    """
     checkpoint_folder = os.path.join("checkpoints_mixed_data_last")
     latest = tf.train.latest_checkpoint(checkpoint_folder)
     print("Using latest checkpoint: ", latest)
     classifier.load_weights(latest)
+    """
 
     # test_loss, test_acc = classifier.evaluate(test_generator, verbose=1)
     # print("Test loss: ", test_loss)
@@ -460,7 +464,7 @@ def test_classifier(test_participants, scaler, sample_size):
     # for i in range(test_generator.__len__()):
     for i, ((test_image_batch, test_eye_data_batch), test_labels) in enumerate(test_generator):
         # test_image_batch, test_eye_data_batch, test_labels = test_generator.get_batch(idx=i)
-        # show_generator_example_images(test_image_batch, test_labels, sample_size, gen_v2=True)
+        show_generator_example_images(test_image_batch, test_labels, sample_size, gen_v2=True)
 
         predictions = predict_new_data(classifier, test_image_batch, test_eye_data_batch, test_labels)
 
@@ -498,10 +502,10 @@ def train_test_mixed_model():
 
     sample_length, standard_scaler = train_mixed_model()
 
-    # get participants that weren't used for training or validation
-    test_participants = ['participant_9', 'participant_17', 'participant_1', 'participant_12']  # TODO val data
+    # get the evaluation participants (i.e. participants that weren't used for training or validation)
+    test_participants = os.listdir(evaluation_data_folder_path)
 
-    # TODO sample_length must be 34 as we have 4284 images per category
+    # TODO sample_length must be 34 as we have trained with 4284 images per category
 
     # TODO must be the same as in training!  => this means that the test data MUST have the
     #  same length as otherwise participants could overlap per sequence!
