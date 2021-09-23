@@ -10,7 +10,6 @@ from machine_learning_predictor.machine_learning_constants import NUMBER_OF_CLAS
 # https://stackoverflow.com/questions/60058588/tesnorflow-2-0-tf-random-set-seed-not-working-since-i-am-getting-different-resul
 os.environ['PYTHONHASHSEED'] = str(RANDOM_SEED)
 
-import random
 from enum import Enum
 import pandas as pd
 import tensorflow as tf
@@ -415,14 +414,45 @@ def cross_validate_mixed_model():
 
 
 def test_classifier(test_participants, scaler, sample_size):
-    print(f"Found {len(test_participants)} participants for testing.")
-    # random.shuffle(test_participants)
-
+    # if os.path.exists(os.path.join(ml_data_folder, "test_image_data_frame.csv")):
+    #     # load existing data from csv files
+    #     print("[INFO] Using cached test data\n")
+    #     image_test_df = pd.read_csv(os.path.join(ml_data_folder, "test_image_data_frame.csv"))
+    #     eye_log_test_df = pd.read_csv(os.path.join(ml_data_folder, "eye_log_dataframe_ordered_test.csv"))
+    #     pupil_move_test_data = pd.read_csv(os.path.join(ml_data_folder, "test_pupil_movement.csv"))
+    # else:
     print("Generating test data ...")
     image_test_df = merge_participant_image_logs(test_participants, DatasetType.TEST, is_evaluation_data=True)
-    blink_test_df, eye_log_test_df = merge_participant_eye_tracking_logs(test_participants, DatasetType.TEST,
-                                                                         is_evaluation_data=True)
+    blink_test_df, eye_log_test_df = merge_participant_eye_tracking_logs(test_participants, DatasetType.TEST, True)
     pupil_move_test_data = load_pupil_movement_data(test_participants, DatasetType.TEST, is_evaluation_data=True)
+
+    # TODO fix dataframes for eye and pupil move logs as they contain a few rows less for the difficulty "hard" for
+    #  both participants
+    image_test_df[['timestamp']] = image_test_df.image_path.str.split("__").str[1].str.split(".").str[0]
+
+    pupil_timestamp_col = pupil_move_test_data['time_stamp']
+    for index, row in image_test_df.iterrows():
+        image_timestamp = int(row["timestamp"])
+        if image_timestamp not in pupil_timestamp_col.values:
+            # get the last row as a Series before the missing row
+            last_row_content = pupil_move_test_data.iloc[index-1]
+
+            # calculate the new correct index for the missing row
+            new_row_index = (index-1) + 0.5
+
+            # add the new row to the dataframe with the correct index, see https://stackoverflow.com/a/63736275/14345809
+            pupil_move_test_data.loc[new_row_index] = last_row_content
+            pupil_move_test_data = pupil_move_test_data.sort_index().reset_index(drop=True)  # reorder the dataframe
+
+    # do the same for the eye log dataframe
+    eye_log_timestamp_col = eye_log_test_df['frame_id']
+    for index, row in image_test_df.iterrows():
+        image_timestamp = int(row["timestamp"])
+        if image_timestamp not in eye_log_timestamp_col.values:
+            last_row_content = eye_log_test_df.iloc[index-1]
+            new_row_index = (index-1) + 0.5
+            eye_log_test_df.loc[new_row_index] = last_row_content
+            eye_log_test_df = eye_log_test_df.sort_index().reset_index(drop=True)
 
     for difficulty_level in image_test_df.difficulty.unique():
         difficulty_level_df = image_test_df[image_test_df.difficulty == difficulty_level]
@@ -444,6 +474,9 @@ def test_classifier(test_participants, scaler, sample_size):
                                         sequence_length=sample_size, batch_size=batch_size,
                                         images_base_path=images_base_path, use_grayscale=use_gray, is_train_set=False)
 
+    # TODO für evaluation auf val data nicht den generator übergeben sondern nochmal neu erstellen!!
+    # reset batch_index to 0!
+
     classifier = load_saved_model(model_name="Mixed-Model-66.h5")
     print(classifier.summary())
 
@@ -455,17 +488,18 @@ def test_classifier(test_participants, scaler, sample_size):
     classifier.load_weights(latest)
     """
 
+    # TODO predict(test_generator) with stepsize? -> n / (seq_len * batch_size)
+
+    # TODO:
     # test_loss, test_acc = classifier.evaluate(test_generator, verbose=1)
     # print("Test loss: ", test_loss)
     # print("Test accuracy: ", test_acc * 100)
 
     all_predictions = np.array([])
     all_labels = np.array([])
-    # for i in range(test_generator.__len__()):
+    print("\nStarting prediction ...")
     for i, ((test_image_batch, test_eye_data_batch), test_labels) in enumerate(test_generator):
-        # test_image_batch, test_eye_data_batch, test_labels = test_generator.get_batch(idx=i)
-        show_generator_example_images(test_image_batch, test_labels, sample_size, gen_v2=True)
-
+        # show_generator_example_images(test_image_batch, test_labels, sample_size, gen_v2=True)
         predictions = predict_new_data(classifier, test_image_batch, test_eye_data_batch, test_labels)
 
         predictions_results = np.argmax(predictions, axis=1)
@@ -504,14 +538,14 @@ def train_test_mixed_model():
 
     # get the evaluation participants (i.e. participants that weren't used for training or validation)
     test_participants = os.listdir(evaluation_data_folder_path)
+    print(f"\n####################\nFound {len(test_participants)} participants for testing.\n####################\n")
 
-    # TODO sample_length must be 34 as we have trained with 4284 images per category
-
-    # TODO must be the same as in training!  => this means that the test data MUST have the
-    #  same length as otherwise participants could overlap per sequence!
-    #  => adjust assign_load_classes.py so it takes 4284 images (or a smaller number that is divisible by the sequence
-    #  length if necessary) per category for all test participants
-    test_classifier(test_participants, standard_scaler, sample_length)
+    # predict for every participant separately:
+    for test_participant in test_participants:
+        print(f"\nPredicting difficulty levels for {test_participant} (Game: "
+              f"{'Tetris' if test_participant == 'participant_1' else 'Age_of_Empires_II'})")
+        # sample_length must be 34 as we have trained with 4284 images per category
+        test_classifier([test_participant], standard_scaler, sample_length)  # participants must be passed as list!
 
 
 if __name__ == "__main__":
