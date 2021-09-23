@@ -156,7 +156,7 @@ def show_generator_example_images(batch, labels, sample_size, gen_v2=False):
     plt.show()
 
 
-def plot_confusion_matrix(cm, class_names):
+def plot_confusion_matrix(cm, class_names, participant):
     """
     Returns a matplotlib figure containing the plotted confusion matrix.
     Taken from https://www.tensorflow.org/tensorboard/image_summaries#building_an_image_classifier and slightly adjusted
@@ -187,11 +187,11 @@ def plot_confusion_matrix(cm, class_names):
     # plt.tight_layout()
     plt.ylabel("True label")
     plt.xlabel("Predicted label")
-    plt.savefig(os.path.join(results_folder, "confusion_matrix.png"))
+    plt.savefig(os.path.join(results_folder, f"confusion_matrix_{participant}.png"))
     plt.show()
 
 
-def calculate_prediction_results(true_labels, predicted_labels):
+def calculate_prediction_results(true_labels, predicted_labels, participant):
     label_names = DifficultyLevels.values()
     print(f"\nAccuracy score on test data: {metrics.accuracy_score(true_labels, predicted_labels) * 100:.2f} %")
     print(f"Balanced accuracy score on test data: {metrics.balanced_accuracy_score(true_labels, predicted_labels):.2f}")
@@ -208,7 +208,7 @@ def calculate_prediction_results(true_labels, predicted_labels):
     try:
         conf_matrix = metrics.confusion_matrix(predicted_labels, true_labels, normalize="all")
         print(f"Confusion Matrix:\n{conf_matrix}")
-        plot_confusion_matrix(conf_matrix, label_names)
+        plot_confusion_matrix(conf_matrix, label_names, participant)
     except Exception as e:
         sys.stderr.write(f"Failed to compute confusion matrix: {e}")
 

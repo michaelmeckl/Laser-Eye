@@ -28,10 +28,6 @@ def start_train_pipeline():
     pupil_movement_calculator = PupilMovementCalculation()
     pupil_movement_calculator.calculate_pupil_movement(is_evaluation_data=False)
 
-    # start_training_and_testing(use_eye_regions=False)  # Option 1
-    # start_training_and_testing(use_eye_regions=True)  # Option 2
-    # start_training_and_testing_convlstm()  # Option 3
-
 
 def start_evaluation_pipeline():
     download_evaluation_data_from_server(folder_names=[])
@@ -43,6 +39,13 @@ def start_evaluation_pipeline():
     pupil_movement_calculator.calculate_pupil_movement(is_evaluation_data=True)
 
 
+def main(train_pipeline_active=True, evaluation_pipeline_active=False):
+    if train_pipeline_active:
+        start_train_pipeline()
+
+    if evaluation_pipeline_active:
+        start_evaluation_pipeline()
+
+
 if __name__ == "__main__":
-    # start_train_pipeline()
-    start_evaluation_pipeline()
+    main()

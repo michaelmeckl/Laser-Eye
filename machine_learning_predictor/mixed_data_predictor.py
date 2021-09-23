@@ -426,8 +426,8 @@ def test_classifier(test_participants, scaler, sample_size):
     blink_test_df, eye_log_test_df = merge_participant_eye_tracking_logs(test_participants, DatasetType.TEST, True)
     pupil_move_test_data = load_pupil_movement_data(test_participants, DatasetType.TEST, is_evaluation_data=True)
 
-    # TODO fix dataframes for eye and pupil move logs as they contain a few rows less for the difficulty "hard" for
-    #  both participants
+    # fix dataframes for eye and pupil move logs as they contain a few rows less for the difficulty "hard" for
+    # both participants
     image_test_df[['timestamp']] = image_test_df.image_path.str.split("__").str[1].str.split(".").str[0]
 
     pupil_timestamp_col = pupil_move_test_data['time_stamp']
@@ -463,10 +463,10 @@ def test_classifier(test_participants, scaler, sample_size):
         print(f"Found {len(participant_df)} test images for participant \"{participant}\".")
 
     # scaler = StandardScaler()
-    feature_columns = ['left_pupil_movement_x', 'left_pupil_movement_y', 'right_pupil_movement_x',
-                       'right_pupil_movement_y', 'average_pupil_movement_x', 'average_pupil_movement_y',
-                       'average_pupil_movement_distance', 'movement_angle']
-    pupil_move_test_data[feature_columns] = scaler.transform(pupil_move_test_data[feature_columns])
+    # feature_columns = ['left_pupil_movement_x', 'left_pupil_movement_y', 'right_pupil_movement_x',
+    #                    'right_pupil_movement_y', 'average_pupil_movement_x', 'average_pupil_movement_y',
+    #                    'average_pupil_movement_distance', 'movement_angle']
+    # pupil_move_test_data[feature_columns] = scaler.transform(pupil_move_test_data[feature_columns])
 
     images_base_path = images_path / "evaluation_study"
     test_generator = MixedDataGenerator(img_data_frame=image_test_df, eye_data_frame=pupil_move_test_data,
@@ -474,11 +474,8 @@ def test_classifier(test_participants, scaler, sample_size):
                                         sequence_length=sample_size, batch_size=batch_size,
                                         images_base_path=images_base_path, use_grayscale=use_gray, is_train_set=False)
 
-    # TODO für evaluation auf val data nicht den generator übergeben sondern nochmal neu erstellen!!
-    # reset batch_index to 0!
-
     classifier = load_saved_model(model_name="Mixed-Model-66.h5")
-    print(classifier.summary())
+    # print(classifier.summary())
 
     # load latest (i.e. the best) checkpoint
     """
@@ -488,12 +485,12 @@ def test_classifier(test_participants, scaler, sample_size):
     classifier.load_weights(latest)
     """
 
-    # TODO predict(test_generator) with stepsize? -> n / (seq_len * batch_size)
-
-    # TODO:
     # test_loss, test_acc = classifier.evaluate(test_generator, verbose=1)
     # print("Test loss: ", test_loss)
     # print("Test accuracy: ", test_acc * 100)
+
+    # predictions = classifier.predict(test_generator, verbose=1)
+    # predicted_class_indices = np.argmax(predictions, axis=1)
 
     all_predictions = np.array([])
     all_labels = np.array([])
@@ -507,8 +504,11 @@ def test_classifier(test_participants, scaler, sample_size):
         actual_labels = np.argmax(test_labels, axis=1)
         all_labels = np.concatenate([all_labels, actual_labels])
 
+    # acc_gen = metrics.accuracy_score(all_labels, predicted_class_indices) * 100
+    # print("Accuracy predict generator:", acc_gen)
+
     # show some result metrics
-    calculate_prediction_results(all_labels, all_predictions)
+    calculate_prediction_results(all_labels, all_predictions, test_participants[0])
 
 
 def train_test_mixed_model():
@@ -546,6 +546,16 @@ def train_test_mixed_model():
               f"{'Tetris' if test_participant == 'participant_1' else 'Age_of_Empires_II'})")
         # sample_length must be 34 as we have trained with 4284 images per category
         test_classifier([test_participant], standard_scaler, sample_length)  # participants must be passed as list!
+
+    """
+    without standard scaler:
+    40.96 % for participant 1
+    35.64 % for participant 2
+
+    with standard scaler (new):
+    31 % p1
+    32 % p2
+    """
 
 
 if __name__ == "__main__":
