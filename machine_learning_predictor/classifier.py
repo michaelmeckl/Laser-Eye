@@ -1,11 +1,10 @@
 import os
-import numpy as np
 import psutil
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, LambdaCallback, EarlyStopping
 from machine_learning_predictor.machine_learning_constants import results_folder
-from machine_learning_predictor.ml_utils import show_result_plot, load_saved_model
+from machine_learning_predictor.ml_utils import show_result_plot
 
 
 # noinspection PyAttributeOutsideInit
@@ -70,22 +69,6 @@ class DifficultyImageClassifier:
             filters, biases = self.sequential_model.layers[0].get_weights()
             print(layer[0].name, filters.shape)
 
-            # plot filters
-            """
-            fig1 = plt.figure(figsize=(8, 12))
-            columns = 8
-            rows = 8
-            n_filters = columns * rows
-            for i in range(1, n_filters + 1):
-                f = filters[:, :, :, i - 1]
-                fig1 = plt.subplot(rows, columns, i)
-                fig1.set_xticks([])  # Turn off axis
-                fig1.set_yticks([])
-                plt.imshow(f[:, :, 0], cmap='gray')  # Show only the filters from 0th channel (R)
-                # ix += 1
-            plt.show()
-            """
-
             # Define a new truncated model to only include the conv layers of interest
             # conv_layer_index = [1, 3, 6, 8, 11, 13, 15]
             conv_layer_index = [0, 2, 4]  # TO define a shorter model
@@ -137,7 +120,7 @@ class DifficultyImageClassifier:
 
         combined_input = tf.keras.layers.concatenate([flat_1, flat_2])
 
-        dense1 = tf.keras.layers.Dense(256, activation='relu')(combined_input)  # TODO 512 ?
+        dense1 = tf.keras.layers.Dense(256, activation='relu')(combined_input)
         dropout = tf.keras.layers.Dropout(0.3)(dense1)
         # units must be the number of classes -> we want a vector that looks like this: [0.2, 0.5, 0.3]
         output = tf.keras.layers.Dense(self.n_classes, activation='softmax')(dropout)
@@ -154,13 +137,14 @@ class DifficultyImageClassifier:
         # save checkpoints
         checkpoint_callback = ModelCheckpoint(checkpoint_path, monitor='val_categorical_accuracy', verbose=1,
                                               mode="max", save_best_only=True, save_weights_only=True)
+        lr_callback = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, verbose=1)
 
         history = self.model.fit(self.train_generator,
                                  validation_data=self.validation_generator,
                                  use_multiprocessing=False,
                                  workers=self.num_workers,
                                  epochs=self.n_epochs,
-                                 callbacks=[checkpoint_callback],
+                                 callbacks=[checkpoint_callback, lr_callback],
                                  verbose=1)
 
         model_name = "Mixed-Model.h5"
@@ -250,23 +234,3 @@ class DifficultyImageClassifier:
         val_loss, val_acc = self.sequential_model.evaluate(val_ds, verbose=1)
         print("Validation loss: ", val_loss)
         print("Validation accuracy: ", val_acc * 100)
-
-    def predict_test_generator(self, test_gen):
-        predictions = self.sequential_model.predict(test_gen)
-        score = tf.nn.softmax(predictions[0])  # take the softmax over all predictions ([0] because it's nested)
-        # print("Predictions:\n", predictions)
-        print(f"Confidence: {100 * np.max(score):.2f} %")
-
-        # evaluate on the test set as well
-        test_loss, test_acc = self.sequential_model.evaluate(test_gen, verbose=1)
-        print("Test accuracy: ", test_acc * 100)
-
-        # load latest (i.e. the best) checkpoint
-        loaded_model = load_saved_model(model_name="Difficulty-CNN-Model-Generator.h5")  # re-create the model first!
-        checkpoint_folder = os.path.join(results_folder, "checkpoints_generator")  # "checkpoints_dataset"
-
-        latest = tf.train.latest_checkpoint(checkpoint_folder)
-        loaded_model.load_weights(latest)
-        # and re-evaluate the model
-        loss, acc = loaded_model.evaluate(test_gen, verbose=1)
-        print(f"Accuracy with restored model weights: {100 * acc:5.2f}%")
