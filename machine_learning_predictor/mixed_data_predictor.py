@@ -370,7 +370,7 @@ def train_classifier(train_generator, val_generator, train_epochs=TRAIN_EPOCHS):
     return classifier, val_accuracy
 
 
-def train_mixed_model(should_train=False):
+def train_mixed_model(should_train=True):
     without_participants = []
     all_participants = os.listdir(data_folder_path)[:18]  # only take 12 or 18 so the counterbalancing works
     # remove some participants for testing
