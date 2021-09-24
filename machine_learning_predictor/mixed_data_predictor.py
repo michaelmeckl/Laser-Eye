@@ -153,6 +153,7 @@ def load_pupil_movement_data(participants, dataset_type: DatasetType, is_evaluat
         pupil_movement_path = os.path.join("feature_extraction", "data", "evaluation_pupil_movement_data")
     else:
         pupil_movement_path = os.path.join("feature_extraction", "data", "pupil_movement_data")
+        # pupil_movement_path = "pupil_movement_data_2"
 
     for participant in participants:
         # TODO this assumes that the csv files for each participant are in the correct difficulty order!!
@@ -324,7 +325,6 @@ def setup_data_generation(train_participants, val_participants, show_examples=Fa
     # scale & standardize numerical data first,
     # see https://stackoverflow.com/questions/24645153/pandas-dataframe-columns-scaling-with-sklearn
     scaler = StandardScaler()
-    # TODO select the correct columns for standard scaler!
     feature_columns = ['left_pupil_movement_x', 'left_pupil_movement_y', 'right_pupil_movement_x',
                        'right_pupil_movement_y', 'average_pupil_movement_x', 'average_pupil_movement_y',
                        'average_pupil_movement_distance', 'movement_angle']
@@ -352,7 +352,7 @@ def setup_data_generation(train_participants, val_participants, show_examples=Fa
 
     print("Len train generator: ", train_generator.__len__())
     print("Len val generator: ", val_generator.__len__())
-    return train_generator, val_generator, sample_size, scaler
+    return train_generator, val_generator, sample_size
 
 
 def train_classifier(train_generator, val_generator, train_epochs=TRAIN_EPOCHS):
@@ -377,13 +377,13 @@ def train_mixed_model(should_train=False):
     all_participants = [p for p in all_participants if p not in set(without_participants)]
 
     train_participants, val_participants = split_train_test(all_participants)
-    train_gen, val_gen, num_samples, scaler = setup_data_generation(train_participants, val_participants)
+    train_gen, val_gen, num_samples = setup_data_generation(train_participants, val_participants)
 
     if should_train:
         print("Training mixed data classifier ...\n")
         difficulty_classifier, val_accuracy = train_classifier(train_gen, val_gen)
 
-    return num_samples, scaler
+    return num_samples
 
 
 def cross_validate_mixed_model():
@@ -402,7 +402,7 @@ def cross_validate_mixed_model():
         # train_participants = (np.array(all_participants)[train_indices]).tolist()
         # val_participants = (np.array(all_participants)[test_indices]).tolist()
 
-        train_gen, val_gen, num_samples, scaler = setup_data_generation(train_participants, val_participants)
+        train_gen, val_gen, num_samples = setup_data_generation(train_participants, val_participants)
         difficulty_classifier, val_accuracy = train_classifier(train_gen, val_gen, num_samples)
 
         all_accuracies.append(val_accuracy)
@@ -413,7 +413,7 @@ def cross_validate_mixed_model():
     print(f"Best accuracy over all splits: {np.max(all_accuracies):.2f}")
 
 
-def test_classifier(test_participants, scaler, sample_size):
+def test_classifier(test_participants, sample_size):
     # if os.path.exists(os.path.join(ml_data_folder, "test_image_data_frame.csv")):
     #     # load existing data from csv files
     #     print("[INFO] Using cached test data\n")
@@ -485,9 +485,9 @@ def test_classifier(test_participants, scaler, sample_size):
     classifier.load_weights(latest)
     """
 
-    # test_loss, test_acc = classifier.evaluate(test_generator, verbose=1)
-    # print("Test loss: ", test_loss)
-    # print("Test accuracy: ", test_acc * 100)
+    test_loss, test_acc = classifier.evaluate(test_generator, verbose=1)
+    print("Test loss: ", test_loss)
+    print("Test accuracy: ", test_acc * 100)
 
     # predictions = classifier.predict(test_generator, verbose=1)
     # predicted_class_indices = np.argmax(predictions, axis=1)
@@ -534,7 +534,7 @@ def train_test_mixed_model():
 
     set_random_seed()  # set seed for reproducibility
 
-    sample_length, standard_scaler = train_mixed_model()
+    sample_length = train_mixed_model()
 
     # get the evaluation participants (i.e. participants that weren't used for training or validation)
     test_participants = os.listdir(evaluation_data_folder_path)
@@ -545,17 +545,7 @@ def train_test_mixed_model():
         print(f"\nPredicting difficulty levels for {test_participant} (Game: "
               f"{'Tetris' if test_participant == 'participant_1' else 'Age_of_Empires_II'})")
         # sample_length must be 34 as we have trained with 4284 images per category
-        test_classifier([test_participant], standard_scaler, sample_length)  # participants must be passed as list!
-
-    """
-    without standard scaler:
-    40.96 % for participant 1
-    35.64 % for participant 2
-
-    with standard scaler (new):
-    31 % p1
-    32 % p2
-    """
+        test_classifier([test_participant], sample_length)  # participants must be passed as list!
 
 
 if __name__ == "__main__":
