@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
+import math
 
 
 class PupilMovementCalculation:
@@ -89,16 +90,16 @@ class PupilMovementCalculation:
                     time_difference = int(timestamp) - int(last_time_stamp)
 
                     # Calculate angle of the eye_movement
-                    standart_vector = (1, 0)
-                    angle = self.__calculate_angle(standart_vector, average_pupil_movement)
+                    standard_vector = (1, 0)
+                    angle = self.__calculate_angle(standard_vector, average_pupil_movement)
 
                     # Check if it was a strong movement and if the direction changed by more than 90° and less than 270°
-                    direction_change = False
+                    direction_change = 0
                     if 270 > angle > 90:
-                        direction_change = True
-                    strong_movement = False
+                        direction_change = 1
+                    strong_movement = 0
                     if average_pupil_movement_distance > 0.02:
-                        strong_movement = True
+                        strong_movement = 1
 
                     # Write data to dataframe
                     pupil_movement_df = pupil_movement_df.append({'participant': participant, 'difficulty': difficulty,
@@ -126,8 +127,8 @@ class PupilMovementCalculation:
                                                                   'average_pupil_movement_y': 0,
                                                                   'average_pupil_movement_distance': 0,
                                                                   'movement_angle': 0,
-                                                                  'strong_movement': False,
-                                                                  'direction_change': False,
+                                                                  'strong_movement': 0,
+                                                                  'direction_change': 0,
                                                                   'time_difference': 0,
                                                                   'time_stamp': timestamp},
                                                                  ignore_index=True)
@@ -162,8 +163,10 @@ class PupilMovementCalculation:
         dot_product = np.dot(unit_vector_1, unit_vector_2)
 
         angle = np.arccos(dot_product)
-        print(f"angle = {angle}")
-        return angle
+        if not math.isnan(angle):
+            return angle
+        else:
+            return 0
 
     def calculate_frequencies(self, data_array):
         try:
