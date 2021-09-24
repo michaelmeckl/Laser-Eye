@@ -147,9 +147,23 @@ class PupilMovementCalculation:
         print("\n####################\nFinished pupil movement calculation!\n####################\n")
 
     def __calculate_angle(self, p1, p2):
-        ang1 = np.arctan2(*p1[::-1])
-        ang2 = np.arctan2(*p2[::-1])
-        return np.rad2deg((ang1 - ang2) % (2 * np.pi))
+        # ang1 = np.arctan2(*p1[::-1])
+        # ang2 = np.arctan2(*p2[::-1])
+        # return np.rad2deg((ang1 - ang2) % (2 * np.pi))
+
+        vector_1 = p1
+
+        vector_2 = p2
+
+        unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
+
+        unit_vector_2 = vector_2 / np.linalg.norm(vector_2)
+
+        dot_product = np.dot(unit_vector_1, unit_vector_2)
+
+        angle = np.arccos(dot_product)
+        print(f"angle = {angle}")
+        return angle
 
     def calculate_frequencies(self, data_array):
         try:
