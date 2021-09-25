@@ -153,7 +153,6 @@ def load_pupil_movement_data(participants, dataset_type: DatasetType, is_evaluat
         pupil_movement_path = os.path.join("feature_extraction", "data", "evaluation_pupil_movement_data")
     else:
         pupil_movement_path = os.path.join("feature_extraction", "data", "pupil_movement_data")
-        # pupil_movement_path = "pupil_movement_data_2"
 
     for participant in participants:
         # TODO this assumes that the csv files for each participant are in the correct difficulty order!!
@@ -399,8 +398,6 @@ def cross_validate_mixed_model():
     for i in range(n_splits):
         print(f"\n################## Starting split {i} / {n_splits} ################## \n")
         train_participants, val_participants = split_train_test(all_participants)  # shuffle and split into train & val
-        # train_participants = (np.array(all_participants)[train_indices]).tolist()
-        # val_participants = (np.array(all_participants)[test_indices]).tolist()
 
         train_gen, val_gen, num_samples = setup_data_generation(train_participants, val_participants)
         difficulty_classifier, val_accuracy = train_classifier(train_gen, val_gen, num_samples)
@@ -414,13 +411,6 @@ def cross_validate_mixed_model():
 
 
 def test_classifier(test_participants, sample_size):
-    # if os.path.exists(os.path.join(ml_data_folder, "test_image_data_frame.csv")):
-    #     # load existing data from csv files
-    #     print("[INFO] Using cached test data\n")
-    #     image_test_df = pd.read_csv(os.path.join(ml_data_folder, "test_image_data_frame.csv"))
-    #     eye_log_test_df = pd.read_csv(os.path.join(ml_data_folder, "eye_log_dataframe_ordered_test.csv"))
-    #     pupil_move_test_data = pd.read_csv(os.path.join(ml_data_folder, "test_pupil_movement.csv"))
-    # else:
     print("Generating test data ...")
     image_test_df = merge_participant_image_logs(test_participants, DatasetType.TEST, is_evaluation_data=True)
     blink_test_df, eye_log_test_df = merge_participant_eye_tracking_logs(test_participants, DatasetType.TEST, True)
@@ -462,12 +452,6 @@ def test_classifier(test_participants, sample_size):
         participant_df = image_test_df[image_test_df.participant == participant]
         print(f"Found {len(participant_df)} test images for participant \"{participant}\".")
 
-    # scaler = StandardScaler()
-    # feature_columns = ['left_pupil_movement_x', 'left_pupil_movement_y', 'right_pupil_movement_x',
-    #                    'right_pupil_movement_y', 'average_pupil_movement_x', 'average_pupil_movement_y',
-    #                    'average_pupil_movement_distance', 'movement_angle']
-    # pupil_move_test_data[feature_columns] = scaler.transform(pupil_move_test_data[feature_columns])
-
     images_base_path = images_path / "evaluation_study"
     test_generator = MixedDataGenerator(img_data_frame=image_test_df, eye_data_frame=pupil_move_test_data,
                                         x_col_name="image_path", y_col_name="difficulty",
@@ -477,8 +461,8 @@ def test_classifier(test_participants, sample_size):
     classifier = load_saved_model(model_name="Mixed-Model-66.h5")
     # print(classifier.summary())
 
-    # load latest (i.e. the best) checkpoint
     """
+    # load latest (i.e. the best) checkpoint
     checkpoint_folder = os.path.join("checkpoints_mixed_data_last")
     latest = tf.train.latest_checkpoint(checkpoint_folder)
     print("Using latest checkpoint: ", latest)

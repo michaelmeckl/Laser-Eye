@@ -2,9 +2,7 @@
 # -*- coding:utf-8 -*-
 
 from machine_learning_predictor.feature_extraction.pupil_movement_calculation import PupilMovementCalculation
-from post_processing.convlstm_eye_region_classifier import start_training_and_testing_convlstm
 from post_processing.download_data import download_data_from_server
-from post_processing.efficient_net_classifier import start_training_and_testing
 from post_processing.evaluation_study.assign_difficulty_labels_evaluation import assign_evaluation_labels
 from post_processing.evaluation_study.download_evaluation_data import download_evaluation_data_from_server
 from post_processing.evaluation_study.evaluation_study_data_extractor import extract_evaluation_data
@@ -39,7 +37,7 @@ def start_evaluation_pipeline():
     pupil_movement_calculator.calculate_pupil_movement(is_evaluation_data=True)
 
 
-def main(train_pipeline_active=True, evaluation_pipeline_active=False):
+def main(train_pipeline_active=True, evaluation_pipeline_active=True):
     if train_pipeline_active:
         start_train_pipeline()
 
